@@ -1,7 +1,7 @@
 {
   "name": "brawl-stars-boosting-bot",
   "version": "1.0.0",
-  "description": "Discord bot for Brawl Stars Boosting server",
+  "description": "Brawl Stars Boosting Bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
