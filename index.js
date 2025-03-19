@@ -1,7 +1,7 @@
 /********************************************************************
  * Brawl Stars Boosting Discord Bot
- * Using Discord.js v14
- * Removes 'dotenv' in favor of direct environment variables
+ * Discord.js v14
+ * Uses process.env.TOKEN (no hardcoded token)
  ********************************************************************/
 
 const {
@@ -20,39 +20,42 @@ const {
   PermissionsBitField
 } = require('discord.js');
 
-/************************************************************
- 1) BOT SETUP
-************************************************************/
+// 1) BOT TOKEN FROM ENV VAR
+//    On Render, name your env var "TOKEN" in the service's Environment tab.
+const BOT_TOKEN = process.env.TOKEN;
+
+// If you want to dynamically register slash commands, set your Application ID here
+// or just hardcode it if you prefer. Not strictly required unless your code creates commands in code.
+const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_CLIENT_ID_HERE';
+
+// Create Discord client, with presence intent (for #7 presence checking)
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessageReactions
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildPresences // For status checks
   ],
   partials: [Partials.Channel]
 });
 
-// Use the environment variable from Railway (or your hosting)
-const BOT_TOKEN = process.env.TOKEN; 
-const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_BOT_CLIENT_ID_HERE';
-
 /************************************************************
- 2) CONFIGURATION CONSTANTS
+ 2) CONFIG CONSTANTS
 ************************************************************/
-// === IDs of the two people who can use ?ticketpanel
+// IDs who can use ?ticketpanel
 const TICKET_PANEL_ALLOWED_USERS = ['658351335967686659', '986164993080836096'];
 
-// === Roles that have "staff" perms for tickets & ?move command
+// Staff roles
 const STAFF_ROLES = [
-  '1292933924116500532', // staff role 1
-  '1292933200389083196', // staff role 2
-  '1303702944696504441', // staff role 3
-  '1322611585281425478'  // staff role 4
+  '1292933924116500532',
+  '1292933200389083196',
+  '1303702944696504441',
+  '1322611585281425478'
 ];
 
-// === Ticket categories
+// Ticket categories
 const TICKET_CATEGORIES = {
   TROPHIES: '1322947795803574343',
   RANKED: '1322913302921089094',
@@ -61,10 +64,9 @@ const TICKET_CATEGORIES = {
   OTHER: '1322947859561320550'
 };
 
-// === Ticket limit per user
 const MAX_TICKETS_PER_USER = 2;
 
-// === ?move category IDs
+// ?move categories
 const MOVE_CATEGORIES = {
   paid: '1347969048553586822',
   add: '1347969216052985876',
@@ -72,28 +74,35 @@ const MOVE_CATEGORIES = {
   finished: '1347969418898051164'
 };
 
-// === /list command: can ONLY be used by role 1292933200389083196
+// /list restricted to role
 const LIST_COMMAND_ROLE = '1292933200389083196';
 
-// === /list command: new ticket category for "Purchase Account" button
+// Category for "Purchase Account" tickets
 const PURCHASE_ACCOUNT_CATEGORY = '1347969247317327933';
 
-// === ?adds command: categories/IDs for the adds
+// For ?adds
 const MATCHERINO_SWAP_CATEGORY = '1351687962907246753';
-const ADD_115K_MSG_CHANNEL = '1351687016433193051'; // channel to post "New 115k Add"
-const ADD_MATCHERINO_MSG_CHANNEL = '1351687016433193051'; // channel to post "New Matcherino Winner Add"
+const ADD_115K_MSG_CHANNEL = '1351687016433193051';
+const ADD_MATCHERINO_MSG_CHANNEL = '1351687016433193051';
 
-// === Roles for the "Add 115k" button (check in order)
+// Roles for "Add 115k" button
 const ADD_115K_ROLES = [
   '1351281086134747298',
   '1351687292200423484'
 ];
 
-// === Roles for "Add Matcherino Winner" button
+// Roles for "Add Matcherino Winner" button
 const MATCHERINO_WINNER_ROLE_1A = '1351281117445099631';
 const MATCHERINO_WINNER_ROLE_1B = '1351281086134747298';
 const MATCHERINO_WINNER_ROLE_2A = '1351687292200423484';
 const MATCHERINO_WINNER_ROLE_2B = '1351281117445099631';
+
+// Role to give if user has "discord.gg/brawlshop" in custom status
+const BRAWLSHOP_AD_ROLE = '1351998501982048346';
+
+// We’ll store who opened each ticket so we can "Re-Open" properly
+// Key: channelId, Value: userId who opened it
+const ticketOpeners = new Map();
 
 /************************************************************
  3) UTILITY FUNCTIONS
@@ -108,22 +117,23 @@ function hasAllRoles(member, roleIds = []) {
 
 /************************************************************
  4) TRACK LISTINGS FOR "MORE INFORMATION"
+    ( /list command data )
 ************************************************************/
 const listingDataMap = new Map(); 
-// Key: messageId of the listing
-// Value: object with optional fields from /list command
+// Key: messageId, Value: object with user-provided fields
 
 /************************************************************
  5) BUILD SLASH COMMAND (/list)
+    All fields are required to avoid "No additional info" problem
 ************************************************************/
 const listCommand = new SlashCommandBuilder()
   .setName('list')
   .setDescription('Add a new account for sale (Restricted).')
 
-// Required fields
-  .addStringOption(option =>
-    option.setName('ping')
-      .setDescription('Who do you want to ping?')
+// 1) Required fields:
+  .addStringOption(opt =>
+    opt.setName('ping')
+      .setDescription('Who to ping?')
       .setRequired(true)
       .addChoices(
         { name: 'Everyone', value: 'everyone' },
@@ -131,145 +141,170 @@ const listCommand = new SlashCommandBuilder()
         { name: 'None', value: 'none' }
       )
   )
-  .addStringOption(option =>
-    option.setName('text')
+  .addStringOption(opt =>
+    opt.setName('text')
       .setDescription('Text to include at the top of the embed')
       .setRequired(true)
   )
-  .addStringOption(option =>
-    option.setName('price')
+  .addStringOption(opt =>
+    opt.setName('price')
       .setDescription('Price of the account')
       .setRequired(true)
   )
-  .addStringOption(option =>
-    option.setName('trophies')
+  .addStringOption(opt =>
+    opt.setName('trophies')
       .setDescription('Trophies value')
       .setRequired(true)
   )
-  .addStringOption(option =>
-    option.setName('p11')
+  .addStringOption(opt =>
+    opt.setName('p11')
       .setDescription('Power 11 info')
       .setRequired(true)
   )
-  .addStringOption(option =>
-    option.setName('tier_max')
+  .addStringOption(opt =>
+    opt.setName('tier_max')
       .setDescription('Tier Max info')
       .setRequired(true)
   )
-  .addStringOption(option =>
-    option.setName('image')
-      .setDescription('Image URL to display')
+  .addStringOption(opt =>
+    opt.setName('image')
+      .setDescription('Main image URL')
       .setRequired(true)
   )
 
-// Optional fields
-  .addStringOption(option =>
-    option.setName('brawlers')
-      .setDescription('Brawlers info (optional)')
-      .setRequired(false)
+// 2) Additional required fields:
+  .addStringOption(opt =>
+    opt.setName('brawlers')
+      .setDescription('Brawlers info')
+      .setRequired(true)
   )
-  .addStringOption(option =>
-    option.setName('legendary')
-      .setDescription('Legendary Skins info (optional)')
-      .setRequired(false)
+  .addStringOption(opt =>
+    opt.setName('legendary')
+      .setDescription('Legendary Skins info')
+      .setRequired(true)
   )
-  .addStringOption(option =>
-    option.setName('mythic')
-      .setDescription('Mythic Skins info (optional)')
-      .setRequired(false)
+  .addStringOption(opt =>
+    opt.setName('mythic')
+      .setDescription('Mythic Skins info')
+      .setRequired(true)
   )
-  .addStringOption(option =>
-    option.setName('epic')
-      .setDescription('Epic Skins info (optional)')
-      .setRequired(false)
+  .addStringOption(opt =>
+    opt.setName('epic')
+      .setDescription('Epic Skins info')
+      .setRequired(true)
   )
-  .addStringOption(option =>
-    option.setName('super_rare')
-      .setDescription('Super Rare Skins info (optional)')
-      .setRequired(false)
+  .addStringOption(opt =>
+    opt.setName('super_rare')
+      .setDescription('Super Rare Skins info')
+      .setRequired(true)
   )
-  .addStringOption(option =>
-    option.setName('rare')
-      .setDescription('Rare Skins info (optional)')
-      .setRequired(false)
+  .addStringOption(opt =>
+    opt.setName('rare')
+      .setDescription('Rare Skins info')
+      .setRequired(true)
   )
-  .addStringOption(option =>
-    option.setName('p9')
-      .setDescription('Power 9 info (optional)')
-      .setRequired(false)
+  .addStringOption(opt =>
+    opt.setName('p9')
+      .setDescription('Power 9 info')
+      .setRequired(true)
   )
-  .addStringOption(option =>
-    option.setName('p10')
-      .setDescription('Power 10 info (optional)')
-      .setRequired(false)
+  .addStringOption(opt =>
+    opt.setName('p10')
+      .setDescription('Power 10 info')
+      .setRequired(true)
   )
-  .addStringOption(option =>
-    option.setName('hypercharges')
-      .setDescription('Hypercharges info (optional)')
-      .setRequired(false)
+  .addStringOption(opt =>
+    opt.setName('hypercharges')
+      .setDescription('Hypercharges info')
+      .setRequired(true)
   )
-  .addStringOption(option =>
-    option.setName('image2')
-      .setDescription('Additional image URL (optional)')
-      .setRequired(false)
+  .addStringOption(opt =>
+    opt.setName('image2')
+      .setDescription('Additional image URL')
+      .setRequired(true)
   );
 
 /************************************************************
- 6) BOT STARTUP
+ 6) BOT STARTUP: Register /list
 ************************************************************/
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
 
-  // Register slash command globally
+  // Attempt to register slash command globally
   try {
     await client.application.commands.create(listCommand);
     console.log('[Slash Command] /list registered successfully.');
   } catch (err) {
-    console.error('Error registering /list command:', err);
+    console.error('Error registering /list:', err);
   }
 });
 
 /************************************************************
- 7) MESSAGE HANDLER FOR PREFIX COMMANDS 
-    (ticketpanel, move, adds, ,mark)
+ 7) PRESENCE CHECK
+    If user has "discord.gg/brawlshop" in custom status,
+    give them role BRAWLSHOP_AD_ROLE; if not, remove it
+************************************************************/
+client.on('presenceUpdate', async (oldPresence, newPresence) => {
+  if (!newPresence || !newPresence.member) return;
+
+  const member = newPresence.member;
+  if (!member.manageable) return; // just in case we can't manage
+
+  let hasAdRole = member.roles.cache.has(BRAWLSHOP_AD_ROLE);
+  let foundLink = false;
+
+  if (newPresence.activities) {
+    for (const act of newPresence.activities) {
+      if (act.state && act.state.toLowerCase().includes('discord.gg/brawlshop')) {
+        foundLink = true;
+        break;
+      }
+    }
+  }
+
+  // If found but doesn't have the role, add it
+  if (foundLink && !hasAdRole) {
+    await member.roles.add(BRAWLSHOP_AD_ROLE).catch(() => {});
+  }
+  // If not found but user has the role, remove it
+  else if (!foundLink && hasAdRole) {
+    await member.roles.remove(BRAWLSHOP_AD_ROLE).catch(() => {});
+  }
+});
+
+/************************************************************
+ 8) MESSAGE HANDLER: (ticketpanel, move, adds, mark)
 ************************************************************/
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   if (!message.guild) return;
 
-  // ? prefix for some commands
   const prefix = '?';
-  // , prefix for the ,mark command
   const staffPrefix = ',';
 
-  /*******************************************************
-   7A) Handling ?commands
-   *******************************************************/
+  // ? commands
   if (message.content.startsWith(prefix)) {
-    const args = message.content.slice(prefix.length).trim().split(/ +/g);
+    const args = message.content.slice(prefix.length).trim().split(/\s+/);
     const cmd = args.shift().toLowerCase();
 
     /*******************************************************
      ?ticketpanel
-     *******************************************************/
+    ********************************************************/
     if (cmd === 'ticketpanel') {
-      // Only the two allowed user IDs
       if (!TICKET_PANEL_ALLOWED_USERS.includes(message.author.id)) {
         return message.reply("You don't have permission to use this command!");
       }
 
-      // Build the embed
       const embed = new EmbedBuilder()
         .setTitle('Order a Boost')
         .setDescription('Looking to Purchase a Boost? Please select what kind of boost you want below.');
 
-      // Build 5 buttons
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('ticket_trophies')
           .setLabel('Trophies')
           .setEmoji('<:trophy:1301901071471345664>')
-          .setStyle(ButtonStyle.Danger), 
+          .setStyle(ButtonStyle.Danger),
         new ButtonBuilder()
           .setCustomId('ticket_ranked')
           .setLabel('Ranked')
@@ -301,13 +336,11 @@ client.on('messageCreate', async (message) => {
 
     /*******************************************************
      ?move
-     *******************************************************/
+    ********************************************************/
     if (cmd === 'move') {
-      // Must have staff role
       if (!hasAnyRole(message.member, STAFF_ROLES)) {
         return message.reply("You don't have permission to use this command!");
       }
-
       const sub = args[0];
       if (!sub || !MOVE_CATEGORIES[sub]) {
         return message.reply('Invalid syntax. Usage: ?move [paid|add|sell|finished]');
@@ -319,45 +352,46 @@ client.on('messageCreate', async (message) => {
         await message.reply(`Channel moved to category: ${sub}`);
       } catch (err) {
         console.error(err);
-        message.reply('Could not move the channel. Check my permissions or the category ID.');
+        message.reply('Could not move the channel. Check permissions or category ID.');
       }
     }
 
     /*******************************************************
      ?adds
-     *******************************************************/
+    ********************************************************/
     if (cmd === 'adds') {
-      // No role restriction mentioned, so we allow all.
-      // If needed, add a check for staff here.
+      // Restrict to role 1292933200389083196
+      if (!message.member.roles.cache.has('1292933200389083196')) {
+        return message.reply("You don't have permission to use this command!");
+      }
 
+      // Make color #E68DF2
       const embed1 = new EmbedBuilder()
         .setTitle('Matcherino Swap')
+        .setColor('#E68DF2')
         .setDescription(
           '**__This requires 2 invites!__**\n' +
-          'Swap pins with a Matcherino Winner in a friendly game.\n\n' +
+          'Swap pins with a **Matcherino Winner** in a friendly game.\n\n' +
           'After that you will be able to use the **Matcherino Winner Pin** yourself during that game.'
         );
 
       const embed2 = new EmbedBuilder()
-        .setTitle('115k <:Trophee:354331048244674560> & 71 R35 Add')
+        .setTitle('115k Trophies & 71 R35 Add')
+        .setColor('#E68DF2')
         .setDescription(
           '**__This requires 3 invites!__**\n' +
           'Add a 115k Trophy and 71 legacy R35 Player.'
         )
-        .setImage('https://media.discordapp.net/attachments/987753155360079903/1351685459666931803/IMG_2300.png?ex=67db46ae&is=67d9f52e&hm=cae532a6e600892696d095741f299b3a6d3bd3afa8df9194cd04427a700825d8&=&format=webp&quality=lossless&width=550&height=254');
+        .setImage('https://media.discordapp.net/attachments/1351687016433193051/1351997791425007656/IMG_2580.png?ex=67dc6990&is=67db1810&hm=907faa84e6f1e2f77090588d183a509b5c7f973c81f977d0e531069c01d0c987&=&format=webp&quality=lossless&width=1746&height=806');
 
       const embed3 = new EmbedBuilder()
         .setTitle('Matcherino Winner Add')
+        .setColor('#E68DF2')
         .setDescription(
           '**__This requires 3 invites!__**\n' +
           'Add a **Matcherino Winner!**'
-        );
-
-      const embed4 = new EmbedBuilder()
-        .setDescription(
-          '**Whenever you have enough invites, claim your reward using the buttons below!**\n\n' +
-          'Make sure to follow https://discord.com/channels/1292895164595175444/1293243690185265233'
-        );
+        )
+        .setImage('https://media.discordapp.net/attachments/1351687016433193051/1351997783028142170/IMG_2581.png?ex=67dc698e&is=67db180e&hm=14481cce4458123ee4f63ffd4271dc13a78aafdfc3701b069983851c6b3b8e8c&=&format=webp&quality=lossless&width=1746&height=806');
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -378,26 +412,25 @@ client.on('messageCreate', async (message) => {
       );
 
       await message.channel.send({
-        embeds: [embed1, embed2, embed3, embed4],
+        embeds: [embed1, embed2, embed3],
         components: [row]
       });
     }
   }
 
-  /*******************************************************
-   7B) Handling ,mark
-   *******************************************************/
+  // , commands (like ,mark)
   if (message.content.startsWith(staffPrefix)) {
-    const args = message.content.slice(staffPrefix.length).trim().split(/ +/g);
+    const args = message.content.slice(staffPrefix.length).trim().split(/\s+/);
     const cmd = args.shift().toLowerCase();
 
-    // ,mark <messageId>
+    /*******************************************************
+     ,mark <messageId>
+    ********************************************************/
     if (cmd === 'mark') {
-      // Must have the specific role
+      // Must have LIST_COMMAND_ROLE
       if (!message.member.roles.cache.has(LIST_COMMAND_ROLE)) {
         return message.reply('You do not have permission to use ,mark.');
       }
-
       const messageId = args[0];
       if (!messageId) {
         return message.reply('Usage: ,mark <messageId>');
@@ -409,7 +442,6 @@ client.on('messageCreate', async (message) => {
           return message.reply('Could not find that message in this channel.');
         }
 
-        // Build a single row with a disabled "This account has been sold." button
         const soldButton = new ButtonBuilder()
           .setCustomId('sold_button')
           .setLabel('This account has been sold.')
@@ -421,24 +453,23 @@ client.on('messageCreate', async (message) => {
         await targetMessage.edit({
           components: [soldRow]
         });
-
         message.reply(`Message \`${messageId}\` has been marked as sold.`);
       } catch (err) {
         console.error(err);
-        message.reply('Failed to mark the listing. Check the message ID or my permissions.');
+        message.reply('Failed to mark listing. Check the message ID or permissions.');
       }
     }
   }
 });
 
 /************************************************************
- 8) SLASH COMMAND INTERACTION HANDLER (/list)
+ 9) SLASH COMMAND INTERACTION HANDLER (/list)
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === 'list') {
-    // Must have the specific role
+    // Must have a certain role
     if (!interaction.member.roles.cache.has(LIST_COMMAND_ROLE)) {
       return interaction.reply({
         content: "You don't have the required role to use this command.",
@@ -448,36 +479,31 @@ client.on('interactionCreate', async (interaction) => {
 
     // Gather inputs
     const pingChoice = interaction.options.getString('ping');
-    const text = interaction.options.getString('text');
-    const price = interaction.options.getString('price');
-    const trophies = interaction.options.getString('trophies');
-    const p11 = interaction.options.getString('p11');
-    const tierMax = interaction.options.getString('tier_max');
-    const imageUrl = interaction.options.getString('image');
+    const text       = interaction.options.getString('text');
+    const price      = interaction.options.getString('price');
+    const trophies   = interaction.options.getString('trophies');
+    const p11        = interaction.options.getString('p11');
+    const tierMax    = interaction.options.getString('tier_max');
+    const imageUrl   = interaction.options.getString('image');
 
-    // Optional fields
-    const brawlers     = interaction.options.getString('brawlers') || '';
-    const legendary    = interaction.options.getString('legendary') || '';
-    const mythic       = interaction.options.getString('mythic')    || '';
-    const epic         = interaction.options.getString('epic')      || '';
-    const superRare    = interaction.options.getString('super_rare')|| '';
-    const rare         = interaction.options.getString('rare')      || '';
-    const p9           = interaction.options.getString('p9')        || '';
-    const p10          = interaction.options.getString('p10')       || '';
-    const hypercharges = interaction.options.getString('hypercharges') || '';
-    const image2       = interaction.options.getString('image2')    || '';
+    const brawlers      = interaction.options.getString('brawlers');
+    const legendary     = interaction.options.getString('legendary');
+    const mythic        = interaction.options.getString('mythic');
+    const epic          = interaction.options.getString('epic');
+    const superRare     = interaction.options.getString('super_rare');
+    const rare          = interaction.options.getString('rare');
+    const p9            = interaction.options.getString('p9');
+    const p10           = interaction.options.getString('p10');
+    const hypercharges  = interaction.options.getString('hypercharges');
+    const image2        = interaction.options.getString('image2');
 
-    // Determine non-embed text
+    // Non-embed text
     let nonEmbedText;
-    if (pingChoice === 'everyone') {
-      nonEmbedText = '**||@everyone|| New account added!**';
-    } else if (pingChoice === 'here') {
-      nonEmbedText = '**||@here|| New account added!**';
-    } else {
-      nonEmbedText = '**New account added!**';
-    }
+    if (pingChoice === 'everyone') nonEmbedText = '**||@everyone|| New account added!**';
+    else if (pingChoice === 'here') nonEmbedText = '**||@here|| New account added!**';
+    else nonEmbedText = '**New account added!**';
 
-    // Build the main embed
+    // Main embed
     const mainEmbed = new EmbedBuilder()
       .setTitle('New Account Added! <:winmatcherino:1298703851934711848>')
       .setColor('#E68DF2')
@@ -490,254 +516,129 @@ client.on('interactionCreate', async (interaction) => {
         { name: '<:tiermax:1301899953320497243> Tier Max:', value: tierMax, inline: true }
       );
 
-    // Build buttons (Purchase Account always)
+    // Buttons
     const buttonsRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('purchase_account')
         .setLabel('Purchase Account')
         .setEmoji('<:Shopping_Cart:1351686041559367752>')
-        .setStyle(ButtonStyle.Success)
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('listing_more_info_temp')
+        .setLabel('More Information')
+        .setStyle(ButtonStyle.Secondary)
     );
 
-    // Check if user filled ANY optional field
-    const anyOptionalFilled = (
-      brawlers     !== '' ||
-      legendary    !== '' ||
-      mythic       !== '' ||
-      epic         !== '' ||
-      superRare    !== '' ||
-      rare         !== '' ||
-      p9           !== '' ||
-      p10          !== '' ||
-      hypercharges !== '' ||
-      image2       !== ''
-    );
-
-    // If at least one optional field is filled, add More Information button
-    if (anyOptionalFilled) {
-      buttonsRow.addComponents(
-        new ButtonBuilder()
-          .setCustomId('listing_more_info_temp') // We'll rename after sending
-          .setLabel('More Information')
-          .setStyle(ButtonStyle.Secondary)
-      );
-    }
-
-    // We respond ephemerally so no one sees “X used /list”
     await interaction.reply({ content: 'Listing posted!', ephemeral: true });
 
-    // Then send the actual listing
     const listingMessage = await interaction.channel.send({
       content: nonEmbedText,
       embeds: [mainEmbed],
       components: [buttonsRow]
     });
 
-    // If any optional fields, fix the button customId and store data
-    if (anyOptionalFilled) {
-      // 1) Generate a new customId
-      const newCustomId = `listing_more_info_${listingMessage.id}`;
-
-      // 2) Update the row with the new customId
-      const updatedRows = [];
-      listingMessage.components.forEach(row => {
-        const rowBuilder = ActionRowBuilder.from(row);
-        rowBuilder.components.forEach(component => {
-          if (component.customId === 'listing_more_info_temp') {
-            component.setCustomId(newCustomId);
-          }
-        });
-        updatedRows.push(rowBuilder);
+    // Replace "listing_more_info_temp" with actual ID
+    const newCustomId = `listing_more_info_${listingMessage.id}`;
+    const updatedRows = [];
+    listingMessage.components.forEach(row => {
+      const rowBuilder = ActionRowBuilder.from(row);
+      rowBuilder.components.forEach(comp => {
+        if (comp.customId === 'listing_more_info_temp') {
+          comp.setCustomId(newCustomId);
+        }
       });
+      updatedRows.push(rowBuilder);
+    });
 
-      // Edit the listing with updated button
-      await listingMessage.edit({ components: updatedRows });
+    await listingMessage.edit({ components: updatedRows });
 
-      // 3) Store data in our map
-      listingDataMap.set(listingMessage.id, {
-        rare, superRare, epic, mythic, legendary,
-        brawlers, p9, p10, hypercharges, image2
-      });
-    }
+    // Store in map for "More Information"
+    listingDataMap.set(listingMessage.id, {
+      rare, superRare, epic, mythic, legendary,
+      brawlers, p9, p10, hypercharges, image2
+    });
   }
 });
 
 /************************************************************
- 9) BUTTON INTERACTION HANDLER
+10) BUTTON & MODAL INTERACTION HANDLER
+    - Ticket creation now uses a modal for Trophies, Ranked, etc.
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
 
+  // We handle "ticket_..." buttons by popping up a modal
   const { customId, member, guild, channel } = interaction;
 
+  // HELPER: build a modal question
+  function buildQuestionModal(modalId, title, questions) {
+    // questions = [ { customId, label, style }, ... ]
+    const modal = new ModalBuilder()
+      .setCustomId(modalId)
+      .setTitle(title);
+
+    const rows = questions.map(q => {
+      const txt = new TextInputBuilder()
+        .setCustomId(q.customId)
+        .setLabel(q.label)
+        .setStyle(q.style || TextInputStyle.Short)
+        .setRequired(true);
+      return new ActionRowBuilder().addComponents(txt);
+    });
+    modal.addComponents(...rows);
+    return modal;
+  }
+
   /****************************************************
-   TICKET BUTTONS
+   TICKET BUTTONS: Trophies, Ranked, Bulk Trophies, Mastery, Other
+   We'll show a modal with required questions
   ****************************************************/
-  if (customId.startsWith('ticket_')) {
-    // 1) Check user’s open tickets
-    const existingTickets = guild.channels.cache.filter(ch => {
-      if (ch.type === ChannelType.GuildText && ch.parentId) {
-        const perm = ch.permissionOverwrites.cache.get(member.id);
-        if (!perm) return false;
-        const isTicketCat = Object.values(TICKET_CATEGORIES).includes(ch.parentId);
-        return perm.allow?.has(PermissionsBitField.Flags.ViewChannel) && isTicketCat;
-      }
-      return false;
-    });
+  if (customId === 'ticket_trophies') {
+    // Show modal with 3 questions
+    const modal = buildQuestionModal('modal_ticket_trophies', 'Trophies Ticket', [
+      { customId: 'current_brawler_trophies', label: 'How many trophies does your brawler have?' },
+      { customId: 'desired_brawler_trophies', label: 'What is your desired brawler trophies?' },
+      { customId: 'which_brawler', label: 'Which brawler would you like to be boosted?' },
+    ]);
+    await interaction.showModal(modal);
+  }
 
-    if (existingTickets.size >= MAX_TICKETS_PER_USER) {
-      return interaction.reply({
-        content: `You already have the maximum of ${MAX_TICKETS_PER_USER} open tickets!`,
-        ephemeral: true
-      });
-    }
+  if (customId === 'ticket_ranked') {
+    const modal = buildQuestionModal('modal_ticket_ranked', 'Ranked Ticket', [
+      { customId: 'current_rank', label: 'What rank currently are you?' },
+      { customId: 'desired_rank', label: 'What is your desired rank?' }
+    ]);
+    await interaction.showModal(modal);
+  }
 
-    // 2) Category
-    let targetCat = null;
-    switch(customId) {
-      case 'ticket_trophies': targetCat = TICKET_CATEGORIES.TROPHIES; break;
-      case 'ticket_ranked':   targetCat = TICKET_CATEGORIES.RANKED;   break;
-      case 'ticket_bulk':     targetCat = TICKET_CATEGORIES.BULK;     break;
-      case 'ticket_mastery':  targetCat = TICKET_CATEGORIES.MASTERY;  break;
-      case 'ticket_other':    targetCat = TICKET_CATEGORIES.OTHER;    break;
-    }
+  if (customId === 'ticket_bulk') {
+    const modal = buildQuestionModal('modal_ticket_bulk', 'Bulk Trophies Ticket', [
+      { customId: 'current_total', label: 'How many total trophies do you have?' },
+      { customId: 'desired_total', label: 'What is your desired total trophies?' }
+    ]);
+    await interaction.showModal(modal);
+  }
 
-    // 3) Create the channel
-    const channelName = `ticket-${member.user.username}-${Math.floor(Math.random() * 1000)}`;
-    try {
-      const ticketChannel = await guild.channels.create({
-        name: channelName,
-        type: ChannelType.GuildText,
-        parent: targetCat,
-        permissionOverwrites: [
-          {
-            id: guild.roles.everyone,
-            deny: [PermissionsBitField.Flags.ViewChannel]
-          },
-          {
-            id: member.id,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ReadMessageHistory
-            ]
-          },
-          ...STAFF_ROLES.map(roleId => ({
-            id: roleId,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ReadMessageHistory
-            ]
-          }))
-        ]
-      });
+  if (customId === 'ticket_mastery') {
+    const modal = buildQuestionModal('modal_ticket_mastery', 'Mastery Ticket', [
+      { customId: 'current_mastery_rank', label: 'What is your current mastery rank?' },
+      { customId: 'desired_mastery_rank', label: 'What is your desired mastery rank?' },
+      { customId: 'which_brawler', label: 'Which brawler would you like to be boosted?' }
+    ]);
+    await interaction.showModal(modal);
+  }
 
-      await interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('Your ticket has been created!')
-            .setDescription(`Please head over to <#${ticketChannel.id}>`)
-        ],
-        ephemeral: true
-      });
-
-      // 4) Send welcome message in the ticket
-      const welcomeEmbed = new EmbedBuilder()
-        .setTitle('Welcome')
-        .setDescription('Thanks for opening a ticket!\n\nSupport will be with you shortly, please wait for them to respond.');
-
-      const closeButton = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('close_ticket')
-          .setLabel('Close Ticket')
-          .setEmoji('<:Lock:1349157009244557384>')
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      await ticketChannel.send({
-        content: `<@${member.id}>`,
-        embeds: [welcomeEmbed],
-        components: [closeButton]
-      });
-    } catch (err) {
-      console.error(err);
-      return interaction.reply({
-        content: 'Failed to create ticket channel. Check my permissions.',
-        ephemeral: true
-      });
-    }
+  if (customId === 'ticket_other') {
+    const modal = buildQuestionModal('modal_ticket_other', 'Other Ticket', [
+      { customId: 'reason', label: 'Why are you opening this ticket?' }
+    ]);
+    await interaction.showModal(modal);
   }
 
   /****************************************************
-   CLOSE TICKET BUTTON
-  ****************************************************/
-  if (customId === 'close_ticket') {
-    // Double confirmation
-    const confirmRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('confirm_close_ticket')
-        .setLabel('Confirm')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('cancel_close_ticket')
-        .setLabel('Cancel')
-        .setStyle(ButtonStyle.Danger)
-    );
-
-    await interaction.reply({
-      embeds: [
-        new EmbedBuilder().setDescription('Are you sure you want to close this ticket?')
-      ],
-      components: [confirmRow],
-      ephemeral: true
-    });
-  }
-
-  if (customId === 'confirm_close_ticket') {
-    // The user confirmed
-    try {
-      await channel.permissionOverwrites.set([
-        {
-          id: channel.guild.roles.everyone,
-          deny: [PermissionsBitField.Flags.ViewChannel]
-        },
-        {
-          // Only role '1292933924116500532' remains
-          id: '1292933924116500532',
-          allow: [
-            PermissionsBitField.Flags.ViewChannel,
-            PermissionsBitField.Flags.SendMessages,
-            PermissionsBitField.Flags.ReadMessageHistory
-          ]
-        }
-      ]);
-      await interaction.reply({
-        content: 'This ticket has been closed. Only staff can view it now.',
-        ephemeral: true
-      });
-    } catch (err) {
-      console.error(err);
-      interaction.reply({
-        content: 'Failed to close the ticket. Check permissions.',
-        ephemeral: true
-      });
-    }
-  }
-
-  if (customId === 'cancel_close_ticket') {
-    // The user canceled
-    interaction.reply({
-      content: 'Ticket close canceled.',
-      ephemeral: true
-    });
-  }
-
-  /****************************************************
-   /list -> "Purchase Account" & "More Information" Buttons
+   /list -> Purchase Account
   ****************************************************/
   if (customId === 'purchase_account') {
-    // Create a ticket in the purchase account category
     try {
       const channelName = `purchase-${interaction.user.username}-${Math.floor(Math.random() * 1000)}`;
       const purchaseChannel = await guild.channels.create({
@@ -768,6 +669,17 @@ client.on('interactionCreate', async (interaction) => {
         ]
       });
 
+      // We'll also send an embed in that channel to greet
+      const welcomeEmbed = new EmbedBuilder()
+        // No title
+        .setDescription(
+          'Welcome, thanks for opening a ticket!\n' +
+          '**Support will be with you shortly, please wait for them to respond.**'
+        );
+
+      await purchaseChannel.send({ embeds: [welcomeEmbed] });
+      ticketOpeners.set(purchaseChannel.id, interaction.user.id);
+
       await interaction.reply({
         content: `Ticket created: <#${purchaseChannel.id}>`,
         ephemeral: true
@@ -781,15 +693,14 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 
+  /****************************************************
+   /list -> "More Information"
+  ****************************************************/
   if (customId.startsWith('listing_more_info_')) {
-    // Show optional info in a new embed
     const listingId = customId.replace('listing_more_info_', '');
     const data = listingDataMap.get(listingId);
     if (!data) {
-      return interaction.reply({
-        content: 'No additional information found.',
-        ephemeral: true
-      });
+      return interaction.reply({ content: 'No additional information found.', ephemeral: true });
     }
 
     const {
@@ -797,24 +708,16 @@ client.on('interactionCreate', async (interaction) => {
       brawlers, p9, p10, hypercharges, image2
     } = data;
 
-    // Build lines conditionally
-    let descLines = [];
-    if (rare)        descLines.push(`**<:rare:1351963849322004521> Rare Skins:**\n${rare}`);
-    if (superRare)   descLines.push(`**<:super_rare:1351963921967218839> Super Rare Skins:**\n${superRare}`);
-    if (epic)        descLines.push(`**<:epic:1351963993442353365> Epic Skins:**\n${epic}`);
-    if (mythic)      descLines.push(`**<:mythic:1351964047179907235> Mythic Skins:**\n${mythic}`);
-    if (legendary)   descLines.push(`**<:legendary:1351964089454428261> Legendary Skins:**\n${legendary}`);
-    if (brawlers)    descLines.push(`**<:brawler:1351965712582705152> Brawlers:**\n${brawlers}`);
-    if (p9)          descLines.push(`**<:power_9:1351963484207841331> Power 9's:**\n${p9}`);
-    if (p10)         descLines.push(`**<:p10:1351981538740404355> Power 10's:**\n${p10}`);
-    if (hypercharges)descLines.push(`**<:hypercharge:1351963655234650143> Hypercharges:**\n${hypercharges}`);
-
-    if (descLines.length === 0) {
-      return interaction.reply({
-        content: 'No additional information is available.',
-        ephemeral: true
-      });
-    }
+    const descLines = [];
+    descLines.push(`**<:rare:1351963849322004521> Rare Skins:**\n${rare}`);
+    descLines.push(`**<:super_rare:1351963921967218839> Super Rare Skins:**\n${superRare}`);
+    descLines.push(`**<:epic:1351963993442353365> Epic Skins:**\n${epic}`);
+    descLines.push(`**<:mythic:1351964047179907235> Mythic Skins:**\n${mythic}`);
+    descLines.push(`**<:legendary:1351964089454428261> Legendary Skins:**\n${legendary}`);
+    descLines.push(`**<:brawler:1351965712582705152> Brawlers:**\n${brawlers}`);
+    descLines.push(`**<:power_9:1351963484207841331> Power 9's:**\n${p9}`);
+    descLines.push(`**<:p10:1351981538740404355> Power 10's:**\n${p10}`);
+    descLines.push(`**<:hypercharge:1351963655234650143> Hypercharges:**\n${hypercharges}`);
 
     const infoEmbed = new EmbedBuilder()
       .setColor('#E68DF2')
@@ -824,18 +727,17 @@ client.on('interactionCreate', async (interaction) => {
       infoEmbed.setImage(image2);
     }
 
-    // We'll send it publicly so everyone can see
     await interaction.reply({ embeds: [infoEmbed], ephemeral: false });
   }
 
   /****************************************************
-   ?adds -> Buttons: Swap, Add 115k, Add Matcherino Winner
+   ?adds -> Swap, Add 115k, Add Matcherino Winner
   ****************************************************/
   if (customId === 'btn_swap_matcherino') {
-    // Create a ticket under MATCHERINO_SWAP_CATEGORY
+    // Create a ticket in MATCHERINO_SWAP_CATEGORY
     const channelName = `swap-${interaction.user.username}-${Math.floor(Math.random() * 1000)}`;
     try {
-      const swapChannel = await guild.channels.create({
+      const newChan = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
         parent: MATCHERINO_SWAP_CATEGORY,
@@ -852,8 +754,8 @@ client.on('interactionCreate', async (interaction) => {
               PermissionsBitField.Flags.ReadMessageHistory
             ]
           },
-          ...STAFF_ROLES.map(roleId => ({
-            id: roleId,
+          ...STAFF_ROLES.map(rid => ({
+            id: rid,
             allow: [
               PermissionsBitField.Flags.ViewChannel,
               PermissionsBitField.Flags.SendMessages,
@@ -863,38 +765,50 @@ client.on('interactionCreate', async (interaction) => {
         ]
       });
 
+      // Also send the "welcome" embed
+      const welcomeEmbed = new EmbedBuilder()
+        .setDescription(
+          'Welcome, thanks for opening a ticket!\n' +
+          '**Support will be with you shortly, please wait for them to respond.**'
+        );
+      await newChan.send({ embeds: [welcomeEmbed] });
+      ticketOpeners.set(newChan.id, interaction.user.id);
+
       await interaction.reply({
-        content: `Matcherino swap ticket created: <#${swapChannel.id}>`,
+        content: `Matcherino swap ticket created: <#${newChan.id}>`,
         ephemeral: true
       });
     } catch (err) {
       console.error(err);
-      interaction.reply({
-        content: 'Failed to create swap ticket channel.',
-        ephemeral: true
-      });
+      interaction.reply({ content: 'Failed to create swap ticket channel.', ephemeral: true });
     }
   }
 
   if (customId === 'btn_add_115k') {
-    let roleToRemove = null;
-    if (member.roles.cache.has(ADD_115K_ROLES[0])) {
-      roleToRemove = ADD_115K_ROLES[0];
-    } else if (member.roles.cache.has(ADD_115K_ROLES[1])) {
-      roleToRemove = ADD_115K_ROLES[1];
+    // If user has role[0], remove it. Else if user has role[1], remove it.
+    // If the user has BOTH, remove whichever. The user said:
+    // "If it is user has role1 and 2 => remove both roles" wasn't specified for 115k, so let's do OR.
+    // We'll interpret your "only remove the one that matches" approach for single-role conditions.
+    let removedAny = false;
+    for (const r of ADD_115K_ROLES) {
+      if (member.roles.cache.has(r)) {
+        await member.roles.remove(r).catch(() => {});
+        removedAny = true;
+        break; // remove only the first that matches
+      }
     }
 
-    if (!roleToRemove) {
+    if (!removedAny) {
+      // user doesn't have any of the required roles
       return interaction.reply({
         embeds: [
-          new EmbedBuilder()
-            .setDescription('<:cross:1351689463453061130> - **Insufficient Invites**, please come back when you have enough invites!')
+          new EmbedBuilder().setDescription('Insufficient Invites, please come back when you have enough!')
         ],
         ephemeral: true
       });
     }
 
-    // Show a modal
+    // Show modal for supercell ID
     const modal = new ModalBuilder()
       .setCustomId('modal_add_115k')
       .setTitle('Supercell ID');
@@ -912,17 +826,26 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   if (customId === 'btn_add_matcherino_winner') {
+    // If user has roles [ROLE_1A & ROLE_1B], remove both
+    // If user has roles [ROLE_2A & ROLE_2B], remove both
+    // If user doesn't match either pair, insufficient
     let haveFirstPair = hasAllRoles(member, [MATCHERINO_WINNER_ROLE_1A, MATCHERINO_WINNER_ROLE_1B]);
     let haveSecondPair = hasAllRoles(member, [MATCHERINO_WINNER_ROLE_2A, MATCHERINO_WINNER_ROLE_2B]);
 
     if (!haveFirstPair && !haveSecondPair) {
       return interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setDescription('<:cross:1351689463453061130> - **Insufficient Invites**, please come back when you have enough invites!')
-        ],
+        embeds: [new EmbedBuilder().setDescription('Insufficient Invites, please come back when you have enough!')],
         ephemeral: true
       });
+    }
+
+    // Remove the roles for the pair they have
+    if (haveFirstPair) {
+      await member.roles.remove(MATCHERINO_WINNER_ROLE_1A).catch(() => {});
+      await member.roles.remove(MATCHERINO_WINNER_ROLE_1B).catch(() => {});
+    } else {
+      await member.roles.remove(MATCHERINO_WINNER_ROLE_2A).catch(() => {});
+      await member.roles.remove(MATCHERINO_WINNER_ROLE_2B).catch(() => {});
     }
 
     // Show modal
@@ -944,51 +867,193 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 /************************************************************
-10) MODAL SUBMISSIONS
+11) MODAL SUBMISSIONS (Ticket forms, Add 115k, Add Matcherino)
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isModalSubmit()) return;
 
   const { customId } = interaction;
 
-  if (customId === 'modal_add_115k') {
-    const supercellId = interaction.fields.getTextInputValue('supercell_id_input');
+  /****************************************************
+   TICKET MODALS
+  ****************************************************/
+  // After user answers, create the channel, post 2 embeds:
+  // 1) No title, "Welcome, thanks for opening a ticket! **Support**..."
+  // 2) No title with their Q&A
+  async function createTicketChannel(interaction, categoryId, answers) {
+    const { guild, user } = interaction;
+    // Check user’s open ticket count
+    const openTickets = guild.channels.cache.filter(ch => {
+      if (ch.type === ChannelType.GuildText && ch.parentId) {
+        const perm = ch.permissionOverwrites.cache.get(user.id);
+        if (!perm) return false;
+        const isTicketCat = Object.values(TICKET_CATEGORIES).includes(ch.parentId)
+          || ch.parentId === MATCHERINO_SWAP_CATEGORY
+          || ch.parentId === PURCHASE_ACCOUNT_CATEGORY; 
+        return perm.allow?.has(PermissionsBitField.Flags.ViewChannel) && isTicketCat;
+      }
+      return false;
+    });
 
-    let roleToRemove = null;
-    if (interaction.member.roles.cache.has(ADD_115K_ROLES[0])) {
-      roleToRemove = ADD_115K_ROLES[0];
-    } else if (interaction.member.roles.cache.has(ADD_115K_ROLES[1])) {
-      roleToRemove = ADD_115K_ROLES[1];
-    }
-
-    if (!roleToRemove) {
+    if (openTickets.size >= MAX_TICKETS_PER_USER) {
       return interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setDescription('<:cross:1351689463453061130> - **Insufficient Invites**')
-        ],
+        content: `You already have the maximum of ${MAX_TICKETS_PER_USER} open tickets!`,
         ephemeral: true
       });
     }
 
-    // Remove the role
-    await interaction.member.roles.remove(roleToRemove).catch(console.error);
+    // Create the channel
+    const channelName = `ticket-${user.username}-${Math.floor(Math.random() * 1000)}`;
+    try {
+      const newChan = await guild.channels.create({
+        name: channelName,
+        type: ChannelType.GuildText,
+        parent: categoryId,
+        permissionOverwrites: [
+          {
+            id: guild.roles.everyone,
+            deny: [PermissionsBitField.Flags.ViewChannel]
+          },
+          {
+            id: user.id,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory
+            ]
+          },
+          ...STAFF_ROLES.map(rid => ({
+            id: rid,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory
+            ]
+          }))
+        ]
+      });
 
-    // Post in the target channel
-    const targetChannel = interaction.guild.channels.cache.get(ADD_115K_MSG_CHANNEL);
-    if (!targetChannel) {
+      // (1) "Welcome" embed
+      const welcomeEmbed = new EmbedBuilder()
+        .setDescription(
+          'Welcome, thanks for opening a ticket!\n' +
+          '**Support will be with you shortly, please wait for them to respond.**'
+        );
+
+      await newChan.send({ embeds: [welcomeEmbed] });
+
+      // (2) "Answers" embed
+      let desc = '';
+      for (const [q, ans] of answers) {
+        desc += `**${q}:**\n\`${ans}\`\n\n`;
+      }
+      const answersEmbed = new EmbedBuilder()
+        .setDescription(desc.trim());
+
+      await newChan.send({ embeds: [answersEmbed] });
+
+      // store opener
+      ticketOpeners.set(newChan.id, user.id);
+
+      await interaction.reply({
+        content: `Ticket created: <#${newChan.id}>`,
+        ephemeral: true
+      });
+    } catch (err) {
+      console.error(err);
+      interaction.reply({
+        content: 'Failed to create ticket channel. Check permissions.',
+        ephemeral: true
+      });
+    }
+  }
+
+  // Trophies
+  if (customId === 'modal_ticket_trophies') {
+    const current = interaction.fields.getTextInputValue('current_brawler_trophies');
+    const desired = interaction.fields.getTextInputValue('desired_brawler_trophies');
+    const whichBrawler = interaction.fields.getTextInputValue('which_brawler');
+
+    const answers = [
+      ['How many trophies does your brawler have?', current],
+      ['What is your desired brawler trophies?', desired],
+      ['Which brawler would you like to be boosted?', whichBrawler]
+    ];
+    await createTicketChannel(interaction, TICKET_CATEGORIES.TROPHIES, answers);
+  }
+
+  // Ranked
+  if (customId === 'modal_ticket_ranked') {
+    const currentRank = interaction.fields.getTextInputValue('current_rank');
+    const desiredRank = interaction.fields.getTextInputValue('desired_rank');
+
+    const answers = [
+      ['What rank currently are you?', currentRank],
+      ['What is your desired rank?', desiredRank]
+    ];
+    await createTicketChannel(interaction, TICKET_CATEGORIES.RANKED, answers);
+  }
+
+  // Bulk trophies
+  if (customId === 'modal_ticket_bulk') {
+    const currentTotal = interaction.fields.getTextInputValue('current_total');
+    const desiredTotal = interaction.fields.getTextInputValue('desired_total');
+
+    const answers = [
+      ['How many total trophies do you have?', currentTotal],
+      ['What is your desired total trophies?', desiredTotal]
+    ];
+    await createTicketChannel(interaction, TICKET_CATEGORIES.BULK, answers);
+  }
+
+  // Mastery
+  if (customId === 'modal_ticket_mastery') {
+    const currentMastery = interaction.fields.getTextInputValue('current_mastery_rank');
+    const desiredMastery = interaction.fields.getTextInputValue('desired_mastery_rank');
+    const whichBrawler = interaction.fields.getTextInputValue('which_brawler');
+
+    const answers = [
+      ['What is your current mastery rank?', currentMastery],
+      ['What is your desired mastery rank?', desiredMastery],
+      ['Which brawler would you like to be boosted?', whichBrawler]
+    ];
+    await createTicketChannel(interaction, TICKET_CATEGORIES.MASTERY, answers);
+  }
+
+  // Other
+  if (customId === 'modal_ticket_other') {
+    const reason = interaction.fields.getTextInputValue('reason');
+    const answers = [
+      ['Why are you opening this ticket?', reason]
+    ];
+    await createTicketChannel(interaction, TICKET_CATEGORIES.OTHER, answers);
+  }
+
+  /****************************************************
+   Add 115k & Add Matcherino Winner modals
+  ****************************************************/
+  if (customId === 'modal_add_115k') {
+    const supercellId = interaction.fields.getTextInputValue('supercell_id_input');
+
+    // After they successfully fill it, post in ADD_115K_MSG_CHANNEL
+    const channel = interaction.guild.channels.cache.get(ADD_115K_MSG_CHANNEL);
+    if (!channel) {
       return interaction.reply({
         content: 'Error: cannot find the target channel to post the add.',
         ephemeral: true
       });
     }
 
-    await targetChannel.send({
+    await channel.send({
       content: `**New 115k Add**\nUser: <@${interaction.user.id}>\n\nSupercell ID: \`${supercellId}\``
     });
 
+    // Send success embed ephemeral
+    const successEmbed = new EmbedBuilder()
+      .setDescription('**Successfully added! ✅**\nYou will be added within a day.');
+
     await interaction.reply({
-      content: 'Successfully added 115k. Your role has been removed and the info posted!',
+      embeds: [successEmbed],
       ephemeral: true
     });
   }
@@ -996,50 +1061,205 @@ client.on('interactionCreate', async (interaction) => {
   if (customId === 'modal_matcherino_winner') {
     const supercellId = interaction.fields.getTextInputValue('supercell_id_input');
 
-    let haveFirstPair = hasAllRoles(interaction.member, [MATCHERINO_WINNER_ROLE_1A, MATCHERINO_WINNER_ROLE_1B]);
-    let haveSecondPair = hasAllRoles(interaction.member, [MATCHERINO_WINNER_ROLE_2A, MATCHERINO_WINNER_ROLE_2B]);
-
-    if (!haveFirstPair && !haveSecondPair) {
-      return interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setDescription('<:cross:1351689463453061130> - **Insufficient Invites**')
-        ],
-        ephemeral: true
-      });
-    }
-
-    // Remove whichever pair the member has
-    if (haveFirstPair) {
-      await interaction.member.roles.remove(MATCHERINO_WINNER_ROLE_1A).catch(console.error);
-      await interaction.member.roles.remove(MATCHERINO_WINNER_ROLE_1B).catch(console.error);
-    } else {
-      await interaction.member.roles.remove(MATCHERINO_WINNER_ROLE_2A).catch(console.error);
-      await interaction.member.roles.remove(MATCHERINO_WINNER_ROLE_2B).catch(console.error);
-    }
-
-    const targetChannel = interaction.guild.channels.cache.get(ADD_MATCHERINO_MSG_CHANNEL);
-    if (!targetChannel) {
+    const channel = interaction.guild.channels.cache.get(ADD_MATCHERINO_MSG_CHANNEL);
+    if (!channel) {
       return interaction.reply({
         content: 'Error: cannot find the target channel to post the add.',
         ephemeral: true
       });
     }
 
-    await targetChannel.send({
+    await channel.send({
       content: `**New Matcherino Winner Add**\nUser: <@${interaction.user.id}>\n\nSupercell ID: \`${supercellId}\``
     });
 
+    const successEmbed = new EmbedBuilder()
+      .setDescription('**Successfully added! ✅**\nYou will be added within a day.');
+
     await interaction.reply({
-      content: 'Successfully added Matcherino Winner! Your roles have been removed and the info posted!',
+      embeds: [successEmbed],
       ephemeral: true
     });
   }
 });
 
 /************************************************************
-11) LOG IN THE BOT
+12) TICKET CLOSE / REOPEN / DELETE
+    - We had a double confirmation for "Close Ticket."
+    - After confirm, we remove user perms and post a "Ticket Closed"
+      embed with "Delete" (red) and "Re-Open" (green).
 ************************************************************/
-client.login(BOT_TOKEN).catch((err) => {
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isButton()) return;
+
+  const { customId, channel, guild, user } = interaction;
+
+  /****************************************************
+   close_ticket => ephemeral confirmation
+  ****************************************************/
+  if (customId === 'close_ticket') {
+    const confirmRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('confirm_close_ticket')
+        .setLabel('Confirm')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('cancel_close_ticket')
+        .setLabel('Cancel')
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    await interaction.reply({
+      embeds: [
+        new EmbedBuilder().setDescription('Are you sure you want to close this ticket?')
+      ],
+      components: [confirmRow],
+      ephemeral: true
+    });
+  }
+
+  /****************************************************
+   confirm_close_ticket => remove perms, post "Ticket Closed" embed
+  ****************************************************/
+  if (customId === 'confirm_close_ticket') {
+    try {
+      // Remove user + other staff roles except maybe the one role? 
+      // Original spec: "only role 1292933924116500532 can see it." 
+      await channel.permissionOverwrites.set([
+        {
+          id: channel.guild.roles.everyone,
+          deny: [PermissionsBitField.Flags.ViewChannel]
+        },
+        {
+          id: '1292933924116500532', // This staff role remains
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory
+          ]
+        }
+      ]);
+
+      // Post "Ticket Closed" embed with mention
+      const closeEmbed = new EmbedBuilder()
+        .setTitle('Ticket Closed')
+        .setDescription(`This ticket has been closed by <@${user.id}>.`);
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('delete_ticket')
+          .setLabel('Delete')
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId('reopen_ticket')
+          .setLabel('Re-Open')
+          .setStyle(ButtonStyle.Success)
+      );
+
+      await channel.send({ embeds: [closeEmbed], components: [row] });
+
+      await interaction.reply({
+        content: 'Ticket closed. Only staff can see it now.',
+        ephemeral: true
+      });
+    } catch (err) {
+      console.error(err);
+      interaction.reply({
+        content: 'Failed to close the ticket. Check permissions.',
+        ephemeral: true
+      });
+    }
+  }
+
+  if (customId === 'cancel_close_ticket') {
+    await interaction.reply({
+      content: 'Ticket close canceled.',
+      ephemeral: true
+    });
+  }
+
+  /****************************************************
+   delete_ticket => delete the channel entirely
+  ****************************************************/
+  if (customId === 'delete_ticket') {
+    // Must ensure user has staff perms or the one staff role
+    if (!hasAnyRole(interaction.member, STAFF_ROLES)) {
+      return interaction.reply({
+        content: 'Only staff can delete tickets.',
+        ephemeral: true
+      });
+    }
+    await interaction.reply({ content: 'Deleting channel...', ephemeral: true });
+    await channel.delete().catch(console.error);
+  }
+
+  /****************************************************
+   reopen_ticket => restore perms to original user & staff
+  ****************************************************/
+  if (customId === 'reopen_ticket') {
+    // Also staff-only or the same user who closed?
+    // We'll do staff can re-open or the user who closed. We'll just do staff for safety.
+    if (!hasAnyRole(interaction.member, STAFF_ROLES)) {
+      return interaction.reply({
+        content: 'Only staff can re-open tickets.',
+        ephemeral: true
+      });
+    }
+
+    // Retrieve original opener from map
+    const openerId = ticketOpeners.get(channel.id);
+    if (!openerId) {
+      return interaction.reply({
+        content: 'Could not find the user who opened this ticket.',
+        ephemeral: true
+      });
+    }
+
+    try {
+      await channel.permissionOverwrites.set([
+        {
+          id: guild.roles.everyone,
+          deny: [PermissionsBitField.Flags.ViewChannel]
+        },
+        {
+          id: openerId,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory
+          ]
+        },
+        ...STAFF_ROLES.map(rid => ({
+          id: rid,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory
+          ]
+        }))
+      ]);
+
+      await interaction.reply({
+        content: 'Ticket re-opened!',
+        ephemeral: true
+      });
+
+      const reopenEmbed = new EmbedBuilder()
+        .setDescription('Ticket has been re-opened. Original user and staff can now see it again.');
+      await channel.send({ embeds: [reopenEmbed] });
+    } catch (err) {
+      console.error(err);
+      interaction.reply({
+        content: 'Failed to re-open ticket.',
+        ephemeral: true
+      });
+    }
+  }
+});
+
+/************************************************************
+13) LOGIN THE BOT
+************************************************************/
+client.login(BOT_TOKEN).catch(err => {
   console.error('[Login Error]', err);
 });
