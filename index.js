@@ -1,17 +1,17 @@
 /********************************************************************
  * Brawl Stars Boosting Discord Bot
  * Using Discord.js v14
- * Incorporates updated /list command and ,mark command
+ * Removes 'dotenv' in favor of direct environment variables
  ********************************************************************/
 
-const { 
-  Client, 
-  GatewayIntentBits, 
-  Partials, 
-  ChannelType, 
-  EmbedBuilder, 
-  ButtonBuilder, 
-  ButtonStyle, 
+const {
+  Client,
+  GatewayIntentBits,
+  Partials,
+  ChannelType,
+  EmbedBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   SlashCommandBuilder,
   ActionRowBuilder,
   ModalBuilder,
@@ -19,14 +19,13 @@ const {
   TextInputStyle,
   PermissionsBitField
 } = require('discord.js');
-require('dotenv').config();
 
 /************************************************************
  1) BOT SETUP
 ************************************************************/
 const client = new Client({
   intents: [
-    GatewayIntentBits.Guilds, 
+    GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
@@ -35,8 +34,8 @@ const client = new Client({
   partials: [Partials.Channel]
 });
 
-// Replace these with your own IDs / environment variable
-const BOT_TOKEN = process.env.TOKEN; // Put your bot token in Railway env vars
+// Use the environment variable from Railway (or your hosting)
+const BOT_TOKEN = process.env.TOKEN; 
 const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_BOT_CLIENT_ID_HERE';
 
 /************************************************************
@@ -99,24 +98,23 @@ const MATCHERINO_WINNER_ROLE_2B = '1351281117445099631';
 /************************************************************
  3) UTILITY FUNCTIONS
 ************************************************************/
-function hasAnyRole(member, roleIds=[]) {
+function hasAnyRole(member, roleIds = []) {
   return roleIds.some(roleId => member.roles.cache.has(roleId));
 }
 
-function hasAllRoles(member, roleIds=[]) {
+function hasAllRoles(member, roleIds = []) {
   return roleIds.every(roleId => member.roles.cache.has(roleId));
 }
 
 /************************************************************
- 4) TRACK LISTINGS
-    We'll store listing data so we can show "More Information."
+ 4) TRACK LISTINGS FOR "MORE INFORMATION"
 ************************************************************/
 const listingDataMap = new Map(); 
 // Key: messageId of the listing
-// Value: object with the optional fields, e.g. { rare:'some text', superRare:'some text', ...}
+// Value: object with optional fields from /list command
 
 /************************************************************
- 5) BUILD & REGISTER SLASH COMMAND (/list)
+ 5) BUILD SLASH COMMAND (/list)
 ************************************************************/
 const listCommand = new SlashCommandBuilder()
   .setName('list')
@@ -164,7 +162,7 @@ const listCommand = new SlashCommandBuilder()
       .setRequired(true)
   )
 
-// New optional fields
+// Optional fields
   .addStringOption(option =>
     option.setName('brawlers')
       .setDescription('Brawlers info (optional)')
@@ -222,8 +220,7 @@ const listCommand = new SlashCommandBuilder()
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
 
-  // Register slash command globally (may take up to 1h to appear).
-  // For immediate tests, register as a guild command in a specific server if you prefer.
+  // Register slash command globally
   try {
     await client.application.commands.create(listCommand);
     console.log('[Slash Command] /list registered successfully.');
@@ -234,25 +231,29 @@ client.once('ready', async () => {
 
 /************************************************************
  7) MESSAGE HANDLER FOR PREFIX COMMANDS 
-    (ticketpanel, move, adds, and the new ,mark command)
+    (ticketpanel, move, adds, ,mark)
 ************************************************************/
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   if (!message.guild) return;
 
+  // ? prefix for some commands
   const prefix = '?';
-  const staffPrefix = ','; // For the new ,mark command
+  // , prefix for the ,mark command
+  const staffPrefix = ',';
 
-  // Check if message starts with ?
+  /*******************************************************
+   7A) Handling ?commands
+   *******************************************************/
   if (message.content.startsWith(prefix)) {
     const args = message.content.slice(prefix.length).trim().split(/ +/g);
     const cmd = args.shift().toLowerCase();
 
     /*******************************************************
-     ?ticketpanel command
+     ?ticketpanel
      *******************************************************/
     if (cmd === 'ticketpanel') {
-      // Only allow if user ID is in TICKET_PANEL_ALLOWED_USERS
+      // Only the two allowed user IDs
       if (!TICKET_PANEL_ALLOWED_USERS.includes(message.author.id)) {
         return message.reply("You don't have permission to use this command!");
       }
@@ -262,23 +263,23 @@ client.on('messageCreate', async (message) => {
         .setTitle('Order a Boost')
         .setDescription('Looking to Purchase a Boost? Please select what kind of boost you want below.');
 
-      // Build the 5 buttons
+      // Build 5 buttons
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('ticket_trophies')
           .setLabel('Trophies')
           .setEmoji('<:trophy:1301901071471345664>')
-          .setStyle(ButtonStyle.Danger), // red
+          .setStyle(ButtonStyle.Danger), 
         new ButtonBuilder()
           .setCustomId('ticket_ranked')
           .setLabel('Ranked')
           .setEmoji('<:Masters:1293283897618075728>')
-          .setStyle(ButtonStyle.Primary), // blue
+          .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('ticket_bulk')
           .setLabel('Bulk Trophies')
           .setEmoji('<:gold_trophy:1351658932434768025>')
-          .setStyle(ButtonStyle.Primary) // blue
+          .setStyle(ButtonStyle.Primary)
       );
 
       const row2 = new ActionRowBuilder().addComponents(
@@ -286,12 +287,12 @@ client.on('messageCreate', async (message) => {
           .setCustomId('ticket_mastery')
           .setLabel('Mastery')
           .setEmoji('<:mastery:1351659726991134832>')
-          .setStyle(ButtonStyle.Success), // green
+          .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
           .setCustomId('ticket_other')
           .setLabel('Other')
           .setEmoji('<:winmatcherino:1298703851934711848>')
-          .setStyle(ButtonStyle.Secondary) // grey
+          .setStyle(ButtonStyle.Secondary)
       );
 
       await message.channel.send({ embeds: [embed], components: [row, row2] });
@@ -299,21 +300,20 @@ client.on('messageCreate', async (message) => {
     }
 
     /*******************************************************
-     ?move command
+     ?move
      *******************************************************/
     if (cmd === 'move') {
-      // Check if user has staff roles
+      // Must have staff role
       if (!hasAnyRole(message.member, STAFF_ROLES)) {
         return message.reply("You don't have permission to use this command!");
       }
 
       const sub = args[0];
       if (!sub || !MOVE_CATEGORIES[sub]) {
-        return message.reply(`Invalid syntax. Usage: ?move [paid|add|sell|finished]`);
+        return message.reply('Invalid syntax. Usage: ?move [paid|add|sell|finished]');
       }
       const targetCategoryId = MOVE_CATEGORIES[sub];
 
-      // move the current channel
       try {
         await message.channel.setParent(targetCategoryId, { lockPermissions: false });
         await message.reply(`Channel moved to category: ${sub}`);
@@ -324,11 +324,11 @@ client.on('messageCreate', async (message) => {
     }
 
     /*******************************************************
-     ?adds command
+     ?adds
      *******************************************************/
     if (cmd === 'adds') {
-      // No role restriction mentioned, so we allow all. 
-      // If needed, add "if(!hasAnyRole(message.member, STAFF_ROLES)) return ..."
+      // No role restriction mentioned, so we allow all.
+      // If needed, add a check for staff here.
 
       const embed1 = new EmbedBuilder()
         .setTitle('Matcherino Swap')
@@ -364,17 +364,17 @@ client.on('messageCreate', async (message) => {
           .setCustomId('btn_swap_matcherino')
           .setLabel('Swap Matcherino')
           .setEmoji('<:winmatcherino:1298703851934711848>')
-          .setStyle(ButtonStyle.Danger), // red
+          .setStyle(ButtonStyle.Danger),
         new ButtonBuilder()
           .setCustomId('btn_add_115k')
           .setLabel('Add 115k')
           .setEmoji('<:gold_trophy:1351658932434768025>')
-          .setStyle(ButtonStyle.Primary), // blue
+          .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
           .setCustomId('btn_add_matcherino_winner')
           .setLabel('Add Matcherino Winner')
           .setEmoji('<:pro:1351687685328208003>')
-          .setStyle(ButtonStyle.Success) // green
+          .setStyle(ButtonStyle.Success)
       );
 
       await message.channel.send({
@@ -384,20 +384,20 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  // Check if message starts with , (the staffPrefix) for ,mark
+  /*******************************************************
+   7B) Handling ,mark
+   *******************************************************/
   if (message.content.startsWith(staffPrefix)) {
     const args = message.content.slice(staffPrefix.length).trim().split(/ +/g);
     const cmd = args.shift().toLowerCase();
 
-    /*******************************************************
-     ,mark <messageId> command
-     Removes buttons & marks as sold
-     *******************************************************/
+    // ,mark <messageId>
     if (cmd === 'mark') {
-      // Must have role 1292933200389083196
+      // Must have the specific role
       if (!message.member.roles.cache.has(LIST_COMMAND_ROLE)) {
         return message.reply('You do not have permission to use ,mark.');
       }
+
       const messageId = args[0];
       if (!messageId) {
         return message.reply('Usage: ,mark <messageId>');
@@ -415,6 +415,7 @@ client.on('messageCreate', async (message) => {
           .setLabel('This account has been sold.')
           .setStyle(ButtonStyle.Danger)
           .setDisabled(true);
+
         const soldRow = new ActionRowBuilder().addComponents(soldButton);
 
         await targetMessage.edit({
@@ -437,7 +438,7 @@ client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === 'list') {
-    // Check if user has the correct role
+    // Must have the specific role
     if (!interaction.member.roles.cache.has(LIST_COMMAND_ROLE)) {
       return interaction.reply({
         content: "You don't have the required role to use this command.",
@@ -446,7 +447,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // Gather inputs
-    const pingChoice = interaction.options.getString('ping'); 
+    const pingChoice = interaction.options.getString('ping');
     const text = interaction.options.getString('text');
     const price = interaction.options.getString('price');
     const trophies = interaction.options.getString('trophies');
@@ -455,19 +456,19 @@ client.on('interactionCreate', async (interaction) => {
     const imageUrl = interaction.options.getString('image');
 
     // Optional fields
-    const brawlers      = interaction.options.getString('brawlers') || '';
-    const legendary     = interaction.options.getString('legendary') || '';
-    const mythic        = interaction.options.getString('mythic') || '';
-    const epic          = interaction.options.getString('epic') || '';
-    const superRare     = interaction.options.getString('super_rare') || '';
-    const rare          = interaction.options.getString('rare') || '';
-    const p9            = interaction.options.getString('p9') || '';
-    const p10           = interaction.options.getString('p10') || '';
-    const hypercharges  = interaction.options.getString('hypercharges') || '';
-    const image2        = interaction.options.getString('image2') || '';
+    const brawlers     = interaction.options.getString('brawlers') || '';
+    const legendary    = interaction.options.getString('legendary') || '';
+    const mythic       = interaction.options.getString('mythic')    || '';
+    const epic         = interaction.options.getString('epic')      || '';
+    const superRare    = interaction.options.getString('super_rare')|| '';
+    const rare         = interaction.options.getString('rare')      || '';
+    const p9           = interaction.options.getString('p9')        || '';
+    const p10          = interaction.options.getString('p10')       || '';
+    const hypercharges = interaction.options.getString('hypercharges') || '';
+    const image2       = interaction.options.getString('image2')    || '';
 
-    // Determine non-embed text based on pingChoice
-    let nonEmbedText = '';
+    // Determine non-embed text
+    let nonEmbedText;
     if (pingChoice === 'everyone') {
       nonEmbedText = '**||@everyone|| New account added!**';
     } else if (pingChoice === 'here') {
@@ -476,7 +477,7 @@ client.on('interactionCreate', async (interaction) => {
       nonEmbedText = '**New account added!**';
     }
 
-    // Build main embed (color #E68DF2)
+    // Build the main embed
     const mainEmbed = new EmbedBuilder()
       .setTitle('New Account Added! <:winmatcherino:1298703851934711848>')
       .setColor('#E68DF2')
@@ -489,8 +490,7 @@ client.on('interactionCreate', async (interaction) => {
         { name: '<:tiermax:1301899953320497243> Tier Max:', value: tierMax, inline: true }
       );
 
-    // We always add the "Purchase Account" button
-    // We'll only add "More Information" if at least one optional field was filled
+    // Build buttons (Purchase Account always)
     const buttonsRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('purchase_account')
@@ -499,25 +499,22 @@ client.on('interactionCreate', async (interaction) => {
         .setStyle(ButtonStyle.Success)
     );
 
-    // Check if user filled ANY optional field 
+    // Check if user filled ANY optional field
     const anyOptionalFilled = (
-      brawlers      !== '' ||
-      legendary     !== '' ||
-      mythic        !== '' ||
-      epic          !== '' ||
-      superRare     !== '' ||
-      rare          !== '' ||
-      p9            !== '' ||
-      p10           !== '' ||
-      hypercharges  !== '' ||
-      image2        !== ''
+      brawlers     !== '' ||
+      legendary    !== '' ||
+      mythic       !== '' ||
+      epic         !== '' ||
+      superRare    !== '' ||
+      rare         !== '' ||
+      p9           !== '' ||
+      p10          !== '' ||
+      hypercharges !== '' ||
+      image2       !== ''
     );
-    
+
+    // If at least one optional field is filled, add More Information button
     if (anyOptionalFilled) {
-      // Add the "More Information" button
-      // We'll store all optional fields in a map for retrieval
-      // We'll fill the map AFTER we send the message, because we need the messageId
-      // But we can create a placeholder customId referencing "listing_more_info".
       buttonsRow.addComponents(
         new ButtonBuilder()
           .setCustomId('listing_more_info_temp') // We'll rename after sending
@@ -526,36 +523,37 @@ client.on('interactionCreate', async (interaction) => {
       );
     }
 
-    // A) We respond to the slash command ephemerally (so no one sees "X used /list")
-    // B) Then we post the listing as a separate public message
+    // We respond ephemerally so no one sees “X used /list”
     await interaction.reply({ content: 'Listing posted!', ephemeral: true });
 
-    // Now send the listing in the same channel
+    // Then send the actual listing
     const listingMessage = await interaction.channel.send({
       content: nonEmbedText,
       embeds: [mainEmbed],
       components: [buttonsRow]
     });
 
-    // If user filled any optional field, store them in listingDataMap
-    // Also fix the customId with the actual message ID
+    // If any optional fields, fix the button customId and store data
     if (anyOptionalFilled) {
-      // Generate a customId with the message id
-      const newComponents = [];
+      // 1) Generate a new customId
+      const newCustomId = `listing_more_info_${listingMessage.id}`;
+
+      // 2) Update the row with the new customId
+      const updatedRows = [];
       listingMessage.components.forEach(row => {
         const rowBuilder = ActionRowBuilder.from(row);
         rowBuilder.components.forEach(component => {
           if (component.customId === 'listing_more_info_temp') {
-            component.setCustomId(`listing_more_info_${listingMessage.id}`);
+            component.setCustomId(newCustomId);
           }
         });
-        newComponents.push(rowBuilder);
+        updatedRows.push(rowBuilder);
       });
 
-      // Edit the message with updated button
-      await listingMessage.edit({ components: newComponents });
+      // Edit the listing with updated button
+      await listingMessage.edit({ components: updatedRows });
 
-      // Store data
+      // 3) Store data in our map
       listingDataMap.set(listingMessage.id, {
         rare, superRare, epic, mythic, legendary,
         brawlers, p9, p10, hypercharges, image2
@@ -565,7 +563,7 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 /************************************************************
- 9) BUTTON & MODAL INTERACTION HANDLER
+ 9) BUTTON INTERACTION HANDLER
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
@@ -573,10 +571,10 @@ client.on('interactionCreate', async (interaction) => {
   const { customId, member, guild, channel } = interaction;
 
   /****************************************************
-   TICKET BUTTONS from ?ticketpanel
+   TICKET BUTTONS
   ****************************************************/
   if (customId.startsWith('ticket_')) {
-    // 1) Check how many tickets the user has
+    // 1) Check user’s open tickets
     const existingTickets = guild.channels.cache.filter(ch => {
       if (ch.type === ChannelType.GuildText && ch.parentId) {
         const perm = ch.permissionOverwrites.cache.get(member.id);
@@ -594,7 +592,7 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
-    // 2) Determine category
+    // 2) Category
     let targetCat = null;
     switch(customId) {
       case 'ticket_trophies': targetCat = TICKET_CATEGORIES.TROPHIES; break;
@@ -635,7 +633,6 @@ client.on('interactionCreate', async (interaction) => {
         ]
       });
 
-      // 4) Reply ephemeral
       await interaction.reply({
         embeds: [
           new EmbedBuilder()
@@ -645,7 +642,7 @@ client.on('interactionCreate', async (interaction) => {
         ephemeral: true
       });
 
-      // 5) In ticket channel, send a "welcome" embed + close button
+      // 4) Send welcome message in the ticket
       const welcomeEmbed = new EmbedBuilder()
         .setTitle('Welcome')
         .setDescription('Thanks for opening a ticket!\n\nSupport will be with you shortly, please wait for them to respond.');
@@ -706,7 +703,8 @@ client.on('interactionCreate', async (interaction) => {
           deny: [PermissionsBitField.Flags.ViewChannel]
         },
         {
-          id: '1292933924116500532', // The role that remains
+          // Only role '1292933924116500532' remains
+          id: '1292933924116500532',
           allow: [
             PermissionsBitField.Flags.ViewChannel,
             PermissionsBitField.Flags.SendMessages,
@@ -728,6 +726,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   if (customId === 'cancel_close_ticket') {
+    // The user canceled
     interaction.reply({
       content: 'Ticket close canceled.',
       ephemeral: true
@@ -783,13 +782,13 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   if (customId.startsWith('listing_more_info_')) {
-    // Show the optional info in a new embed
+    // Show optional info in a new embed
     const listingId = customId.replace('listing_more_info_', '');
     const data = listingDataMap.get(listingId);
     if (!data) {
-      return interaction.reply({ 
-        content: 'No additional information found.', 
-        ephemeral: true 
+      return interaction.reply({
+        content: 'No additional information found.',
+        ephemeral: true
       });
     }
 
@@ -798,42 +797,42 @@ client.on('interactionCreate', async (interaction) => {
       brawlers, p9, p10, hypercharges, image2
     } = data;
 
-    // Build the lines. If empty, skip them.
+    // Build lines conditionally
     let descLines = [];
-    if (rare) descLines.push(`**<:rare:1351963849322004521> Rare Skins:**\n${rare}`);
-    if (superRare) descLines.push(`**<:super_rare:1351963921967218839> Super Rare Skins:**\n${superRare}`);
-    if (epic) descLines.push(`**<:epic:1351963993442353365> Epic Skins:**\n${epic}`);
-    if (mythic) descLines.push(`**<:mythic:1351964047179907235> Mythic Skins:**\n${mythic}`);
-    if (legendary) descLines.push(`**<:legendary:1351964089454428261> Legendary Skins:**\n${legendary}`);
-    if (brawlers) descLines.push(`**<:brawler:1351965712582705152> Brawlers:**\n${brawlers}`);
-    if (p9) descLines.push(`**<:power_9:1351963484207841331> Power 9's:**\n${p9}`);
-    if (p10) descLines.push(`**<:p10:1351981538740404355> Power 10's:**\n${p10}`);
-    if (hypercharges) descLines.push(`**<:hypercharge:1351963655234650143> Hypercharges:**\n${hypercharges}`);
+    if (rare)        descLines.push(`**<:rare:1351963849322004521> Rare Skins:**\n${rare}`);
+    if (superRare)   descLines.push(`**<:super_rare:1351963921967218839> Super Rare Skins:**\n${superRare}`);
+    if (epic)        descLines.push(`**<:epic:1351963993442353365> Epic Skins:**\n${epic}`);
+    if (mythic)      descLines.push(`**<:mythic:1351964047179907235> Mythic Skins:**\n${mythic}`);
+    if (legendary)   descLines.push(`**<:legendary:1351964089454428261> Legendary Skins:**\n${legendary}`);
+    if (brawlers)    descLines.push(`**<:brawler:1351965712582705152> Brawlers:**\n${brawlers}`);
+    if (p9)          descLines.push(`**<:power_9:1351963484207841331> Power 9's:**\n${p9}`);
+    if (p10)         descLines.push(`**<:p10:1351981538740404355> Power 10's:**\n${p10}`);
+    if (hypercharges)descLines.push(`**<:hypercharge:1351963655234650143> Hypercharges:**\n${hypercharges}`);
 
     if (descLines.length === 0) {
-      return interaction.reply({ 
-        content: 'No additional information is available.', 
-        ephemeral: true 
+      return interaction.reply({
+        content: 'No additional information is available.',
+        ephemeral: true
       });
     }
 
     const infoEmbed = new EmbedBuilder()
       .setColor('#E68DF2')
-      .setDescription(descLines.join('\n\n')); // double newline between sections
+      .setDescription(descLines.join('\n\n'));
 
     if (image2) {
       infoEmbed.setImage(image2);
     }
 
-    // Send ephemeral so only the user sees it, or do you want it public?
-    // The requirement doesn't say ephemeral or not. We'll do ephemeral = false so everyone can see it.
+    // We'll send it publicly so everyone can see
     await interaction.reply({ embeds: [infoEmbed], ephemeral: false });
   }
 
   /****************************************************
-   ?adds -> 3 Buttons: Swap Matcherino, Add 115k, Add Matcherino Winner
+   ?adds -> Buttons: Swap, Add 115k, Add Matcherino Winner
   ****************************************************/
   if (customId === 'btn_swap_matcherino') {
+    // Create a ticket under MATCHERINO_SWAP_CATEGORY
     const channelName = `swap-${interaction.user.username}-${Math.floor(Math.random() * 1000)}`;
     try {
       const swapChannel = await guild.channels.create({
@@ -945,7 +944,7 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 /************************************************************
-10) MODAL SUBMISSIONS (Supercell ID forms)
+10) MODAL SUBMISSIONS
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isModalSubmit()) return;
@@ -972,8 +971,10 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
+    // Remove the role
     await interaction.member.roles.remove(roleToRemove).catch(console.error);
 
+    // Post in the target channel
     const targetChannel = interaction.guild.channels.cache.get(ADD_115K_MSG_CHANNEL);
     if (!targetChannel) {
       return interaction.reply({
@@ -1008,6 +1009,7 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
+    // Remove whichever pair the member has
     if (haveFirstPair) {
       await interaction.member.roles.remove(MATCHERINO_WINNER_ROLE_1A).catch(console.error);
       await interaction.member.roles.remove(MATCHERINO_WINNER_ROLE_1B).catch(console.error);
@@ -1036,7 +1038,7 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 /************************************************************
-11) LOG IN
+11) LOG IN THE BOT
 ************************************************************/
 client.login(BOT_TOKEN).catch((err) => {
   console.error('[Login Error]', err);
