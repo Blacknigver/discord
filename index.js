@@ -1,7 +1,7 @@
 /********************************************************************
  * Brawl Stars Boosting Discord Bot
  * Using Discord.js v14
- * Hardcoded token approach (not recommended for public projects)
+ * Removes 'dotenv' in favor of direct environment variables
  ********************************************************************/
 
 const {
@@ -23,22 +23,6 @@ const {
 /************************************************************
  1) BOT SETUP
 ************************************************************/
-
-/**
- * 1) Replace THIS with your actual bot token
- *    from the Developer Portal -> Bot -> Reset Token -> Copy
- * 2) Make sure you do not commit this to a public GitHub repo.
- */
-const BOT_TOKEN = 'MTM1MTY5NTY3MDkwOTg2MTk4Mg.Gn49cT.rwl0u9DwQ2oWhtQpoQZYirUJSW6BcnPS-CAW5A
-';
-
-/**
- * If you still want to specify a client ID for slash commands,
- * put it here. If you aren't doing dynamic command registration,
- * you can ignore or remove it.
- */
-const CLIENT_ID = '1351695670909861982';
-
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -49,6 +33,10 @@ const client = new Client({
   ],
   partials: [Partials.Channel]
 });
+
+// Use the environment variable from Railway (or your hosting)
+const BOT_TOKEN = process.env.TOKEN; 
+const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_BOT_CLIENT_ID_HERE';
 
 /************************************************************
  2) CONFIGURATION CONSTANTS
@@ -95,7 +83,7 @@ const MATCHERINO_SWAP_CATEGORY = '1351687962907246753';
 const ADD_115K_MSG_CHANNEL = '1351687016433193051'; // channel to post "New 115k Add"
 const ADD_MATCHERINO_MSG_CHANNEL = '1351687016433193051'; // channel to post "New Matcherino Winner Add"
 
-// === Roles for the "Add 115k" button
+// === Roles for the "Add 115k" button (check in order)
 const ADD_115K_ROLES = [
   '1351281086134747298',
   '1351687292200423484'
@@ -232,7 +220,7 @@ const listCommand = new SlashCommandBuilder()
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
 
-  // Register slash command globally (may take a while)
+  // Register slash command globally
   try {
     await client.application.commands.create(listCommand);
     console.log('[Slash Command] /list registered successfully.');
@@ -1050,7 +1038,7 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 /************************************************************
-11) LOG IN THE BOT (hardcoded token)
+11) LOG IN THE BOT
 ************************************************************/
 client.login(BOT_TOKEN).catch((err) => {
   console.error('[Login Error]', err);
