@@ -258,14 +258,14 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
 
 /************************************************************
  7) MESSAGE HANDLER
-    (ticketpanel, move, adds, friendlist, mark)
+    (ticketpanel, move, adds, friendlist)
+    [We removed any old staffPrefix "mark" command logic as requested.]
 ************************************************************/
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   if (!message.guild) return;
 
   const prefix = '?';
-  const staffPrefix = ',';
 
   // ? commands
   if (message.content.startsWith(prefix)) {
@@ -280,7 +280,6 @@ client.on('messageCreate', async (message) => {
         return message.reply("You don't have permission to use this command!");
       }
 
-      // embed color => #E68DF2
       const embed = new EmbedBuilder()
         .setColor(EMBED_COLOR)
         .setTitle('Order a Boost')
@@ -310,7 +309,6 @@ client.on('messageCreate', async (message) => {
           .setLabel('Mastery')
           .setEmoji('<:mastery:1351659726991134832>')
           .setStyle(ButtonStyle.Success),
-        // "Other" => green
         new ButtonBuilder()
           .setCustomId('ticket_other')
           .setLabel('Other')
@@ -349,7 +347,6 @@ client.on('messageCreate', async (message) => {
       - Only the 4th embed has 3 buttons
     ********************************************************/
     if (cmd === 'adds') {
-      // Restricted to role 1292933200389083196
       if (!message.member.roles.cache.has('1292933200389083196')) {
         return message.reply("You don't have permission to use this command!");
       }
@@ -388,12 +385,10 @@ client.on('messageCreate', async (message) => {
           'Make sure to follow https://discord.com/channels/1292895164595175444/1293243690185265233'
         );
 
-      // First 3 with no buttons
       await message.channel.send({
         embeds: [embed1, embed2, embed3]
       });
 
-      // The row for the 4th embed with 3 buttons
       const rowAll = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('btn_swap_matcherino')
@@ -420,11 +415,8 @@ client.on('messageCreate', async (message) => {
 
     /*******************************************************
      ?friendlist
-      - Two columns, no underscores, replaced with ** for names
-      - Then the user can click "Buy Add" or "Player Information"
     ********************************************************/
     if (cmd === 'friendlist') {
-      // Only useable by role 1292933200389083196
       if (!message.member.roles.cache.has('1292933200389083196')) {
         return message.reply("You don't have permission to use this command!");
       }
@@ -448,7 +440,6 @@ client.on('messageCreate', async (message) => {
           { name: '\u200b', value: embedRowRight, inline: true }
         );
 
-      // Short second embed
       const friendEmbed2 = new EmbedBuilder()
         .setDescription('# ⬆️ ALL ADDS ARE LIFETIME');
 
@@ -470,52 +461,11 @@ client.on('messageCreate', async (message) => {
       });
     }
   }
-
-  // , prefix commands
-  if (message.content.startsWith(staffPrefix)) {
-    const args = message.content.slice(staffPrefix.length).trim().split(/\s+/);
-    const cmd = args.shift().toLowerCase();
-
-    /*******************************************************
-     ,mark <messageId>
-    ********************************************************/
-    if (cmd === 'mark') {
-      if (!message.member.roles.cache.has(LIST_COMMAND_ROLE)) {
-        return message.reply('You do not have permission to use ,mark.');
-      }
-      const messageId = args[0];
-      if (!messageId) {
-        return message.reply('Usage: ,mark <messageId>');
-      }
-
-      try {
-        const targetMessage = await message.channel.messages.fetch(messageId);
-        if (!targetMessage) {
-          return message.reply('Could not find that message in this channel.');
-        }
-
-        const soldButton = new ButtonBuilder()
-          .setCustomId('sold_button')
-          .setLabel('This account has been sold.')
-          .setStyle(ButtonStyle.Danger)
-          .setDisabled(true);
-
-        const soldRow = new ActionRowBuilder().addComponents(soldButton);
-
-        await targetMessage.edit({ components: [soldRow] });
-        message.reply(`Message \`${messageId}\` has been marked as sold.`);
-      } catch (err) {
-        console.error(err);
-        message.reply('Failed to mark the listing. Check the message ID or permissions.');
-      }
-    }
-  }
 });
 
 /************************************************************
  8) /list Interaction Handler
-    - "Wider" embed approach (use some inline fields to force width).
-    - Button labeled "More Information" (not "Player Information").
+    - We add an extra "Mark as Sold" button in grey.
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
@@ -536,7 +486,6 @@ client.on('interactionCreate', async (interaction) => {
     const p11        = interaction.options.getString('p11');
     const tierMax    = interaction.options.getString('tier_max');
 
-    // Attachments
     const mainImageAttachment = interaction.options.getAttachment('image');
     const imageUrl = mainImageAttachment?.url;
 
@@ -558,18 +507,12 @@ client.on('interactionCreate', async (interaction) => {
     else if (pingChoice === 'here') nonEmbedText = '**||@here|| New account added!**';
     else nonEmbedText = '**New account added!**';
 
-    /********************************************
-     * Build a "wide" embed by mixing inline fields
-     ********************************************/
+    // We'll do some inline fields to widen the embed visually
     const mainEmbed = new EmbedBuilder()
       .setTitle('New Account Added! <:winmatcherino:1298703851934711848>')
       .setColor(EMBED_COLOR)
-      // We'll put the text in a single field, inline: false
       .addFields(
-        { name: 'Description', value: text, inline: false }
-      )
-      // Now force some inline fields to widen the embed
-      .addFields(
+        { name: 'Description', value: text, inline: false },
         { name: '<:Money:1351665747641766022> Price:', value: price, inline: true },
         { name: '<:gold_trophy:1351658932434768025> Trophies:', value: trophies, inline: true },
         { name: '<:P11:1351683038127591529> P11:', value: p11, inline: true },
@@ -580,7 +523,8 @@ client.on('interactionCreate', async (interaction) => {
       mainEmbed.setImage(imageUrl);
     }
 
-    const buttonsRow = new ActionRowBuilder().addComponents(
+    // We'll have 3 buttons: Purchase (green), More Information (blue), Mark as Sold (grey)
+    const rowOfButtons = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('purchase_account')
         .setLabel('Purchase Account')
@@ -589,33 +533,22 @@ client.on('interactionCreate', async (interaction) => {
       new ButtonBuilder()
         .setCustomId('listing_more_info_temp')
         .setLabel('More Information')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('listing_mark_sold_temp')
+        .setLabel('Mark as Sold')
         .setStyle(ButtonStyle.Secondary)
     );
 
     await interaction.reply({ content: 'Listing posted!', ephemeral: true });
 
-    // Send the listing message
     const listingMessage = await interaction.channel.send({
       content: nonEmbedText,
       embeds: [mainEmbed],
-      components: [buttonsRow]
+      components: [rowOfButtons]
     });
 
-    // Set the button's customId to listing_more_info_<messageId>
-    const newCustomId = `listing_more_info_${listingMessage.id}`;
-    const updatedRows = [];
-    listingMessage.components.forEach(row => {
-      const rowBuilder = ActionRowBuilder.from(row);
-      rowBuilder.components.forEach(comp => {
-        if (comp.customId === 'listing_more_info_temp') {
-          comp.setCustomId(newCustomId);
-        }
-      });
-      updatedRows.push(rowBuilder);
-    });
-    await listingMessage.edit({ components: updatedRows });
-
-    // Store data for "More Information" (excluding price, trophies, p11, tiermax)
+    // We'll store data for "More Information" (excluding price/trophies/p11/tiermax)
     listingDataMap.set(listingMessage.id, {
       rare,
       superRare,
@@ -628,14 +561,31 @@ client.on('interactionCreate', async (interaction) => {
       hypercharges,
       image2: image2Url
     });
+
+    // We'll finalize the custom IDs to reference this message ID
+    const newMoreInfoId = `listing_more_info_${listingMessage.id}`;
+    const newMarkSoldId = `listing_mark_sold_${listingMessage.id}`;
+
+    const updatedRows = [];
+    for (const rowComp of listingMessage.components) {
+      const rowBuilder = ActionRowBuilder.from(rowComp);
+      rowBuilder.components.forEach(comp => {
+        if (comp.customId === 'listing_more_info_temp') {
+          comp.setCustomId(newMoreInfoId);
+        } else if (comp.customId === 'listing_mark_sold_temp') {
+          comp.setCustomId(newMarkSoldId);
+        }
+      });
+      updatedRows.push(rowBuilder);
+    }
+    // Edit the message to set final IDs
+    await listingMessage.edit({ components: updatedRows });
   }
 });
 
 /************************************************************
  9) FRIENDLIST & /list BUTTON INTERACTIONS
 ************************************************************/
-
-// For friendlist
 const friendlistPlayers = [
   'LUX | Zoro',
   'Lennox',
@@ -647,7 +597,6 @@ const friendlistPlayers = [
   'HMB | BosS'
 ];
 
-// We'll store each player's info for "Player Information" in friendlist
 const playerInfoMap = {
   'LUX | Zoro': {
     title: 'LUX | Zoro Information',
@@ -694,9 +643,9 @@ const playerInfoMap = {
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
 
-  const { customId, member, guild } = interaction;
+  const { customId, member, guild, channel } = interaction;
 
-  // Helper: build a modal with required questions
+  // Helper to build a modal with required questions
   function buildQuestionModal(modalId, title, questions) {
     const modal = new ModalBuilder()
       .setCustomId(modalId)
@@ -724,7 +673,6 @@ client.on('interactionCreate', async (interaction) => {
     ]);
     await interaction.showModal(modal);
   }
-
   if (customId === 'ticket_ranked') {
     const modal = buildQuestionModal('modal_ticket_ranked', 'Ranked Ticket', [
       { customId: 'current_rank', label: 'What rank currently are you?' },
@@ -732,7 +680,6 @@ client.on('interactionCreate', async (interaction) => {
     ]);
     await interaction.showModal(modal);
   }
-
   if (customId === 'ticket_bulk') {
     const modal = buildQuestionModal('modal_ticket_bulk', 'Bulk Trophies Ticket', [
       { customId: 'current_total', label: 'How many total trophies do you have?' },
@@ -740,7 +687,6 @@ client.on('interactionCreate', async (interaction) => {
     ]);
     await interaction.showModal(modal);
   }
-
   if (customId === 'ticket_mastery') {
     const modal = buildQuestionModal('modal_ticket_mastery', 'Mastery Ticket', [
       { customId: 'current_mastery_rank', label: 'What is your current mastery rank?' },
@@ -749,7 +695,6 @@ client.on('interactionCreate', async (interaction) => {
     ]);
     await interaction.showModal(modal);
   }
-
   if (customId === 'ticket_other') {
     const modal = buildQuestionModal('modal_ticket_other', 'Other Ticket', [
       { customId: 'reason', label: 'Why are you opening this ticket?' }
@@ -758,7 +703,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   /****************************************************
-   /list => Purchase Account
+   PURCHASE ACCOUNT
   ****************************************************/
   if (customId === 'purchase_account') {
     try {
@@ -826,7 +771,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   /****************************************************
-   /list => "More Information" button
+   "More Information" => ephemeral only
   ****************************************************/
   if (customId.startsWith('listing_more_info_')) {
     const listingId = customId.replace('listing_more_info_', '');
@@ -834,7 +779,7 @@ client.on('interactionCreate', async (interaction) => {
     if (!data) {
       return interaction.reply({
         content: 'No additional information found.',
-        ephemeral: false
+        ephemeral: true
       });
     }
 
@@ -871,7 +816,46 @@ client.on('interactionCreate', async (interaction) => {
       infoEmbed.setImage(image2);
     }
 
-    await interaction.reply({ embeds: [infoEmbed], ephemeral: false });
+    await interaction.reply({ embeds: [infoEmbed], ephemeral: true });
+  }
+
+  /****************************************************
+   "Mark as Sold" => grey button => update listing
+  ****************************************************/
+  if (customId.startsWith('listing_mark_sold_')) {
+    const listingId = customId.replace('listing_mark_sold_', '');
+    try {
+      // Attempt to fetch the original message
+      const listingMsg = await channel.messages.fetch(listingId);
+      if (!listingMsg) {
+        return interaction.reply({ 
+          content: 'Could not find the original listing message.', 
+          ephemeral: true 
+        });
+      }
+
+      // We'll mark it as sold by editing the components:
+      //   - Replace all with a single disabled "This account has been sold" button
+      const soldButton = new ButtonBuilder()
+        .setCustomId('sold_button')
+        .setLabel('This account has been sold.')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true);
+
+      const soldRow = new ActionRowBuilder().addComponents(soldButton);
+
+      await listingMsg.edit({ components: [soldRow] });
+      await interaction.reply({
+        content: 'You have marked this listing as sold.',
+        ephemeral: true
+      });
+    } catch (err) {
+      console.error(err);
+      return interaction.reply({
+        content: 'Failed to mark as sold. Check permissions or message ID.',
+        ephemeral: true
+      });
+    }
   }
 
   /****************************************************
@@ -999,234 +983,10 @@ client.on('interactionCreate', async (interaction) => {
 
     await interaction.showModal(modal);
   }
-
-  /****************************************************
-   FRIENDLIST => Buy Add or Player Info
-  ****************************************************/
-  if (customId === 'friendlist_buyadd') {
-    // ephemeral embed with Title: "Buy an Add" and 8 buttons
-    const buyTitle = 'Buy an Add';
-    const buyDesc = 'Please select the player you would like to add.';
-
-    // We'll place 8 buttons in two rows (5 max per row).
-    const row1 = new ActionRowBuilder();
-    const row2 = new ActionRowBuilder();
-    const buttonCustomIds = [
-      'buy_luxzoro',
-      'buy_lennox',
-      'buy_melih',
-      'buy_elox',
-      'buy_kazu',
-      'buy_izana',
-      'buy_rafiki',
-      'buy_boss'
-    ];
-
-    for (let i = 0; i < 5; i++) {
-      row1.addComponents(
-        new ButtonBuilder()
-          .setCustomId(buttonCustomIds[i])
-          .setLabel(friendlistPlayers[i])
-          .setStyle(ButtonStyle.Success)
-      );
-    }
-    for (let i = 5; i < friendlistPlayers.length; i++) {
-      row2.addComponents(
-        new ButtonBuilder()
-          .setCustomId(buttonCustomIds[i])
-          .setLabel(friendlistPlayers[i])
-          .setStyle(ButtonStyle.Success)
-      );
-    }
-
-    const embed = new EmbedBuilder()
-      .setTitle(buyTitle)
-      .setDescription(buyDesc)
-      .setColor(EMBED_COLOR);
-
-    await interaction.reply({
-      embeds: [embed],
-      components: [row1, row2],
-      ephemeral: true
-    });
-  }
-
-  if (customId === 'friendlist_playerinfo') {
-    // ephemeral embed with Title: "Player Information" and 8 buttons
-    const infoTitle = 'Player Information';
-    const infoDesc = 'Get more information about the player you would like to add!';
-
-    const row1 = new ActionRowBuilder();
-    const row2 = new ActionRowBuilder();
-    const buttonCustomIds = [
-      'info_luxzoro',
-      'info_lennox',
-      'info_melih',
-      'info_elox',
-      'info_kazu',
-      'info_izana',
-      'info_rafiki',
-      'info_boss'
-    ];
-
-    for (let i = 0; i < 5; i++) {
-      row1.addComponents(
-        new ButtonBuilder()
-          .setCustomId(buttonCustomIds[i])
-          .setLabel(friendlistPlayers[i])
-          .setStyle(ButtonStyle.Primary)
-      );
-    }
-    for (let i = 5; i < friendlistPlayers.length; i++) {
-      row2.addComponents(
-        new ButtonBuilder()
-          .setCustomId(buttonCustomIds[i])
-          .setLabel(friendlistPlayers[i])
-          .setStyle(ButtonStyle.Primary)
-      );
-    }
-
-    const embed = new EmbedBuilder()
-      .setTitle(infoTitle)
-      .setDescription(infoDesc)
-      .setColor(EMBED_COLOR);
-
-    await interaction.reply({
-      embeds: [embed],
-      components: [row1, row2],
-      ephemeral: true
-    });
-  }
-
-  /****************************************************
-   FRIENDLIST => Buy <player> or Info <player>
-  ****************************************************/
-  // Buy = open ticket in category 1347969216052985876
-  // Then post second embed: no title, text => "**Adding Player:**\n<name>"
-
-  const buyMap = {
-    buy_luxzoro: 'LUX | Zoro',
-    buy_lennox: 'Lennox',
-    buy_melih: 'Melih',
-    buy_elox: 'Elox',
-    buy_kazu: 'Kazu',
-    buy_izana: 'Izana',
-    buy_rafiki: 'SKC | Rafiki',
-    buy_boss: 'HMB | BosS'
-  };
-
-  const infoMap = {
-    info_luxzoro: 'LUX | Zoro',
-    info_lennox: 'Lennox',
-    info_melih: 'Melih',
-    info_elox: 'Elox',
-    info_kazu: 'Kazu',
-    info_izana: 'Izana',
-    info_rafiki: 'SKC | Rafiki',
-    info_boss: 'HMB | BosS'
-  };
-
-  // BUY => open ticket in MOVE_CATEGORIES.add
-  if (Object.keys(buyMap).includes(customId)) {
-    const chosenName = buyMap[customId];
-    try {
-      const channelName = `add-${interaction.user.username}-${Math.floor(Math.random() * 1000)}`;
-      const addChannel = await guild.channels.create({
-        name: channelName,
-        type: ChannelType.GuildText,
-        parent: MOVE_CATEGORIES.add, // 1347969216052985876
-        permissionOverwrites: [
-          {
-            id: guild.roles.everyone,
-            deny: [PermissionsBitField.Flags.ViewChannel]
-          },
-          {
-            id: interaction.user.id,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ReadMessageHistory
-            ]
-          },
-          ...STAFF_ROLES.map(roleId => ({
-            id: roleId,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ReadMessageHistory
-            ]
-          }))
-        ]
-      });
-
-      const welcomeEmbed = new EmbedBuilder()
-        .setDescription(
-          'Welcome, thanks for opening a ticket!\n\n' +
-          '**Support will be with you shortly, please wait for them to respond.**'
-        );
-
-      const closeButton = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('close_ticket')
-          .setLabel('Close Ticket')
-          .setEmoji('<:Lock:1349157009244557384>')
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      await addChannel.send({
-        embeds: [welcomeEmbed],
-        components: [closeButton]
-      });
-
-      // second embed: no title
-      const addEmbed = new EmbedBuilder()
-        .setDescription(`**Adding Player:**\n${chosenName}`);
-
-      await addChannel.send({ embeds: [addEmbed] });
-
-      ticketOpeners.set(addChannel.id, interaction.user.id);
-
-      await interaction.reply({
-        content: `Ticket created: <#${addChannel.id}>`,
-        ephemeral: true
-      });
-    } catch (err) {
-      console.error(err);
-      interaction.reply({
-        content: 'Failed to create add ticket channel.',
-        ephemeral: true
-      });
-    }
-  }
-
-  // INFO => ephemeral embed with player's info
-  if (Object.keys(infoMap).includes(customId)) {
-    const chosenName = infoMap[customId];
-    const p = playerInfoMap[chosenName];
-    if (!p) {
-      return interaction.reply({
-        content: 'No player info found.',
-        ephemeral: true
-      });
-    }
-    const infoEmbed = new EmbedBuilder()
-      .setTitle(p.title)
-      .setDescription(p.text)
-      .setColor(EMBED_COLOR);
-
-    if (p.image) {
-      infoEmbed.setImage(p.image);
-    }
-
-    await interaction.reply({
-      embeds: [infoEmbed],
-      ephemeral: true
-    });
-  }
 });
 
 /************************************************************
- 10) MODAL SUBMISSIONS
+10) MODAL SUBMISSIONS
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isModalSubmit()) return;
@@ -1244,7 +1004,7 @@ client.on('interactionCreate', async (interaction) => {
           || ch.parentId === MATCHERINO_SWAP_CATEGORY
           || ch.parentId === PURCHASE_ACCOUNT_CATEGORY
           || ch.parentId === MOVE_CATEGORIES.add;
-        return perm.allow?.has(PermissionsBitField.Flags.ViewChannel) && isTicketCat;
+        return perm && perm.allow.has(PermissionsBitField.Flags.ViewChannel) && isTicketCat;
       }
       return false;
     });
@@ -1256,8 +1016,8 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
-    const channelName = `ticket-${user.username}-${Math.floor(Math.random() * 1000)}`;
     try {
+      const channelName = `ticket-${user.username}-${Math.floor(Math.random() * 1000)}`;
       const newChan = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
@@ -1286,11 +1046,10 @@ client.on('interactionCreate', async (interaction) => {
         ]
       });
 
-      const welcomeEmbed = new EmbedBuilder()
-        .setDescription(
-          'Welcome, thanks for opening a ticket!\n\n' +
-          '**Support will be with you shortly, please wait for them to respond.**'
-        );
+      const welcomeEmbed = new EmbedBuilder().setDescription(
+        'Welcome, thanks for opening a ticket!\n\n' +
+        '**Support will be with you shortly, please wait for them to respond.**'
+      );
 
       let desc = '';
       for (const [q, ans] of answers) {
