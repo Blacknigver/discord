@@ -17,7 +17,8 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  PermissionsBitField
+  PermissionsBitField,
+  StringSelectMenuBuilder
 } = require('discord.js');
 
 const BOT_TOKEN = process.env.TOKEN || '';
@@ -85,7 +86,7 @@ const ADD_115K_ROLES = [
   '1351687292200423484'
 ];
 
-// Roles for "Add Matcherino Winner"
+// Roles for "Add Matcherino Winner" (5 invites)
 const MATCHERINO_WINNER_ROLE_1A = '1351281117445099631';
 const MATCHERINO_WINNER_ROLE_1B = '1351281086134747298';
 const MATCHERINO_WINNER_ROLE_2A = '1351687292200423484';
@@ -97,7 +98,7 @@ const BRAWLSHOP_AD_ROLE = '1351998501982048346';
 // We'll store who opened each ticket so we can re-open it
 const ticketOpeners = new Map();
 
-// Color for /list (and also for the new ?friendlist embed)
+// Color for /list (and also used in other embeds)
 const EMBED_COLOR = '#E68DF2';
 
 /************************************************************
@@ -118,6 +119,7 @@ const listingDataMap = new Map();
 
 /************************************************************
  4) BUILD /list Slash Command
+    - Updated to require image attachments instead of URLs
 ************************************************************/
 const listCommand = new SlashCommandBuilder()
   .setName('list')
@@ -158,9 +160,9 @@ const listCommand = new SlashCommandBuilder()
       .setDescription('Tier Max info')
       .setRequired(true)
   )
-  .addStringOption(opt =>
+  .addAttachmentOption(opt =>
     opt.setName('image')
-      .setDescription('Main image URL')
+      .setDescription('Main image (upload a file)')
       .setRequired(true)
   )
   .addStringOption(opt =>
@@ -208,9 +210,9 @@ const listCommand = new SlashCommandBuilder()
       .setDescription('Hypercharges info')
       .setRequired(true)
   )
-  .addStringOption(opt =>
+  .addAttachmentOption(opt =>
     opt.setName('image2')
-      .setDescription('Additional image URL')
+      .setDescription('Additional image (upload a file)')
       .setRequired(true)
   );
 
@@ -347,6 +349,9 @@ client.on('messageCreate', async (message) => {
 
     /*******************************************************
      ?adds
+      - No buttons on the first three embeds
+      - The last embed has all 3 buttons (swap, 115k, matcherino)
+      - The "Matcherino Winner" text now says "This requires 5 invites!"
     ********************************************************/
     if (cmd === 'adds') {
       // Restricted to role 1292933200389083196
@@ -376,7 +381,7 @@ client.on('messageCreate', async (message) => {
         .setTitle('Matcherino Winner Add')
         .setColor(EMBED_COLOR)
         .setDescription(
-          '**__This requires 3 invites!__**\n\n' +
+          '**__This requires 5 invites!__**\n\n' + // Changed from 3 to 5
           'Add a **Matcherino Winner!**'
         )
         .setImage('https://media.discordapp.net/attachments/1351687016433193051/1351997783028142170/IMG_2581.png?ex=67dc698e&is=67db180e&hm=14481cce4458123ee4f63ffd4271dc13a78aafdfc3701b069983851c6b3b8e8c&=&format=webp&quality=lossless&width=1746&height=806');
@@ -388,7 +393,13 @@ client.on('messageCreate', async (message) => {
           'Make sure to follow https://discord.com/channels/1292895164595175444/1293243690185265233'
         );
 
-      const row = new ActionRowBuilder().addComponents(
+      // First 3 with no action row
+      await message.channel.send({
+        embeds: [embed1, embed2, embed3]
+      });
+
+      // The row for the 4th embed should have all 3 buttons
+      const rowAll = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('btn_swap_matcherino')
           .setLabel('Swap Matcherino')
@@ -406,35 +417,17 @@ client.on('messageCreate', async (message) => {
           .setStyle(ButtonStyle.Success)
       );
 
-      const row4 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('btn_swap_matcherino')
-          .setLabel('Swap Matcherino')
-          .setEmoji('<:winmatcherino:1298703851934711848>')
-          .setStyle(ButtonStyle.Danger),
-        new ButtonBuilder()
-          .setCustomId('btn_add_115k')
-          .setLabel('Add 115k')
-          .setEmoji('<:gold_trophy:1351658932434768025>')
-          .setStyle(ButtonStyle.Primary)
-        // omit the "Add Matcherino Winner" from this row
-      );
-
-      // Send first 3 with full row
-      await message.channel.send({
-        embeds: [embed1, embed2, embed3],
-        components: [row]
-      });
-
-      // Then the 4th with row4
       await message.channel.send({
         embeds: [embed4],
-        components: [row4]
+        components: [rowAll]
       });
     }
 
     /*******************************************************
      ?friendlist
+      - 2 columns, no "Row 1"/"Row 2" label
+      - Remove underscores, use ** for names
+      - Then 2 buttons: buy add, more info
     ********************************************************/
     if (cmd === 'friendlist') {
       // Only useable by role 1292933200389083196
@@ -442,16 +435,26 @@ client.on('messageCreate', async (message) => {
         return message.reply("You don't have permission to use this command!");
       }
 
-      const embedRow1 = '🥈| __LUX | Zoro__ - €10\n🥈 | __Lennox__ - €15\n🥈| __Melih__ - €15\n🥈| __Elox__ - €15';
-      const embedRow2 = '🥈| __Kazu__ - €15\n🥇| __Izana__ - €25\n🥇| __SKC | Rafiki__ - €25\n🥇| __HMB | BosS__ - €60';
+      const embedRowLeft = 
+        '🥈| **LUX | Zoro** - €10\n' +
+        '🥈| **Lennox** - €15\n' +
+        '🥈| **Melih** - €15\n' +
+        '🥈| **Elox** - €15';
+
+      const embedRowRight = 
+        '🥈| **Kazu** - €15\n' +
+        '🥇| **Izana** - €25\n' +
+        '🥇| **SKC | Rafiki** - €25\n' +
+        '🥇| **HMB | BosS** - €60';
 
       const friendEmbed = new EmbedBuilder()
         .setColor(EMBED_COLOR)
         .addFields(
-          { name: 'Row 1', value: embedRow1, inline: true },
-          { name: 'Row 2', value: embedRow2, inline: true }
+          { name: '\u200b', value: embedRowLeft, inline: true },
+          { name: '\u200b', value: embedRowRight, inline: true }
         );
 
+      // Short second embed
       const friendEmbed2 = new EmbedBuilder()
         .setDescription('# ⬆️ ALL ADDS ARE LIFETIME');
 
@@ -463,7 +466,7 @@ client.on('messageCreate', async (message) => {
           .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
           .setCustomId('friendlist_info')
-          .setLabel('Player Information')
+          .setLabel('More Information')
           .setStyle(ButtonStyle.Primary)
       );
 
@@ -517,6 +520,7 @@ client.on('messageCreate', async (message) => {
 
 /************************************************************
  8) /list Interaction Handler
+    - Now using attachments for images
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
@@ -536,7 +540,10 @@ client.on('interactionCreate', async (interaction) => {
     const trophies   = interaction.options.getString('trophies');
     const p11        = interaction.options.getString('p11');
     const tierMax    = interaction.options.getString('tier_max');
-    const imageUrl   = interaction.options.getString('image');
+
+    // Attachments
+    const mainImageAttachment = interaction.options.getAttachment('image');
+    const imageUrl = mainImageAttachment?.url;
 
     const brawlers      = interaction.options.getString('brawlers');
     const legendary     = interaction.options.getString('legendary');
@@ -547,7 +554,9 @@ client.on('interactionCreate', async (interaction) => {
     const p9            = interaction.options.getString('p9');
     const p10           = interaction.options.getString('p10');
     const hypercharges  = interaction.options.getString('hypercharges');
-    const image2        = interaction.options.getString('image2');
+
+    const secondImageAttachment = interaction.options.getAttachment('image2');
+    const image2Url = secondImageAttachment?.url;
 
     let nonEmbedText;
     if (pingChoice === 'everyone') nonEmbedText = '**||@everyone|| New account added!**';
@@ -558,13 +567,14 @@ client.on('interactionCreate', async (interaction) => {
       .setTitle('New Account Added! <:winmatcherino:1298703851934711848>')
       .setColor(EMBED_COLOR)
       .setDescription(text)
-      .setImage(imageUrl)
       .addFields(
         { name: '<:Money:1351665747641766022> Price:', value: price, inline: true },
         { name: '<:gold_trophy:1351658932434768025> Trophies:', value: trophies, inline: true },
         { name: '<:P11:1351683038127591529> P11:', value: p11, inline: true },
         { name: '<:tiermax:1301899953320497243> Tier Max:', value: tierMax, inline: true }
       );
+
+    if (imageUrl) mainEmbed.setImage(imageUrl);
 
     const buttonsRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -586,6 +596,7 @@ client.on('interactionCreate', async (interaction) => {
       components: [buttonsRow]
     });
 
+    // Set "More Information" customId to include message ID
     const newCustomId = `listing_more_info_${listingMessage.id}`;
     const updatedRows = [];
     listingMessage.components.forEach(row => {
@@ -601,15 +612,34 @@ client.on('interactionCreate', async (interaction) => {
 
     // Store data for "More Information"
     listingDataMap.set(listingMessage.id, {
-      rare, superRare, epic, mythic, legendary,
-      brawlers, p9, p10, hypercharges, image2
+      rare,
+      superRare,
+      epic,
+      mythic,
+      legendary,
+      brawlers,
+      p9,
+      p10,
+      hypercharges,
+      image2: image2Url
     });
   }
 });
 
 /************************************************************
- 9) BUTTON INTERACTION: TICKETS, /list => Purchase, More Info
+ 9) BUTTON & SELECT MENU INTERACTIONS
 ************************************************************/
+const friendlistPlayers = [
+  { label: 'LUX | Zoro', value: 'LUX | Zoro' },
+  { label: 'Lennox', value: 'Lennox' },
+  { label: 'Melih', value: 'Melih' },
+  { label: 'Elox', value: 'Elox' },
+  { label: 'Kazu', value: 'Kazu' },
+  { label: 'Izana', value: 'Izana' },
+  { label: 'SKC | Rafiki', value: 'SKC | Rafiki' },
+  { label: 'HMB | BosS', value: 'HMB | BosS' }
+];
+
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
 
@@ -716,7 +746,6 @@ client.on('interactionCreate', async (interaction) => {
           '**Support will be with you shortly, please wait for them to respond.**'
         );
 
-      // single embed => close button here
       const closeButton = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('close_ticket')
@@ -883,6 +912,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   if (customId === 'btn_add_matcherino_winner') {
+    // Checking roles
     let haveFirstPair = hasAllRoles(member, [MATCHERINO_WINNER_ROLE_1A, MATCHERINO_WINNER_ROLE_1B]);
     let haveSecondPair = hasAllRoles(member, [MATCHERINO_WINNER_ROLE_2A, MATCHERINO_WINNER_ROLE_2B]);
 
@@ -910,10 +940,60 @@ client.on('interactionCreate', async (interaction) => {
 
     await interaction.showModal(modal);
   }
+
+  /****************************************************
+   friendlist_buyadd => show a dropdown
+   friendlist_info => show a dropdown
+  ****************************************************/
+  if (customId === 'friendlist_buyadd' || customId === 'friendlist_info') {
+    const type = (customId === 'friendlist_buyadd') ? 'buyadd' : 'info';
+
+    const selectMenu = new StringSelectMenuBuilder()
+      .setCustomId(`friendlist_select_${type}`)
+      .setPlaceholder('Choose Player')
+      .addOptions(friendlistPlayers);
+
+    const row = new ActionRowBuilder().addComponents(selectMenu);
+
+    await interaction.reply({
+      content: 'Select a player:',
+      components: [row],
+      ephemeral: true
+    });
+  }
 });
 
 /************************************************************
-10) MODAL SUBMISSIONS
+ 10) STRING SELECT MENU HANDLER FOR FRIENDLIST
+************************************************************/
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isStringSelectMenu()) return;
+
+  const { customId, values } = interaction;
+  if (!values || values.length === 0) return;
+
+  if (customId.startsWith('friendlist_select_')) {
+    const type = customId.replace('friendlist_select_', '');
+    const chosenPlayer = values[0];  // e.g. 'LUX | Zoro', 'Lennox', etc.
+
+    if (type === 'buyadd') {
+      // Here you can open a ticket, or do something else. For now, just ephemeral confirm.
+      await interaction.reply({
+        content: `You chose to buy an add from **${chosenPlayer}**. A staff member will contact you soon.`,
+        ephemeral: true
+      });
+    } else if (type === 'info') {
+      // Show some info about the chosen player, or ephemeral confirm.
+      await interaction.reply({
+        content: `More information requested about **${chosenPlayer}**.\nPlease wait for staff to assist.`,
+        ephemeral: true
+      });
+    }
+  }
+});
+
+/************************************************************
+ 11) MODAL SUBMISSIONS (Tickets, Add 115k, Add Matcherino)
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isModalSubmit()) return;
@@ -972,7 +1052,6 @@ client.on('interactionCreate', async (interaction) => {
         ]
       });
 
-      // We'll send 2 embeds + close button on second embed
       const welcomeEmbed = new EmbedBuilder()
         .setDescription(
           'Welcome, thanks for opening a ticket!\n\n' +
@@ -1173,7 +1252,7 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 /************************************************************
-11) TICKET CLOSE / REOPEN / DELETE
+12) TICKET CLOSE / REOPEN / DELETE
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
@@ -1335,17 +1414,10 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
   }
-
-  /****************************************************
-   friendlist_buyadd => "Buy an Add" embed
-   friendlist_info => "Player Information" embed
-   (No changes requested for these from last code,
-   so we omit them unless you need them.)
-  ****************************************************/
 });
 
 /************************************************************
-12) LOG IN THE BOT
+13) LOG IN THE BOT
 ************************************************************/
 client.login(BOT_TOKEN).catch(err => {
   console.error('[Login Error]', err);
