@@ -17,8 +17,7 @@ const {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
-  PermissionsBitField,
-  StringSelectMenuBuilder
+  PermissionsBitField
 } = require('discord.js');
 
 const BOT_TOKEN = process.env.TOKEN || '';
@@ -112,19 +111,18 @@ function hasAllRoles(member, roleIds = []) {
 }
 
 /************************************************************
- 3) TRACK LISTINGS FOR "MORE INFORMATION" (/list data)
+ 3) TRACK LISTINGS FOR "PLAYER INFORMATION" (/list data)
 ************************************************************/
 const listingDataMap = new Map(); 
 // Key: messageId, Value: object with user-provided fields
 
 /************************************************************
  4) BUILD /list Slash Command
-    - Updated to require image attachments instead of URLs
+    - Using attachments for images
 ************************************************************/
 const listCommand = new SlashCommandBuilder()
   .setName('list')
   .setDescription('Add a new account for sale (Restricted).')
-  // All required to ensure "More Information" always works
   .addStringOption(opt =>
     opt.setName('ping')
       .setDescription('Who to ping?')
@@ -349,9 +347,7 @@ client.on('messageCreate', async (message) => {
 
     /*******************************************************
      ?adds
-      - No buttons on the first three embeds
-      - The last embed has all 3 buttons (swap, 115k, matcherino)
-      - The "Matcherino Winner" text now says "This requires 5 invites!"
+      - Only the 4th embed has 3 buttons
     ********************************************************/
     if (cmd === 'adds') {
       // Restricted to role 1292933200389083196
@@ -381,7 +377,7 @@ client.on('messageCreate', async (message) => {
         .setTitle('Matcherino Winner Add')
         .setColor(EMBED_COLOR)
         .setDescription(
-          '**__This requires 5 invites!__**\n\n' + // Changed from 3 to 5
+          '**__This requires 5 invites!__**\n\n' +
           'Add a **Matcherino Winner!**'
         )
         .setImage('https://media.discordapp.net/attachments/1351687016433193051/1351997783028142170/IMG_2581.png?ex=67dc698e&is=67db180e&hm=14481cce4458123ee4f63ffd4271dc13a78aafdfc3701b069983851c6b3b8e8c&=&format=webp&quality=lossless&width=1746&height=806');
@@ -393,12 +389,12 @@ client.on('messageCreate', async (message) => {
           'Make sure to follow https://discord.com/channels/1292895164595175444/1293243690185265233'
         );
 
-      // First 3 with no action row
+      // First 3 with no buttons
       await message.channel.send({
         embeds: [embed1, embed2, embed3]
       });
 
-      // The row for the 4th embed should have all 3 buttons
+      // The row for the 4th embed with 3 buttons
       const rowAll = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('btn_swap_matcherino')
@@ -425,9 +421,10 @@ client.on('messageCreate', async (message) => {
 
     /*******************************************************
      ?friendlist
-      - 2 columns, no "Row 1"/"Row 2" label
-      - Remove underscores, use ** for names
-      - Then 2 buttons: buy add, more info
+      - Two columns for the embed
+      - Then 2-row approach:
+        1) "Buy Add" => ephemeral embed with Title: "Buy an Add"
+        2) "Player Information" => ephemeral embed with Title: "Player Information"
     ********************************************************/
     if (cmd === 'friendlist') {
       // Only useable by role 1292933200389083196
@@ -465,8 +462,8 @@ client.on('messageCreate', async (message) => {
           .setEmoji('<:Shopping_Cart:1351686041559367752>')
           .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
-          .setCustomId('friendlist_info')
-          .setLabel('More Information')
+          .setCustomId('friendlist_playerinfo')
+          .setLabel('Player Information')
           .setStyle(ButtonStyle.Primary)
       );
 
@@ -520,7 +517,7 @@ client.on('messageCreate', async (message) => {
 
 /************************************************************
  8) /list Interaction Handler
-    - Now using attachments for images
+    - "A lot wider/bigger" -> we can add blank fields to pad
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
@@ -563,15 +560,19 @@ client.on('interactionCreate', async (interaction) => {
     else if (pingChoice === 'here') nonEmbedText = '**||@here|| New account added!**';
     else nonEmbedText = '**New account added!**';
 
+    // We'll add blank fields to visually expand the embed
     const mainEmbed = new EmbedBuilder()
       .setTitle('New Account Added! <:winmatcherino:1298703851934711848>')
       .setColor(EMBED_COLOR)
-      .setDescription(text)
       .addFields(
+        { name: '\u200B', value: '\u200B' }, // blank field to make embed appear "bigger"
+        { name: 'Description', value: text },
+        { name: '\u200B', value: '\u200B' }, // more blank
         { name: '<:Money:1351665747641766022> Price:', value: price, inline: true },
         { name: '<:gold_trophy:1351658932434768025> Trophies:', value: trophies, inline: true },
         { name: '<:P11:1351683038127591529> P11:', value: p11, inline: true },
-        { name: '<:tiermax:1301899953320497243> Tier Max:', value: tierMax, inline: true }
+        { name: '<:tiermax:1301899953320497243> Tier Max:', value: tierMax, inline: true },
+        { name: '\u200B', value: '\u200B' } // extra spacing
       );
 
     if (imageUrl) mainEmbed.setImage(imageUrl);
@@ -583,8 +584,8 @@ client.on('interactionCreate', async (interaction) => {
         .setEmoji('<:Shopping_Cart:1351686041559367752>')
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
-        .setCustomId('listing_more_info_temp')
-        .setLabel('More Information')
+        .setCustomId('listing_player_info_temp')
+        .setLabel('Player Information')
         .setStyle(ButtonStyle.Secondary)
     );
 
@@ -596,13 +597,13 @@ client.on('interactionCreate', async (interaction) => {
       components: [buttonsRow]
     });
 
-    // Set "More Information" customId to include message ID
-    const newCustomId = `listing_more_info_${listingMessage.id}`;
+    // Set "Player Information" customId to include message ID
+    const newCustomId = `listing_player_info_${listingMessage.id}`;
     const updatedRows = [];
     listingMessage.components.forEach(row => {
       const rowBuilder = ActionRowBuilder.from(row);
       rowBuilder.components.forEach(comp => {
-        if (comp.customId === 'listing_more_info_temp') {
+        if (comp.customId === 'listing_player_info_temp') {
           comp.setCustomId(newCustomId);
         }
       });
@@ -610,7 +611,7 @@ client.on('interactionCreate', async (interaction) => {
     });
     await listingMessage.edit({ components: updatedRows });
 
-    // Store data for "More Information"
+    // Store data for "Player Information" (excluding price/trophies/p11/tiermax)
     listingDataMap.set(listingMessage.id, {
       rare,
       superRare,
@@ -627,18 +628,65 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 /************************************************************
- 9) BUTTON & SELECT MENU INTERACTIONS
+ 9) FRIENDLIST & LISTING BUTTON INTERACTIONS
 ************************************************************/
+
+// For friendlist "Buy Add" -> show 8 buttons, each opens a ticket
+// For friendlist "Player Information" -> show 8 buttons, each sends an info embed
 const friendlistPlayers = [
-  { label: 'LUX | Zoro', value: 'LUX | Zoro' },
-  { label: 'Lennox', value: 'Lennox' },
-  { label: 'Melih', value: 'Melih' },
-  { label: 'Elox', value: 'Elox' },
-  { label: 'Kazu', value: 'Kazu' },
-  { label: 'Izana', value: 'Izana' },
-  { label: 'SKC | Rafiki', value: 'SKC | Rafiki' },
-  { label: 'HMB | BosS', value: 'HMB | BosS' }
+  'LUX | Zoro',
+  'Lennox',
+  'Melih',
+  'Elox',
+  'Kazu',
+  'Izana',
+  'SKC | Rafiki',
+  'HMB | BosS'
 ];
+
+// We'll store each player's info for "Player Information"
+const playerInfoMap = {
+  'LUX | Zoro': {
+    title: 'LUX | Zoro Information',
+    text: 'LUX | Zoro is an e-sports player for the team LuxAeterna, he is a tier C player.\n\nHe has 75k 3v3 wins, 57 legacy R35, and Masters in solo power league.',
+    image: 'https://media.discordapp.net/attachments/987753155360079903/1352052664476762296/zoro.webp?ex=67dc9cab&is=67db4b2b&hm=34d0fc54c0bacd4c59fb395c30e70f469f57ba6b86d67f643cfede07a9cd045b&=&format=webp'
+  },
+  'Lennox': {
+    title: 'Lennox Information',
+    text: 'Lennox has 130k peak trophies, 48 legacy r35, and 38 prestige.',
+    image: 'https://media.discordapp.net/attachments/987753155360079903/1352052862766813245/lennox.webp?ex=67dc9cda&is=67db4b5a&hm=8d4a2b567b6acdba601efd15a581829f1123d4b050c018de184c6ba05ac45fb9&=&format=webp'
+  },
+  'Melih': {
+    title: 'Melih Information',
+    text: 'Melih has 150k peak trophies, 70 legacy r35, and Masters solo power league.',
+    image: 'https://media.discordapp.net/attachments/987753155360079903/1352053558337470535/melih.webp?ex=67dc9d80&is=67db4c00&hm=9bf8673688191879fd014a8b3106826a7e71ffbbe6d5c3ee6814088ef7eb5682&=&format=webp'
+  },
+  'Elox': {
+    title: 'Elox Information',
+    text: 'Elox is an official content creator and has 150k peak trophies.',
+    image: 'https://media.discordapp.net/attachments/987753155360079903/1352053811052544111/elox.webp?ex=67dc9dbc&is=67db4c3c&hm=b94c0b1740c3a72a2b4d9f3f0b579c9751c5660da5d754c8452fdb7e82afab78&=&format=webp'
+  },
+  'Kazu': {
+    title: 'Kazu Information',
+    text: 'Kazu is an official content creator and is currently top 10 global with trophies.',
+    image: 'https://media.discordapp.net/attachments/987753155360079903/1352055076448899072/kazu.webp?ex=67dc9eea&is=67db4d6a&hm=f0984e497ff616e6d2e89e06a4c78ac3647aef85cfa7321d8998c2fe615c31e5&=&format=webp'
+  },
+  'Izana': {
+    title: 'Izana Information',
+    text: 'Izana is a content creator and holds the bea world record with over 50k trophies on her.',
+    image: 'https://media.discordapp.net/attachments/987753155360079903/1352055480079614074/izana.webp?ex=67dc9f4a&is=67db4dca&hm=488b1a64206e37d39b580d6fe97b563bc21d34f862016363faf631b5b054c835&=&format=webp'
+  },
+  'SKC | Rafiki': {
+    title: 'SKC | Rafiki Information',
+    text: 'Rafiki tier S NA pro. He is also a matcherino winner',
+    image: 'https://media.discordapp.net/attachments/987753155360079903/1352055818165420102/rafiki.webp?ex=67dc9f9b&is=67db4e1b&hm=2b10fc92bd36a65eb55517ef1cb4071982119b4050e87600db30c9cb26f0286a&=&format=webp'
+  },
+  'HMB | BosS': {
+    title: 'HMB | BosS Information',
+    text: 'BosS is an e-sport player for Humble.\n\nIn 2024 he won the world finals.',
+    image: 'https://media.discordapp.net/attachments/987753155360079903/1352056193337655356/boss.webp?ex=67dc9ff4&is=67db4e74&hm=b201f9e04f7735c6952c4922fa27ce8d320c51b788ce77a6a92e8c77c2bdc5a9&=&format=webp'
+  }
+};
 
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
@@ -775,10 +823,11 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   /****************************************************
-   /list => More Information
+   /list => "Player Information" button
+   => ephemeral embed with the stored data
   ****************************************************/
-  if (customId.startsWith('listing_more_info_')) {
-    const listingId = customId.replace('listing_more_info_', '');
+  if (customId.startsWith('listing_player_info_')) {
+    const listingId = customId.replace('listing_player_info_', '');
     const data = listingDataMap.get(listingId);
     if (!data) {
       return interaction.reply({
@@ -804,6 +853,7 @@ client.on('interactionCreate', async (interaction) => {
     descLines.push(`**<:hypercharge:1351963655234650143> Hypercharges:**\n${hypercharges}`);
 
     const infoEmbed = new EmbedBuilder()
+      .setTitle('Player Information')
       .setColor(EMBED_COLOR)
       .setDescription(descLines.join('\n\n'));
 
@@ -811,7 +861,7 @@ client.on('interactionCreate', async (interaction) => {
       infoEmbed.setImage(image2);
     }
 
-    await interaction.reply({ embeds: [infoEmbed], ephemeral: false });
+    await interaction.reply({ embeds: [infoEmbed], ephemeral: true });
   }
 
   /****************************************************
@@ -942,58 +992,234 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   /****************************************************
-   friendlist_buyadd => show a dropdown
-   friendlist_info => show a dropdown
+   FRIENDLIST => Buy Add or Player Info
   ****************************************************/
-  if (customId === 'friendlist_buyadd' || customId === 'friendlist_info') {
-    const type = (customId === 'friendlist_buyadd') ? 'buyadd' : 'info';
+  if (customId === 'friendlist_buyadd') {
+    // ephemeral embed with Title: "Buy an Add" and 8 buttons
+    const buyTitle = 'Buy an Add';
+    const buyDesc = 'Please select the player you would like to add.';
 
-    const selectMenu = new StringSelectMenuBuilder()
-      .setCustomId(`friendlist_select_${type}`)
-      .setPlaceholder('Choose Player')
-      .addOptions(friendlistPlayers);
+    // We'll place 8 buttons in two rows (5 max per row).
+    const row1 = new ActionRowBuilder();
+    const row2 = new ActionRowBuilder();
+    const buttonCustomIds = [
+      'buy_luxzoro',
+      'buy_lennox',
+      'buy_melih',
+      'buy_elox',
+      'buy_kazu',
+      'buy_izana',
+      'buy_rafiki',
+      'buy_boss'
+    ];
 
-    const row = new ActionRowBuilder().addComponents(selectMenu);
+    // First 5 in row1, last 3 in row2
+    for (let i = 0; i < 5; i++) {
+      row1.addComponents(
+        new ButtonBuilder()
+          .setCustomId(buttonCustomIds[i])
+          .setLabel(friendlistPlayers[i])
+          .setStyle(ButtonStyle.Success)
+      );
+    }
+    for (let i = 5; i < friendlistPlayers.length; i++) {
+      row2.addComponents(
+        new ButtonBuilder()
+          .setCustomId(buttonCustomIds[i])
+          .setLabel(friendlistPlayers[i])
+          .setStyle(ButtonStyle.Success)
+      );
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle(buyTitle)
+      .setDescription(buyDesc)
+      .setColor(EMBED_COLOR);
 
     await interaction.reply({
-      content: 'Select a player:',
-      components: [row],
+      embeds: [embed],
+      components: [row1, row2],
+      ephemeral: true
+    });
+  }
+
+  if (customId === 'friendlist_playerinfo') {
+    // ephemeral embed with Title: "Player Information" and 8 buttons
+    const infoTitle = 'Player Information';
+    const infoDesc = 'Get more information about the player you would like to add!';
+
+    const row1 = new ActionRowBuilder();
+    const row2 = new ActionRowBuilder();
+    const buttonCustomIds = [
+      'info_luxzoro',
+      'info_lennox',
+      'info_melih',
+      'info_elox',
+      'info_kazu',
+      'info_izana',
+      'info_rafiki',
+      'info_boss'
+    ];
+
+    for (let i = 0; i < 5; i++) {
+      row1.addComponents(
+        new ButtonBuilder()
+          .setCustomId(buttonCustomIds[i])
+          .setLabel(friendlistPlayers[i])
+          .setStyle(ButtonStyle.Primary)
+      );
+    }
+    for (let i = 5; i < friendlistPlayers.length; i++) {
+      row2.addComponents(
+        new ButtonBuilder()
+          .setCustomId(buttonCustomIds[i])
+          .setLabel(friendlistPlayers[i])
+          .setStyle(ButtonStyle.Primary)
+      );
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle(infoTitle)
+      .setDescription(infoDesc)
+      .setColor(EMBED_COLOR);
+
+    await interaction.reply({
+      embeds: [embed],
+      components: [row1, row2],
+      ephemeral: true
+    });
+  }
+
+  /****************************************************
+   FRIENDLIST => Buy <player> or Info <player>
+  ****************************************************/
+  // Buy = open ticket in category 1347969216052985876
+  // Then post second embed "No title" "Adding Player: <name>"
+
+  const buyMap = {
+    buy_luxzoro: 'LUX | Zoro',
+    buy_lennox: 'Lennox',
+    buy_melih: 'Melih',
+    buy_elox: 'Elox',
+    buy_kazu: 'Kazu',
+    buy_izana: 'Izana',
+    buy_rafiki: 'SKC | Rafiki',
+    buy_boss: 'HMB | BosS'
+  };
+
+  const infoMap = {
+    info_luxzoro: 'LUX | Zoro',
+    info_lennox: 'Lennox',
+    info_melih: 'Melih',
+    info_elox: 'Elox',
+    info_kazu: 'Kazu',
+    info_izana: 'Izana',
+    info_rafiki: 'SKC | Rafiki',
+    info_boss: 'HMB | BosS'
+  };
+
+  // BUY => open ticket
+  if (Object.keys(buyMap).includes(customId)) {
+    const chosenName = buyMap[customId];
+    try {
+      const channelName = `add-${interaction.user.username}-${Math.floor(Math.random() * 1000)}`;
+      const addChannel = await guild.channels.create({
+        name: channelName,
+        type: ChannelType.GuildText,
+        parent: MOVE_CATEGORIES.add, // 1347969216052985876
+        permissionOverwrites: [
+          {
+            id: guild.roles.everyone,
+            deny: [PermissionsBitField.Flags.ViewChannel]
+          },
+          {
+            id: interaction.user.id,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory
+            ]
+          },
+          ...STAFF_ROLES.map(roleId => ({
+            id: roleId,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory
+            ]
+          }))
+        ]
+      });
+
+      const welcomeEmbed = new EmbedBuilder()
+        .setDescription(
+          'Welcome, thanks for opening a ticket!\n\n' +
+          '**Support will be with you shortly, please wait for them to respond.**'
+        );
+
+      const closeButton = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('close_ticket')
+          .setLabel('Close Ticket')
+          .setEmoji('<:Lock:1349157009244557384>')
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      // We'll send 2 embeds
+      await addChannel.send({
+        embeds: [welcomeEmbed],
+        components: [closeButton]
+      });
+
+      // second embed: no title
+      const addEmbed = new EmbedBuilder()
+        .setDescription(`**Adding Player:**\n${chosenName}`);
+
+      await addChannel.send({ embeds: [addEmbed] });
+
+      ticketOpeners.set(addChannel.id, interaction.user.id);
+
+      await interaction.reply({
+        content: `Ticket created: <#${addChannel.id}>`,
+        ephemeral: true
+      });
+    } catch (err) {
+      console.error(err);
+      interaction.reply({
+        content: 'Failed to create add ticket channel.',
+        ephemeral: true
+      });
+    }
+  }
+
+  // INFO => ephemeral embed with player's info
+  if (Object.keys(infoMap).includes(customId)) {
+    const chosenName = infoMap[customId];
+    const p = playerInfoMap[chosenName];
+    if (!p) {
+      return interaction.reply({
+        content: 'No player info found.',
+        ephemeral: true
+      });
+    }
+    const infoEmbed = new EmbedBuilder()
+      .setTitle(p.title)
+      .setDescription(p.text)
+      .setColor(EMBED_COLOR);
+
+    if (p.image) {
+      infoEmbed.setImage(p.image);
+    }
+
+    await interaction.reply({
+      embeds: [infoEmbed],
       ephemeral: true
     });
   }
 });
 
 /************************************************************
- 10) STRING SELECT MENU HANDLER FOR FRIENDLIST
-************************************************************/
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isStringSelectMenu()) return;
-
-  const { customId, values } = interaction;
-  if (!values || values.length === 0) return;
-
-  if (customId.startsWith('friendlist_select_')) {
-    const type = customId.replace('friendlist_select_', '');
-    const chosenPlayer = values[0];  // e.g. 'LUX | Zoro', 'Lennox', etc.
-
-    if (type === 'buyadd') {
-      // Here you can open a ticket, or do something else. For now, just ephemeral confirm.
-      await interaction.reply({
-        content: `You chose to buy an add from **${chosenPlayer}**. A staff member will contact you soon.`,
-        ephemeral: true
-      });
-    } else if (type === 'info') {
-      // Show some info about the chosen player, or ephemeral confirm.
-      await interaction.reply({
-        content: `More information requested about **${chosenPlayer}**.\nPlease wait for staff to assist.`,
-        ephemeral: true
-      });
-    }
-  }
-});
-
-/************************************************************
- 11) MODAL SUBMISSIONS (Tickets, Add 115k, Add Matcherino)
+ 10) MODAL SUBMISSIONS
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isModalSubmit()) return;
@@ -1009,7 +1235,8 @@ client.on('interactionCreate', async (interaction) => {
         if (!perm) return false;
         const isTicketCat = Object.values(TICKET_CATEGORIES).includes(ch.parentId)
           || ch.parentId === MATCHERINO_SWAP_CATEGORY
-          || ch.parentId === PURCHASE_ACCOUNT_CATEGORY;
+          || ch.parentId === PURCHASE_ACCOUNT_CATEGORY
+          || ch.parentId === MOVE_CATEGORIES.add;
         return perm.allow?.has(PermissionsBitField.Flags.ViewChannel) && isTicketCat;
       }
       return false;
@@ -1252,7 +1479,7 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 /************************************************************
-12) TICKET CLOSE / REOPEN / DELETE
+11) TICKET CLOSE / REOPEN / DELETE
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
@@ -1417,7 +1644,7 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 /************************************************************
-13) LOG IN THE BOT
+12) LOG IN THE BOT
 ************************************************************/
 client.login(BOT_TOKEN).catch(err => {
   console.error('[Login Error]', err);
