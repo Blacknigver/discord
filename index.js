@@ -97,7 +97,7 @@ const BRAWLSHOP_AD_ROLE = '1351998501982048346';
 // We'll store who opened each ticket so we can re-open it
 const ticketOpeners = new Map();
 
-// Color for /list (and also used in other embeds)
+// Color used in embeds
 const EMBED_COLOR = '#E68DF2';
 
 /************************************************************
@@ -118,7 +118,7 @@ const listingDataMap = new Map();
 
 /************************************************************
  4) BUILD /list Slash Command
-    - Using attachments for images
+    (Short embed style, but with an actual button labeled "Player Information")
 ************************************************************/
 const listCommand = new SlashCommandBuilder()
   .setName('list')
@@ -135,7 +135,7 @@ const listCommand = new SlashCommandBuilder()
   )
   .addStringOption(opt =>
     opt.setName('text')
-      .setDescription('Text to include at the top of the embed')
+      .setDescription('Short descriptive text to include at the top of the embed')
       .setRequired(true)
   )
   .addStringOption(opt =>
@@ -421,10 +421,8 @@ client.on('messageCreate', async (message) => {
 
     /*******************************************************
      ?friendlist
-      - Two columns for the embed
-      - Then 2-row approach:
-        1) "Buy Add" => ephemeral embed with Title: "Buy an Add"
-        2) "Player Information" => ephemeral embed with Title: "Player Information"
+      - Two columns, no underscores, replaced with ** for names
+      - Then the user can click "Buy Add" or "Player Information"
     ********************************************************/
     if (cmd === 'friendlist') {
       // Only useable by role 1292933200389083196
@@ -517,7 +515,7 @@ client.on('messageCreate', async (message) => {
 
 /************************************************************
  8) /list Interaction Handler
-    - "A lot wider/bigger" -> we can add blank fields to pad
+    (Short embed, plus "Player Information" button)
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
@@ -560,22 +558,20 @@ client.on('interactionCreate', async (interaction) => {
     else if (pingChoice === 'here') nonEmbedText = '**||@here|| New account added!**';
     else nonEmbedText = '**New account added!**';
 
-    // We'll add blank fields to visually expand the embed
+    // Short embed (like the original approach)
     const mainEmbed = new EmbedBuilder()
       .setTitle('New Account Added! <:winmatcherino:1298703851934711848>')
       .setColor(EMBED_COLOR)
+      .setDescription(text)
       .addFields(
-        { name: '\u200B', value: '\u200B' }, // blank field to make embed appear "bigger"
-        { name: 'Description', value: text },
-        { name: '\u200B', value: '\u200B' }, // more blank
         { name: '<:Money:1351665747641766022> Price:', value: price, inline: true },
         { name: '<:gold_trophy:1351658932434768025> Trophies:', value: trophies, inline: true },
         { name: '<:P11:1351683038127591529> P11:', value: p11, inline: true },
-        { name: '<:tiermax:1301899953320497243> Tier Max:', value: tierMax, inline: true },
-        { name: '\u200B', value: '\u200B' } // extra spacing
+        { name: '<:tiermax:1301899953320497243> Tier Max:', value: tierMax, inline: true }
       );
-
-    if (imageUrl) mainEmbed.setImage(imageUrl);
+    if (imageUrl) {
+      mainEmbed.setImage(imageUrl);
+    }
 
     const buttonsRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -591,13 +587,14 @@ client.on('interactionCreate', async (interaction) => {
 
     await interaction.reply({ content: 'Listing posted!', ephemeral: true });
 
+    // Send the listing message
     const listingMessage = await interaction.channel.send({
       content: nonEmbedText,
       embeds: [mainEmbed],
       components: [buttonsRow]
     });
 
-    // Set "Player Information" customId to include message ID
+    // Set the button's customId to listing_player_info_<messageId>
     const newCustomId = `listing_player_info_${listingMessage.id}`;
     const updatedRows = [];
     listingMessage.components.forEach(row => {
@@ -611,7 +608,7 @@ client.on('interactionCreate', async (interaction) => {
     });
     await listingMessage.edit({ components: updatedRows });
 
-    // Store data for "Player Information" (excluding price/trophies/p11/tiermax)
+    // Store data for "Player Information" (we skip price, trophies, p11, tiermax as requested)
     listingDataMap.set(listingMessage.id, {
       rare,
       superRare,
@@ -628,11 +625,10 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 /************************************************************
- 9) FRIENDLIST & LISTING BUTTON INTERACTIONS
+ 9) FRIENDLIST & /list BUTTON INTERACTIONS
 ************************************************************/
 
-// For friendlist "Buy Add" -> show 8 buttons, each opens a ticket
-// For friendlist "Player Information" -> show 8 buttons, each sends an info embed
+// For friendlist
 const friendlistPlayers = [
   'LUX | Zoro',
   'Lennox',
@@ -644,7 +640,7 @@ const friendlistPlayers = [
   'HMB | BosS'
 ];
 
-// We'll store each player's info for "Player Information"
+// We'll store each player's info for "Player Information" in friendlist
 const playerInfoMap = {
   'LUX | Zoro': {
     title: 'LUX | Zoro Information',
@@ -824,12 +820,13 @@ client.on('interactionCreate', async (interaction) => {
 
   /****************************************************
    /list => "Player Information" button
-   => ephemeral embed with the stored data
+   => ephemeral embed with the stored data (except price/trophies/p11/tiermax)
   ****************************************************/
   if (customId.startsWith('listing_player_info_')) {
     const listingId = customId.replace('listing_player_info_', '');
     const data = listingDataMap.get(listingId);
     if (!data) {
+      // If we have no data, respond ephemeral with an error
       return interaction.reply({
         content: 'No additional information found.',
         ephemeral: true
@@ -837,20 +834,28 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     const {
-      rare, superRare, epic, mythic, legendary,
-      brawlers, p9, p10, hypercharges, image2
+      rare,
+      superRare,
+      epic,
+      mythic,
+      legendary,
+      brawlers,
+      p9,
+      p10,
+      hypercharges,
+      image2
     } = data;
 
     const descLines = [];
-    descLines.push(`**<:rare:1351963849322004521> Rare Skins:**\n${rare}`);
-    descLines.push(`**<:super_rare:1351963921967218839> Super Rare Skins:**\n${superRare}`);
-    descLines.push(`**<:epic:1351963993442353365> Epic Skins:**\n${epic}`);
-    descLines.push(`**<:mythic:1351964047179907235> Mythic Skins:**\n${mythic}`);
-    descLines.push(`**<:legendary:1351964089454428261> Legendary Skins:**\n${legendary}`);
-    descLines.push(`**<:brawler:1351965712582705152> Brawlers:**\n${brawlers}`);
-    descLines.push(`**<:power_9:1351963484207841331> Power 9's:**\n${p9}`);
-    descLines.push(`**<:p10:1351981538740404355> Power 10's:**\n${p10}`);
-    descLines.push(`**<:hypercharge:1351963655234650143> Hypercharges:**\n${hypercharges}`);
+    descLines.push(`**Rare Skins:**\n${rare}`);
+    descLines.push(`**Super Rare Skins:**\n${superRare}`);
+    descLines.push(`**Epic Skins:**\n${epic}`);
+    descLines.push(`**Mythic Skins:**\n${mythic}`);
+    descLines.push(`**Legendary Skins:**\n${legendary}`);
+    descLines.push(`**Brawlers:**\n${brawlers}`);
+    descLines.push(`**Power 9's:**\n${p9}`);
+    descLines.push(`**Power 10's:**\n${p10}`);
+    descLines.push(`**Hypercharges:**\n${hypercharges}`);
 
     const infoEmbed = new EmbedBuilder()
       .setTitle('Player Information')
@@ -962,7 +967,6 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   if (customId === 'btn_add_matcherino_winner') {
-    // Checking roles
     let haveFirstPair = hasAllRoles(member, [MATCHERINO_WINNER_ROLE_1A, MATCHERINO_WINNER_ROLE_1B]);
     let haveSecondPair = hasAllRoles(member, [MATCHERINO_WINNER_ROLE_2A, MATCHERINO_WINNER_ROLE_2B]);
 
@@ -1013,7 +1017,6 @@ client.on('interactionCreate', async (interaction) => {
       'buy_boss'
     ];
 
-    // First 5 in row1, last 3 in row2
     for (let i = 0; i < 5; i++) {
       row1.addComponents(
         new ButtonBuilder()
@@ -1094,7 +1097,7 @@ client.on('interactionCreate', async (interaction) => {
    FRIENDLIST => Buy <player> or Info <player>
   ****************************************************/
   // Buy = open ticket in category 1347969216052985876
-  // Then post second embed "No title" "Adding Player: <name>"
+  // Then post second embed: no title, text => "**Adding Player:**\n<name>"
 
   const buyMap = {
     buy_luxzoro: 'LUX | Zoro',
@@ -1118,7 +1121,7 @@ client.on('interactionCreate', async (interaction) => {
     info_boss: 'HMB | BosS'
   };
 
-  // BUY => open ticket
+  // BUY => open ticket in MOVE_CATEGORIES.add
   if (Object.keys(buyMap).includes(customId)) {
     const chosenName = buyMap[customId];
     try {
@@ -1165,7 +1168,6 @@ client.on('interactionCreate', async (interaction) => {
           .setStyle(ButtonStyle.Danger)
       );
 
-      // We'll send 2 embeds
       await addChannel.send({
         embeds: [welcomeEmbed],
         components: [closeButton]
