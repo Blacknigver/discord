@@ -111,14 +111,13 @@ function hasAllRoles(member, roleIds = []) {
 }
 
 /************************************************************
- 3) TRACK LISTINGS FOR "PLAYER INFORMATION" (/list data)
+ 3) TRACK LISTINGS FOR "More Information" (/list data)
 ************************************************************/
 const listingDataMap = new Map(); 
 // Key: messageId, Value: object with user-provided fields
 
 /************************************************************
  4) BUILD /list Slash Command
-    (Short embed style, but with an actual button labeled "Player Information")
 ************************************************************/
 const listCommand = new SlashCommandBuilder()
   .setName('list')
@@ -135,7 +134,7 @@ const listCommand = new SlashCommandBuilder()
   )
   .addStringOption(opt =>
     opt.setName('text')
-      .setDescription('Short descriptive text to include at the top of the embed')
+      .setDescription('Short descriptive text to include')
       .setRequired(true)
   )
   .addStringOption(opt =>
@@ -515,7 +514,8 @@ client.on('messageCreate', async (message) => {
 
 /************************************************************
  8) /list Interaction Handler
-    (Short embed, plus "Player Information" button)
+    - "Wider" embed approach (use some inline fields to force width).
+    - Button labeled "More Information" (not "Player Information").
 ************************************************************/
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
@@ -558,17 +558,24 @@ client.on('interactionCreate', async (interaction) => {
     else if (pingChoice === 'here') nonEmbedText = '**||@here|| New account added!**';
     else nonEmbedText = '**New account added!**';
 
-    // Short embed (like the original approach)
+    /********************************************
+     * Build a "wide" embed by mixing inline fields
+     ********************************************/
     const mainEmbed = new EmbedBuilder()
       .setTitle('New Account Added! <:winmatcherino:1298703851934711848>')
       .setColor(EMBED_COLOR)
-      .setDescription(text)
+      // We'll put the text in a single field, inline: false
+      .addFields(
+        { name: 'Description', value: text, inline: false }
+      )
+      // Now force some inline fields to widen the embed
       .addFields(
         { name: '<:Money:1351665747641766022> Price:', value: price, inline: true },
         { name: '<:gold_trophy:1351658932434768025> Trophies:', value: trophies, inline: true },
         { name: '<:P11:1351683038127591529> P11:', value: p11, inline: true },
         { name: '<:tiermax:1301899953320497243> Tier Max:', value: tierMax, inline: true }
       );
+
     if (imageUrl) {
       mainEmbed.setImage(imageUrl);
     }
@@ -580,8 +587,8 @@ client.on('interactionCreate', async (interaction) => {
         .setEmoji('<:Shopping_Cart:1351686041559367752>')
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
-        .setCustomId('listing_player_info_temp')
-        .setLabel('Player Information')
+        .setCustomId('listing_more_info_temp')
+        .setLabel('More Information')
         .setStyle(ButtonStyle.Secondary)
     );
 
@@ -594,13 +601,13 @@ client.on('interactionCreate', async (interaction) => {
       components: [buttonsRow]
     });
 
-    // Set the button's customId to listing_player_info_<messageId>
-    const newCustomId = `listing_player_info_${listingMessage.id}`;
+    // Set the button's customId to listing_more_info_<messageId>
+    const newCustomId = `listing_more_info_${listingMessage.id}`;
     const updatedRows = [];
     listingMessage.components.forEach(row => {
       const rowBuilder = ActionRowBuilder.from(row);
       rowBuilder.components.forEach(comp => {
-        if (comp.customId === 'listing_player_info_temp') {
+        if (comp.customId === 'listing_more_info_temp') {
           comp.setCustomId(newCustomId);
         }
       });
@@ -608,7 +615,7 @@ client.on('interactionCreate', async (interaction) => {
     });
     await listingMessage.edit({ components: updatedRows });
 
-    // Store data for "Player Information" (we skip price, trophies, p11, tiermax as requested)
+    // Store data for "More Information" (excluding price, trophies, p11, tiermax)
     listingDataMap.set(listingMessage.id, {
       rare,
       superRare,
@@ -819,17 +826,15 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   /****************************************************
-   /list => "Player Information" button
-   => ephemeral embed with the stored data (except price/trophies/p11/tiermax)
+   /list => "More Information" button
   ****************************************************/
-  if (customId.startsWith('listing_player_info_')) {
-    const listingId = customId.replace('listing_player_info_', '');
+  if (customId.startsWith('listing_more_info_')) {
+    const listingId = customId.replace('listing_more_info_', '');
     const data = listingDataMap.get(listingId);
     if (!data) {
-      // If we have no data, respond ephemeral with an error
       return interaction.reply({
         content: 'No additional information found.',
-        ephemeral: true
+        ephemeral: false
       });
     }
 
@@ -858,7 +863,7 @@ client.on('interactionCreate', async (interaction) => {
     descLines.push(`**Hypercharges:**\n${hypercharges}`);
 
     const infoEmbed = new EmbedBuilder()
-      .setTitle('Player Information')
+      .setTitle('More Information')
       .setColor(EMBED_COLOR)
       .setDescription(descLines.join('\n\n'));
 
@@ -866,7 +871,7 @@ client.on('interactionCreate', async (interaction) => {
       infoEmbed.setImage(image2);
     }
 
-    await interaction.reply({ embeds: [infoEmbed], ephemeral: true });
+    await interaction.reply({ embeds: [infoEmbed], ephemeral: false });
   }
 
   /****************************************************
