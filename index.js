@@ -3,11 +3,12 @@
  * Discord.js v14
  * Uses process.env.TOKEN for the bot token.
  * 
- * Simplified to:
- * 1) /list command that posts an embed with "Purchase Account" + "Mark as Sold" buttons.
- * 2) "Purchase Account" opens a ticket (without passing listing data).
- * 3) "Mark as Sold" edits that same message, disabling the buttons.
- * 4) ?friendlist has the updated player info (no "etc.").
+ * Includes:
+ * 1) /list command with emojis for Price, Trophies, P11, Tier Max,
+ *    arranged so that Price/Trophies/P11 are on one row, Tier Max on the next.
+ * 2) “Mark as Sold” is red (danger) button; only role 1292933200389083196 can press it.
+ * 3) “Purchase Account” opens a ticket (no extra listing data).
+ * 4) All old features (ticket panel, ?move, ?adds, ?friendlist, etc.) intact.
  ********************************************************************/
 
 const {
@@ -92,9 +93,7 @@ const MATCHERINO_WINNER_ROLE_2B = '1351281117445099631';
 // Purchase Account category
 const PURCHASE_ACCOUNT_CATEGORY = '1347969247317327933';
 
-// We'll store who opened each ticket, just as before:
-const ticketOpeners = new Map();
-
+const ticketOpeners = new Map(); // store who opened each ticket
 const EMBED_COLOR = '#E68DF2';
 
 //////////////////////////////////////////////////////////////////////
@@ -192,7 +191,7 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
 });
 
 //////////////////////////////////////////////////////////////////////
-// 6) MESSAGE HANDLER (?ticketpanel, ?move, ?adds, ?friendlist)
+// 6) MESSAGE HANDLER
 //////////////////////////////////////////////////////////////////////
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
@@ -428,16 +427,20 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // build the main embed
+    // FIRST ROW: Price, Trophies, P11
+    // SECOND ROW: Tier Max by itself (with blank placeholders to keep it on a separate row).
     const mainEmbed = new EmbedBuilder()
       .setTitle('New Account Added! <:winmatcherino:1298703851934711848>')
       .setColor(EMBED_COLOR)
       .addFields(
         { name: 'Description', value: text, inline: false },
-        { name: 'Price', value: price, inline: true },
-        { name: 'Trophies', value: trophies, inline: true },
+
+        { name: '<:Money:1351665747641766022> Price', value: price, inline: true },
+        { name: '<:gold_trophy:1351658932434768025> Trophies', value: trophies, inline: true },
+        { name: '<:P11:1351683038127591529> P11', value: p11, inline: true },
+
+        { name: '<:tiermax:1301899953320497243> Tier Max', value: tierMax, inline: true },
         { name: '\u200B', value: '\u200B', inline: true },
-        { name: 'P11', value: p11, inline: true },
-        { name: 'Tier Max', value: tierMax, inline: true },
         { name: '\u200B', value: '\u200B', inline: true }
       );
 
@@ -445,7 +448,7 @@ client.on('interactionCreate', async (interaction) => {
       mainEmbed.setImage(imageUrl);
     }
 
-    // Buttons: Purchase, Mark as Sold
+    // Buttons: Purchase, Mark as Sold (danger)
     const rowOfButtons = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('purchase_account_temp')
@@ -455,7 +458,7 @@ client.on('interactionCreate', async (interaction) => {
       new ButtonBuilder()
         .setCustomId('listing_mark_sold_temp')
         .setLabel('Mark as Sold')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Danger) // red
     );
 
     // Acknowledge slash command
@@ -611,7 +614,6 @@ client.on('interactionCreate', async (interaction) => {
    Purchase Account => open ticket
   ****************************************************/
   if (customId.startsWith('purchase_account_')) {
-    // We do NOT bother with listing data. We'll just open a ticket.
     try {
       const channelName = `purchase-${interaction.user.username}-${Math.floor(Math.random()*1000)}`;
       const purchaseChannel = await guild.channels.create({
@@ -670,9 +672,17 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   /****************************************************
-   Mark as Sold => edit the same message
+   Mark as Sold => edit the same message, restricted to role 1292933200389083196
   ****************************************************/
   if (customId.startsWith('listing_mark_sold_')) {
+    // Check role 1292933200389083196
+    if (!member.roles.cache.has('1292933200389083196')) {
+      return interaction.reply({
+        content: 'Only members with role 1292933200389083196 can mark this as sold.',
+        ephemeral: true
+      });
+    }
+
     const originalMsg = interaction.message;
     if (!originalMsg) {
       return interaction.reply({
@@ -685,7 +695,7 @@ client.on('interactionCreate', async (interaction) => {
     const soldButton = new ButtonBuilder()
       .setCustomId('sold_button')
       .setLabel('This account has been sold.')
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Danger) // red
       .setDisabled(true);
 
     const soldRow = new ActionRowBuilder().addComponents(soldButton);
@@ -797,9 +807,9 @@ client.on('interactionCreate', async (interaction) => {
   }
   if (customId === 'btn_add_matcherino_winner') {
     // check if user has the 5-invite roles
-    const hasAllRoles = (member, roles=[]) => roles.every(r => member.roles.cache.has(r));
-    let haveFirstPair = hasAllRoles(member,[MATCHERINO_WINNER_ROLE_1A,MATCHERINO_WINNER_ROLE_1B]);
-    let haveSecondPair = hasAllRoles(member,[MATCHERINO_WINNER_ROLE_2A,MATCHERINO_WINNER_ROLE_2B]);
+    const hasAllRolesFn = (member, roles=[]) => roles.every(r => member.roles.cache.has(r));
+    let haveFirstPair = hasAllRolesFn(member,[MATCHERINO_WINNER_ROLE_1A,MATCHERINO_WINNER_ROLE_1B]);
+    let haveSecondPair = hasAllRolesFn(member,[MATCHERINO_WINNER_ROLE_2A,MATCHERINO_WINNER_ROLE_2B]);
     if (!haveFirstPair && !haveSecondPair) {
       return interaction.reply({
         embeds: [
@@ -826,7 +836,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   /****************************************************
-   ?friendlist => buyAdd, playerinfo
+   friendlist => buyAdd, playerinfo
   ****************************************************/
   if (customId === 'friendlist_buyadd') {
     const buyTitle = 'Buy an Add';
@@ -1205,10 +1215,9 @@ client.on('interactionCreate', async (interaction) => {
   // ?adds => Add Matcherino Winner
   if (customId === 'modal_matcherino_winner') {
     const supercellId = interaction.fields.getTextInputValue('supercell_id_input');
-    // check if user has both roles for 5 invites
-    const hasAllRoles = (member, roles=[]) => roles.every(r => member.roles.cache.has(r));
-    let haveFirstPair = hasAllRoles(interaction.member,[MATCHERINO_WINNER_ROLE_1A,MATCHERINO_WINNER_ROLE_1B]);
-    let haveSecondPair= hasAllRoles(interaction.member,[MATCHERINO_WINNER_ROLE_2A,MATCHERINO_WINNER_ROLE_2B]);
+    const hasAllRolesFn = (member, roles=[]) => roles.every(r => member.roles.cache.has(r));
+    let haveFirstPair = hasAllRolesFn(interaction.member,[MATCHERINO_WINNER_ROLE_1A,MATCHERINO_WINNER_ROLE_1B]);
+    let haveSecondPair= hasAllRolesFn(interaction.member,[MATCHERINO_WINNER_ROLE_2A,MATCHERINO_WINNER_ROLE_2B]);
     if (!haveFirstPair && !haveSecondPair) {
       return interaction.reply({
         embeds: [
