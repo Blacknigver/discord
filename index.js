@@ -2,13 +2,15 @@
  * Brawl Stars Boosting Discord Bot
  * Discord.js v14
  * Uses process.env.TOKEN for the bot token.
- * 
- * Includes:
- * 1) /list command with emojis for Price, Trophies, P11, Tier Max,
- *    arranged so that Price/Trophies/P11 are on one row, Tier Max on the next.
- * 2) “Mark as Sold” is red (danger) button; only role 1292933200389083196 can press it.
- * 3) “Purchase Account” opens a ticket (no extra listing data).
- * 4) All old features (ticket panel, ?move, ?adds, ?friendlist, etc.) intact.
+ *
+ * Updated to remove "matcherino swap," add auto-close features,
+ * and mention the user in the newly created ticket channel. Also:
+ * - If user clicks "Close" on a purchase ticket, close immediately (no confirm).
+ * - If 0 messages from opener in 24h => auto-close (with 6h & 12h reminders).
+ * - If 1+ messages from opener => 48h inactivity => auto-close
+ *   (with a 24h inactivity reminder).
+ * - If user leaves the server => auto-close immediately.
+ * - Logs auto-close events in channel 1354587880382795836.
  ********************************************************************/
 
 const {
@@ -27,9 +29,7 @@ const {
   PermissionsBitField
 } = require('discord.js');
 
-//////////////////////////////////////////////////////////////////////
 // 1) CONFIG + SETUP
-//////////////////////////////////////////////////////////////////////
 const BOT_TOKEN = process.env.TOKEN || '';
 const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_CLIENT_ID_HERE';
 
@@ -48,15 +48,15 @@ const client = new Client({
 // Roles / IDs
 const TICKET_PANEL_ALLOWED_USERS = ['658351335967686659','986164993080836096']; // for ?ticketpanel
 const STAFF_ROLES = [
-  '1292933924116500532',
-  '1292933200389083196',
-  '1303702944696504441',
-  '1322611585281425478'
+  '1292933924116500532', // staff
+  '1292933200389083196', // staff
+  '1303702944696504441', // staff
+  '1322611585281425478'  // staff
 ];
 const LIST_COMMAND_ROLE = '1292933200389083196'; // can use /list
 const BRAWLSHOP_AD_ROLE = '1351998501982048346'; // presence check
 
-// Ticket categories (for new tickets)
+// Ticket categories
 const TICKET_CATEGORIES = {
   TROPHIES: '1322947795803574343',
   RANKED: '1322913302921089094',
@@ -75,7 +75,7 @@ const MOVE_CATEGORIES = {
 };
 
 // For ?adds
-const MATCHERINO_SWAP_CATEGORY = '1351687962907246753';
+// Remove MATCHERINO_SWAP_CATEGORY references entirely => we don't need them
 const ADD_115K_MSG_CHANNEL     = '1351687016433193051';
 const ADD_MATCHERINO_MSG_CHANNEL = '1351687016433193051';
 
@@ -93,19 +93,210 @@ const MATCHERINO_WINNER_ROLE_2B = '1351281117445099631';
 // Purchase Account category
 const PURCHASE_ACCOUNT_CATEGORY = '1347969247317327933';
 
-const ticketOpeners = new Map(); // store who opened each ticket
+// Channel to log auto-closes
+const AUTO_CLOSE_LOG_CHANNEL = '1354587880382795836';
+
+// For the embed color
 const EMBED_COLOR = '#E68DF2';
 
-//////////////////////////////////////////////////////////////////////
-// 2) UTILITY
-//////////////////////////////////////////////////////////////////////
+// Store who opened each ticket
+const ticketOpeners = new Map(); 
+
+/********************************************************************
+ * For the new auto-close logic, we need to keep track of:
+ * 1) The time the ticket was created
+ * 2) How many messages the opener has posted
+ * 3) The time of the last message from the opener
+ * 4) Whether we've shown certain reminders
+ ********************************************************************/
+class TicketData {
+  constructor(openerId, channelId, channelName, openTime) {
+    this.openerId = openerId;
+    this.channelId = channelId;
+    this.channelName = channelName; // for logging
+    this.openTime = openTime; 
+    this.msgCount = 0; // number of messages from the opener
+    this.lastOpenerMsgTime = openTime; // track last time the opener spoke
+    // For 0-message reminders
+    this.reminder6hSent = false;
+    this.reminder12hSent = false;
+    // For 1+ message reminders
+    this.reminder24hSent = false;
+  }
+}
+
+// Map<channelId, TicketData>
+const ticketDataMap = new Map(); 
+
+/********************************************************************
+ * setInterval to check tickets periodically
+ * (Runs every 5 minutes).
+ ********************************************************************/
+setInterval(() => {
+  checkTicketTimeouts();
+}, 5 * 60 * 1000); // 5 minutes
+
+async function checkTicketTimeouts() {
+  const now = Date.now();
+
+  for (const [channelId, data] of ticketDataMap.entries()) {
+    const { openerId, channelName, openTime, msgCount, lastOpenerMsgTime } = data;
+
+    // Attempt to fetch guild + channel
+    const guild = client.guilds.cache.first();
+    if (!guild) continue;
+    const channel = guild.channels.cache.get(channelId);
+    if (!channel) {
+      // Channel was deleted or not found => remove from map
+      ticketDataMap.delete(channelId);
+      continue;
+    }
+
+    // Check if user left the server
+    const openerMember = guild.members.cache.get(openerId);
+    if (!openerMember) {
+      // The user left => close + delete immediately
+      await autoCloseDeleteChannel(
+        channel, 
+        `User Name: ${await fetchUsername(openerId) || 'Unable to find this'}\nTicket Name: ${channelName}\nClosed Because:\nUser left the server.`
+      );
+      ticketDataMap.delete(channelId);
+      continue;
+    }
+
+    // If user has 0 messages so far
+    if (msgCount === 0) {
+      // how long since openTime?
+      const hoursSinceOpen = (now - openTime) / (1000 * 60 * 60);
+      // 6h reminder
+      if (hoursSinceOpen >= 6 && !data.reminder6hSent) {
+        data.reminder6hSent = true;
+        await sendNoMsgReminder(channel, openerId, 6, 18); 
+      }
+      // 12h reminder
+      if (hoursSinceOpen >= 12 && !data.reminder12hSent) {
+        data.reminder12hSent = true;
+        await sendNoMsgReminder(channel, openerId, 12, 12); 
+      }
+      // 24h => close + delete
+      if (hoursSinceOpen >= 24) {
+        // log => "Closed After: 24 hours"
+        await autoCloseLog(channel, openerId, channelName, '24 hours');
+        await channel.delete().catch(() => {});
+        ticketDataMap.delete(channelId);
+      }
+    } else {
+      // The user has at least 1 message
+      // how long since lastOpenerMsgTime?
+      const hoursInactive = (now - lastOpenerMsgTime) / (1000 * 60 * 60);
+
+      // 24h => reminder
+      if (hoursInactive >= 24 && hoursInactive < 48 && !data.reminder24hSent) {
+        data.reminder24hSent = true;
+        await sendInactivityReminder(channel, openerId);
+      }
+      // 48h => close
+      if (hoursInactive >= 48) {
+        // log => "Closed After: 48 hours"
+        await autoCloseLog(channel, openerId, channelName, '48 hours');
+        await channel.delete().catch(() => {});
+        ticketDataMap.delete(channelId);
+      }
+    }
+  }
+}
+
+// Helper: auto-close + log message for user-left scenario
+async function autoCloseDeleteChannel(channel, logText) {
+  try {
+    const closeEmbed = new EmbedBuilder().setDescription('Ticket closed because user left the server.');
+    await channel.send({ embeds: [closeEmbed] }).catch(()=>{});
+    await channel.delete().catch(()=>{});
+    // Now log in AUTO_CLOSE_LOG_CHANNEL
+    const guild = client.guilds.cache.first();
+    if (guild) {
+      const logChannel = guild.channels.cache.get(AUTO_CLOSE_LOG_CHANNEL);
+      if (logChannel) {
+        await logChannel.send({
+          content: `**Ticket Closed**\n${logText}`
+        });
+      }
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+// Helper: fetch username
+async function fetchUsername(userId) {
+  try {
+    const user = await client.users.fetch(userId);
+    return user.username;
+  } catch {
+    return null;
+  }
+}
+
+// Helper: log an auto-close
+async function autoCloseLog(channel, openerId, channelName, afterLabel) {
+  const guild = channel.guild;
+  if (!guild) return;
+  const logChannel = guild.channels.cache.get(AUTO_CLOSE_LOG_CHANNEL);
+  if (!logChannel) return;
+
+  await logChannel.send({
+    content: `**Ticket Closed**\nUser: <@${openerId}>\nTicket Name: ${channelName}\nClosed After: ${afterLabel}`
+  });
+}
+
+// Helper: 6h/12h no-message reminder
+async function sendNoMsgReminder(channel, openerId, hoursSoFar, hoursLeft) {
+  const mention = `<@${openerId}>`;
+  const embed = new EmbedBuilder()
+    .setTitle('Close Reminder')
+    .setDescription(`${mention} - You have not sent a single message for **${hoursSoFar} hours**, please send a message within the next **${hoursLeft} hours** or your ticket will be closed.`);
+  await channel.send({ 
+    content: mention, 
+    embeds: [embed]
+  }).catch(()=>{});
+}
+
+// Helper: 24h inactivity reminder
+async function sendInactivityReminder(channel, openerId) {
+  const mention = `<@${openerId}>`;
+  const embed = new EmbedBuilder()
+    .setTitle('Close Reminder')
+    .setDescription(`${mention} - You have not sent a message for 24 hours, please send a message within the next 24 hours or your ticket will be closed.`);
+  await channel.send({
+    content: mention,
+    embeds: [embed]
+  }).catch(()=>{});
+}
+
+/********************************************************************
+ * Track messages from ticket openers
+ * If the channel is in ticketDataMap,
+ * and the message author is the opener => we update lastOpenerMsgTime, msgCount, etc.
+ ********************************************************************/
+client.on('messageCreate', (message) => {
+  if (message.author.bot) return;
+  if (!message.guild) return;
+
+  const data = ticketDataMap.get(message.channel.id);
+  if (!data) return; 
+  // If the author is the opener
+  if (message.author.id === data.openerId) {
+    data.msgCount += 1;
+    data.lastOpenerMsgTime = Date.now();
+  }
+});
+
+// UTILITY
 function hasAnyRole(member, roleIds=[]) {
   return roleIds.some(r => member.roles.cache.has(r));
 }
 
-//////////////////////////////////////////////////////////////////////
-// 3) SLASH COMMAND: /list
-//////////////////////////////////////////////////////////////////////
+// 3) BUILD /list Slash Command
 const listCommand = new SlashCommandBuilder()
   .setName('list')
   .setDescription('Add a new account for sale (Restricted).')
@@ -150,9 +341,7 @@ const listCommand = new SlashCommandBuilder()
       .setRequired(true)
   );
 
-//////////////////////////////////////////////////////////////////////
 // 4) BOT STARTUP
-//////////////////////////////////////////////////////////////////////
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
   try {
@@ -163,9 +352,7 @@ client.once('ready', async () => {
   }
 });
 
-//////////////////////////////////////////////////////////////////////
 // 5) PRESENCE CHECK
-//////////////////////////////////////////////////////////////////////
 client.on('presenceUpdate', async (oldPresence, newPresence) => {
   if (!newPresence || !newPresence.member) return;
   const member = newPresence.member;
@@ -190,9 +377,7 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
   }
 });
 
-//////////////////////////////////////////////////////////////////////
 // 6) MESSAGE HANDLER
-//////////////////////////////////////////////////////////////////////
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
 
@@ -202,9 +387,7 @@ client.on('messageCreate', async (message) => {
   const args = message.content.slice(prefix.length).trim().split(/\s+/);
   const cmd  = args.shift()?.toLowerCase();
 
-  /*******************************************************
-   ?ticketpanel
-  ********************************************************/
+  // ?ticketpanel
   if (cmd === 'ticketpanel') {
     if (!TICKET_PANEL_ALLOWED_USERS.includes(message.author.id)) {
       return message.reply("You don't have permission to use this command!");
@@ -250,9 +433,7 @@ client.on('messageCreate', async (message) => {
     await message.reply('Ticket panel created!');
   }
 
-  /*******************************************************
-   ?move
-  ********************************************************/
+  // ?move
   if (cmd === 'move') {
     if (!hasAnyRole(message.member, STAFF_ROLES)) {
       return message.reply("You don't have permission to use this command!");
@@ -271,24 +452,15 @@ client.on('messageCreate', async (message) => {
     }
   }
 
-  /*******************************************************
-   ?adds
-  ********************************************************/
+  // ?adds
   if (cmd === 'adds') {
     // restricted to role 1292933200389083196
     if (!message.member.roles.cache.has('1292933200389083196')) {
       return message.reply("You don't have permission to use this command!");
     }
 
-    const embed1 = new EmbedBuilder()
-      .setTitle('Matcherino Swap')
-      .setColor(EMBED_COLOR)
-      .setDescription(
-        '**__This requires 2 invites!__**\n\n' +
-        'Swap pins with a **Matcherino Winner** in a friendly game.\n\n' +
-        'After that you will be able to use the **Matcherino Winner Pin** yourself during that game.'
-      );
-
+    // We remove the "matcherino swap" embed & button
+    // So we only keep the 115k Trophies & 71 R35 Add, and the Matcherino Winner Add
     const embed2 = new EmbedBuilder()
       .setTitle('115k Trophies & 71 R35 Add')
       .setColor(EMBED_COLOR)
@@ -314,15 +486,10 @@ client.on('messageCreate', async (message) => {
         'Make sure to follow https://discord.com/channels/1292895164595175444/1293243690185265233'
       );
 
-    // first 3 with no buttons
-    await message.channel.send({ embeds: [embed1, embed2, embed3] });
+    await message.channel.send({ embeds: [embed2, embed3] });
 
     const rowAll = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('btn_swap_matcherino')
-        .setLabel('Swap Matcherino')
-        .setEmoji('<:winmatcherino:1298703851934711848>')
-        .setStyle(ButtonStyle.Danger),
+      // remove the swap button
       new ButtonBuilder()
         .setCustomId('btn_add_115k')
         .setLabel('Add 115k')
@@ -341,22 +508,19 @@ client.on('messageCreate', async (message) => {
     });
   }
 
-  /*******************************************************
-   ?friendlist
-  ********************************************************/
+  // ?friendlist
   if (cmd === 'friendlist') {
     if (!message.member.roles.cache.has('1292933200389083196')) {
       return message.reply("You don't have permission to use this command!");
     }
 
-    // Updated info with no "etc."
-    const embedRowLeft = 
+    const embedRowLeft =
       '🥈| **LUX | Zoro** - €10\n' +
       '🥈| **Lennox** - €15\n' +
       '🥈| **Melih** - €15\n' +
       '🥈| **Elox** - €15';
 
-    const embedRowRight = 
+    const embedRowRight =
       '🥈| **Kazu** - €15\n' +
       '🥇| **Izana** - €25\n' +
       '🥇| **SKC | Rafiki** - €25\n' +
@@ -391,9 +555,7 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-//////////////////////////////////////////////////////////////////////
-// 7) SLASH COMMAND HANDLER FOR /list
-//////////////////////////////////////////////////////////////////////
+// 7) SLASH COMMAND /list handler
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -405,7 +567,7 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
-    // gather inputs for the main embed
+    // gather inputs
     const pingChoice = interaction.options.getString('ping');
     const text       = interaction.options.getString('text');
     const price      = interaction.options.getString('price');
@@ -416,7 +578,6 @@ client.on('interactionCreate', async (interaction) => {
     const mainImage = interaction.options.getAttachment('image');
     const imageUrl  = mainImage?.url;
 
-    // Ping text
     let nonEmbedText;
     if (pingChoice === 'everyone') {
       nonEmbedText = '**||@everyone|| New account added!**';
@@ -426,19 +587,15 @@ client.on('interactionCreate', async (interaction) => {
       nonEmbedText = '**New account added!**';
     }
 
-    // build the main embed
-    // FIRST ROW: Price, Trophies, P11
-    // SECOND ROW: Tier Max by itself (with blank placeholders to keep it on a separate row).
+    // main embed
     const mainEmbed = new EmbedBuilder()
       .setTitle('New Account Added! <:winmatcherino:1298703851934711848>')
       .setColor(EMBED_COLOR)
       .addFields(
         { name: 'Description', value: text, inline: false },
-
         { name: '<:Money:1351665747641766022> Price', value: price, inline: true },
         { name: '<:gold_trophy:1351658932434768025> Trophies', value: trophies, inline: true },
         { name: '<:P11:1351683038127591529> P11', value: p11, inline: true },
-
         { name: '<:tiermax:1301899953320497243> Tier Max', value: tierMax, inline: true },
         { name: '\u200B', value: '\u200B', inline: true },
         { name: '\u200B', value: '\u200B', inline: true }
@@ -448,7 +605,7 @@ client.on('interactionCreate', async (interaction) => {
       mainEmbed.setImage(imageUrl);
     }
 
-    // Buttons: Purchase, Mark as Sold (danger)
+    // Buttons: Purchase, Mark as Sold
     const rowOfButtons = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('purchase_account_temp')
@@ -458,24 +615,21 @@ client.on('interactionCreate', async (interaction) => {
       new ButtonBuilder()
         .setCustomId('listing_mark_sold_temp')
         .setLabel('Mark as Sold')
-        .setStyle(ButtonStyle.Danger) // red
+        .setStyle(ButtonStyle.Danger)
     );
 
-    // Acknowledge slash command
     await interaction.reply({ content: 'Listing posted!', ephemeral: true });
 
-    // Send the listing embed to channel
+    // post the embed
     const listingMessage = await interaction.channel.send({
       content: nonEmbedText,
       embeds: [mainEmbed],
       components: [rowOfButtons]
     });
 
-    // finalize custom IDs
     const newPurchaseId = `purchase_account_${listingMessage.id}`;
     const newSoldId     = `listing_mark_sold_${listingMessage.id}`;
 
-    // Update placeholders
     const updatedRows = [];
     for (const rowComp of listingMessage.components) {
       const rowBuilder = ActionRowBuilder.from(rowComp);
@@ -492,9 +646,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-//////////////////////////////////////////////////////////////////////
 // 8) BUTTON INTERACTIONS
-//////////////////////////////////////////////////////////////////////
 const friendlistPlayers = [
   'LUX | Zoro',
   'Lennox',
@@ -612,6 +764,7 @@ client.on('interactionCreate', async (interaction) => {
 
   /****************************************************
    Purchase Account => open ticket
+   => mention the opener in plain text
   ****************************************************/
   if (customId.startsWith('purchase_account_')) {
     try {
@@ -644,6 +797,7 @@ client.on('interactionCreate', async (interaction) => {
         ]
       });
 
+      const mentionText = `<@${interaction.user.id}>`;
       const welcomeEmbed = new EmbedBuilder()
         .setDescription('Welcome, thanks for opening a ticket!\n\nSupport will be with you shortly.');
 
@@ -654,9 +808,10 @@ client.on('interactionCreate', async (interaction) => {
           .setEmoji('<:Lock:1349157009244557384>')
           .setStyle(ButtonStyle.Danger)
       );
-      await purchaseChannel.send({ embeds: [welcomeEmbed], components: [closeBtnRow] });
+      await purchaseChannel.send({ content: mentionText, embeds: [welcomeEmbed], components: [closeBtnRow] });
 
-      ticketOpeners.set(purchaseChannel.id, interaction.user.id);
+      // track in ticketDataMap
+      ticketDataMap.set(purchaseChannel.id, new TicketData(interaction.user.id, purchaseChannel.id, channelName, Date.now()));
 
       return interaction.reply({
         content: `Ticket created: <#${purchaseChannel.id}>`,
@@ -672,10 +827,9 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   /****************************************************
-   Mark as Sold => edit the same message, restricted to role 1292933200389083196
+   Mark as Sold => only 1292933200389083196 can press
   ****************************************************/
   if (customId.startsWith('listing_mark_sold_')) {
-    // Check role 1292933200389083196
     if (!member.roles.cache.has('1292933200389083196')) {
       return interaction.reply({
         content: 'Only members with role 1292933200389083196 can mark this as sold.',
@@ -691,11 +845,11 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
-    // Replace all components with a single disabled "Sold" button
+    // Single disabled "Sold" button
     const soldButton = new ButtonBuilder()
       .setCustomId('sold_button')
       .setLabel('This account has been sold.')
-      .setStyle(ButtonStyle.Danger) // red
+      .setStyle(ButtonStyle.Danger)
       .setDisabled(true);
 
     const soldRow = new ActionRowBuilder().addComponents(soldButton);
@@ -715,64 +869,11 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 
+  // Removed "btn_swap_matcherino" references per your request.
+
   /****************************************************
-   ?adds => 3 Buttons: Swap, 115k, Matcherino
+   btn_add_115k
   ****************************************************/
-  if (customId === 'btn_swap_matcherino') {
-    const channelName = `swap-${interaction.user.username}-${Math.floor(Math.random()*1000)}`;
-    try {
-      const newChan = await guild.channels.create({
-        name: channelName,
-        type: ChannelType.GuildText,
-        parent: MATCHERINO_SWAP_CATEGORY,
-        permissionOverwrites: [
-          {
-            id: guild.roles.everyone,
-            deny: [PermissionsBitField.Flags.ViewChannel]
-          },
-          {
-            id: interaction.user.id,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ReadMessageHistory
-            ]
-          },
-          ...STAFF_ROLES.map(r => ({
-            id: r,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ReadMessageHistory
-            ]
-          }))
-        ]
-      });
-
-      const welcomeEmbed = new EmbedBuilder()
-        .setDescription('Welcome, thanks for opening a ticket!\n\nSupport will be with you shortly.');
-      const closeBtnRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('close_ticket')
-          .setLabel('Close Ticket')
-          .setEmoji('<:Lock:1349157009244557384>')
-          .setStyle(ButtonStyle.Danger)
-      );
-      await newChan.send({ embeds: [welcomeEmbed], components: [closeBtnRow] });
-      ticketOpeners.set(newChan.id, interaction.user.id);
-
-      return interaction.reply({
-        content: `Matcherino swap ticket created: <#${newChan.id}>`,
-        ephemeral: true
-      });
-    } catch(err) {
-      console.error(err);
-      return interaction.reply({
-        content: 'Failed to create swap ticket channel.',
-        ephemeral: true
-      });
-    }
-  }
   if (customId === 'btn_add_115k') {
     let hasRole = false;
     for (const r of ADD_115K_ROLES) {
@@ -805,8 +906,11 @@ client.on('interactionCreate', async (interaction) => {
     modal.addComponents(row);
     return interaction.showModal(modal);
   }
+
+  /****************************************************
+   btn_add_matcherino_winner
+  ****************************************************/
   if (customId === 'btn_add_matcherino_winner') {
-    // check if user has the 5-invite roles
     const hasAllRolesFn = (member, roles=[]) => roles.every(r => member.roles.cache.has(r));
     let haveFirstPair = hasAllRolesFn(member,[MATCHERINO_WINNER_ROLE_1A,MATCHERINO_WINNER_ROLE_1B]);
     let haveSecondPair = hasAllRolesFn(member,[MATCHERINO_WINNER_ROLE_2A,MATCHERINO_WINNER_ROLE_2B]);
@@ -940,7 +1044,6 @@ client.on('interactionCreate', async (interaction) => {
 
   if (Object.keys(buyMap).includes(customId)) {
     const chosenName = buyMap[customId];
-    // open a ticket in the "add" category
     try {
       const addChannel = await guild.channels.create({
         name: `add-${interaction.user.username}-${Math.floor(Math.random()*1000)}`,
@@ -970,6 +1073,7 @@ client.on('interactionCreate', async (interaction) => {
         ]
       });
 
+      const mentionText = `<@${interaction.user.id}>`;
       const welcomeEmbed = new EmbedBuilder().setDescription(
         'Welcome, thanks for opening a ticket!\n\nSupport will be with you shortly.'
       );
@@ -980,13 +1084,14 @@ client.on('interactionCreate', async (interaction) => {
           .setEmoji('<:Lock:1349157009244557384>')
           .setStyle(ButtonStyle.Danger)
       );
-      await addChannel.send({ embeds: [welcomeEmbed], components: [closeBtnRow] });
+      await addChannel.send({ content: mentionText, embeds: [welcomeEmbed], components: [closeBtnRow] });
 
       const addEmbed = new EmbedBuilder()
         .setDescription(`**Adding Player:**\n${chosenName}`);
       await addChannel.send({ embeds: [addEmbed] });
 
-      ticketOpeners.set(addChannel.id, interaction.user.id);
+      // track
+      ticketDataMap.set(addChannel.id, new TicketData(interaction.user.id, addChannel.id, addChannel.name, Date.now()));
 
       return interaction.reply({
         content: `Ticket created: <#${addChannel.id}>`,
@@ -1023,14 +1128,12 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-//////////////////////////////////////////////////////////////////////
-// 9) MODAL SUBMISSIONS (Tickets + ?adds)
-//////////////////////////////////////////////////////////////////////
+// 9) MODAL SUBMISSIONS
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isModalSubmit()) return;
   const { customId } = interaction;
 
-  // createTicketChannel helper
+  // helper to create ticket channel
   async function createTicketChannel(interaction, categoryId, answers) {
     const { guild, user } = interaction;
     // check existing tickets
@@ -1039,7 +1142,6 @@ client.on('interactionCreate', async (interaction) => {
         const perm = ch.permissionOverwrites.cache.get(user.id);
         if (!perm) return false;
         const isTicketCat = Object.values(TICKET_CATEGORIES).includes(ch.parentId)
-          || ch.parentId === MATCHERINO_SWAP_CATEGORY
           || ch.parentId === PURCHASE_ACCOUNT_CATEGORY
           || ch.parentId === MOVE_CATEGORIES.add;
         return isTicketCat && perm.allow.has(PermissionsBitField.Flags.ViewChannel);
@@ -1083,6 +1185,7 @@ client.on('interactionCreate', async (interaction) => {
         ]
       });
 
+      const mentionText = `<@${user.id}>`;
       const welcomeEmbed = new EmbedBuilder()
         .setDescription('Welcome, thanks for opening a ticket!\n\nSupport will respond soon.');
       
@@ -1099,9 +1202,10 @@ client.on('interactionCreate', async (interaction) => {
           .setEmoji('<:Lock:1349157009244557384>')
           .setStyle(ButtonStyle.Danger)
       );
-      await newChan.send({ embeds: [welcomeEmbed, qnaEmbed], components: [closeBtnRow] });
+      await newChan.send({ content: mentionText, embeds: [welcomeEmbed, qnaEmbed], components: [closeBtnRow] });
 
-      ticketOpeners.set(newChan.id, user.id);
+      // track
+      ticketDataMap.set(newChan.id, new TicketData(user.id, newChan.id, newChan.name, Date.now()));
 
       return interaction.reply({
         content: `Ticket created: <#${newChan.id}>`,
@@ -1260,32 +1364,77 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-//////////////////////////////////////////////////////////////////////
 // 10) TICKET CLOSE / REOPEN / DELETE
-//////////////////////////////////////////////////////////////////////
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
 
   const { customId, channel, guild, user, member } = interaction;
-
   if (customId === 'close_ticket') {
-    const confirmRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('confirm_close_ticket')
-        .setLabel('Confirm')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('cancel_close_ticket')
-        .setLabel('Cancel')
-        .setStyle(ButtonStyle.Danger)
-    );
-    return interaction.reply({
-      embeds: [
-        new EmbedBuilder().setDescription('Are you sure you want to close this ticket?')
-      ],
-      components: [confirmRow],
-      ephemeral: true
-    });
+    // 1) If it's an account purchase ticket => close immediately
+    if (channel.parentId === PURCHASE_ACCOUNT_CATEGORY) {
+      // "Close" means removing perms so only staff can see => do not ask confirm
+      try {
+        await channel.permissionOverwrites.set([
+          {
+            id: guild.roles.everyone,
+            deny: [PermissionsBitField.Flags.ViewChannel]
+          },
+          {
+            id: '1292933924116500532',
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory
+            ]
+          }
+        ]);
+        const closeEmbed = new EmbedBuilder()
+          .setTitle('Ticket Closed')
+          .setDescription(`This ticket has been closed by <@${user.id}>.`);
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('delete_ticket')
+            .setLabel('Delete')
+            .setStyle(ButtonStyle.Danger),
+          new ButtonBuilder()
+            .setCustomId('reopen_ticket')
+            .setLabel('Re-Open')
+            .setStyle(ButtonStyle.Success)
+        );
+
+        await channel.send({ embeds: [closeEmbed], components: [row] });
+        return interaction.reply({
+          content: 'Ticket closed (no confirmation needed for purchase tickets).',
+          ephemeral: true
+        });
+      } catch(err) {
+        console.error(err);
+        return interaction.reply({
+          content: 'Failed to close the ticket. Check permissions.',
+          ephemeral: true
+        });
+      }
+    } else {
+      // For other tickets => ephemeral confirm
+      const confirmRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('confirm_close_ticket')
+          .setLabel('Confirm')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('cancel_close_ticket')
+          .setLabel('Cancel')
+          .setStyle(ButtonStyle.Danger)
+      );
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder().setDescription('Are you sure you want to close this ticket?')
+        ],
+        components: [confirmRow],
+        ephemeral: true
+      });
+    }
   }
 
   if (customId === 'confirm_close_ticket') {
@@ -1296,7 +1445,7 @@ client.on('interactionCreate', async (interaction) => {
           deny: [PermissionsBitField.Flags.ViewChannel]
         },
         {
-          id: '1292933924116500532', // staff role
+          id: '1292933924116500532', // staff
           allow: [
             PermissionsBitField.Flags.ViewChannel,
             PermissionsBitField.Flags.SendMessages,
@@ -1349,7 +1498,9 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
     await interaction.reply({ content: 'Deleting channel...', ephemeral: true });
-    return channel.delete().catch(console.error);
+    await channel.delete().catch(console.error);
+    // remove from ticketDataMap
+    ticketDataMap.delete(channel.id);
   }
 
   if (customId === 'reopen_ticket') {
@@ -1359,7 +1510,8 @@ client.on('interactionCreate', async (interaction) => {
         ephemeral: true
       });
     }
-    const openerId = ticketOpeners.get(channel.id);
+    const data = ticketDataMap.get(channel.id);
+    const openerId = data?.openerId;
     if (!openerId) {
       return interaction.reply({
         content: 'Could not find who opened this ticket originally.',
@@ -1406,9 +1558,31 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-//////////////////////////////////////////////////////////////////////
+/********************************************************************
+ * GUILD MEMBER LEAVE => auto-close tickets
+ ********************************************************************/
+client.on('guildMemberRemove', async (member) => {
+  // If that user is an opener for any open ticket => close it
+  const userId = member.id;
+  // We do the actual close check in the checkTicketTimeouts
+  // Or we can do it right here.
+  for (const [channelId, data] of ticketDataMap.entries()) {
+    if (data.openerId === userId) {
+      // close + delete channel => log
+      const guild = member.guild;
+      const channel = guild.channels.cache.get(channelId);
+      if (channel) {
+        await autoCloseDeleteChannel(
+          channel,
+          `User Name: ${member.user.username}\nTicket Name: ${data.channelName}\nClosed Because:\nUser left the server.`
+        );
+      }
+      ticketDataMap.delete(channelId);
+    }
+  }
+});
+
 // 11) LOG IN
-//////////////////////////////////////////////////////////////////////
 client.login(BOT_TOKEN).catch(err => {
   console.error('[Login Error]', err);
 });
