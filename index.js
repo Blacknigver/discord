@@ -3,14 +3,15 @@
  * Discord.js v14
  * Uses process.env.TOKEN for the bot token.
  *
- * Updated to remove "matcherino swap," add auto-close features,
- * and mention the user in the newly created ticket channel. Also:
- * - If user clicks "Close" on a purchase ticket, close immediately (no confirm).
- * - If 0 messages from opener in 24h => auto-close (with 6h & 12h reminders).
- * - If 1+ messages from opener => 48h inactivity => auto-close
- *   (with a 24h inactivity reminder).
- * - If user leaves the server => auto-close immediately.
- * - Logs auto-close events in channel 1354587880382795836.
+ * Includes:
+ * - Auto-close logic (0 messages => close at 24h, 6h/12h reminders, etc.)
+ * - If a user has >=2 open tickets, new tickets are created with no category
+ *   (i.e., parent: null) but still function normally.
+ * - Purchase tickets close immediately on “Close Ticket.”
+ * - “Mark as Sold” restricted to role 1292933200389083196.
+ * - 115k add fix: remove *all* roles from ADD_115K_ROLES, not just the first.
+ * - Matcherino winner add fix: remove all 4 roles if user has them, ensuring 100% removal.
+ * - Removed “matcherino swap” button, kept 115k add, matcherino winner add.
  ********************************************************************/
 
 const {
@@ -74,11 +75,12 @@ const MOVE_CATEGORIES = {
   finished: '1347969418898051164'
 };
 
-// For ?adds
-// Remove MATCHERINO_SWAP_CATEGORY references entirely => we don't need them
+// For ?adds (we removed the matcherino swap, but kept 115k + winner)
 const ADD_115K_MSG_CHANNEL     = '1351687016433193051';
 const ADD_MATCHERINO_MSG_CHANNEL = '1351687016433193051';
 
+// **Note**: We'll remove *all* roles in the arrays below if the user has them
+// for 115k add & matcherino winner add
 const ADD_115K_ROLES = [
   '1351281086134747298',
   '1351687292200423484'
@@ -99,63 +101,47 @@ const AUTO_CLOSE_LOG_CHANNEL = '1354587880382795836';
 // For the embed color
 const EMBED_COLOR = '#E68DF2';
 
-// Store who opened each ticket
-const ticketOpeners = new Map(); 
-
-/********************************************************************
- * For the new auto-close logic, we need to keep track of:
- * 1) The time the ticket was created
- * 2) How many messages the opener has posted
- * 3) The time of the last message from the opener
- * 4) Whether we've shown certain reminders
- ********************************************************************/
+// For auto-close logic
 class TicketData {
   constructor(openerId, channelId, channelName, openTime) {
     this.openerId = openerId;
     this.channelId = channelId;
-    this.channelName = channelName; // for logging
+    this.channelName = channelName;
     this.openTime = openTime; 
-    this.msgCount = 0; // number of messages from the opener
-    this.lastOpenerMsgTime = openTime; // track last time the opener spoke
-    // For 0-message reminders
+    this.msgCount = 0; 
+    this.lastOpenerMsgTime = openTime; 
+    // reminders
     this.reminder6hSent = false;
     this.reminder12hSent = false;
-    // For 1+ message reminders
     this.reminder24hSent = false;
   }
 }
 
-// Map<channelId, TicketData>
-const ticketDataMap = new Map(); 
+// Store data for each open ticket
+const ticketDataMap = new Map();
 
-/********************************************************************
- * setInterval to check tickets periodically
- * (Runs every 5 minutes).
- ********************************************************************/
+// check every 5 minutes
 setInterval(() => {
   checkTicketTimeouts();
-}, 5 * 60 * 1000); // 5 minutes
+}, 5 * 60 * 1000);
 
+// Auto-close checks
 async function checkTicketTimeouts() {
   const now = Date.now();
 
   for (const [channelId, data] of ticketDataMap.entries()) {
     const { openerId, channelName, openTime, msgCount, lastOpenerMsgTime } = data;
-
-    // Attempt to fetch guild + channel
     const guild = client.guilds.cache.first();
     if (!guild) continue;
     const channel = guild.channels.cache.get(channelId);
     if (!channel) {
-      // Channel was deleted or not found => remove from map
       ticketDataMap.delete(channelId);
       continue;
     }
 
-    // Check if user left the server
+    // user left?
     const openerMember = guild.members.cache.get(openerId);
     if (!openerMember) {
-      // The user left => close + delete immediately
       await autoCloseDeleteChannel(
         channel, 
         `User Name: ${await fetchUsername(openerId) || 'Unable to find this'}\nTicket Name: ${channelName}\nClosed Because:\nUser left the server.`
@@ -164,55 +150,45 @@ async function checkTicketTimeouts() {
       continue;
     }
 
-    // If user has 0 messages so far
     if (msgCount === 0) {
-      // how long since openTime?
-      const hoursSinceOpen = (now - openTime) / (1000 * 60 * 60);
-      // 6h reminder
+      const hoursSinceOpen = (now - openTime) / (1000*60*60);
       if (hoursSinceOpen >= 6 && !data.reminder6hSent) {
         data.reminder6hSent = true;
         await sendNoMsgReminder(channel, openerId, 6, 18); 
       }
-      // 12h reminder
       if (hoursSinceOpen >= 12 && !data.reminder12hSent) {
         data.reminder12hSent = true;
         await sendNoMsgReminder(channel, openerId, 12, 12); 
       }
-      // 24h => close + delete
       if (hoursSinceOpen >= 24) {
-        // log => "Closed After: 24 hours"
+        // close
         await autoCloseLog(channel, openerId, channelName, '24 hours');
-        await channel.delete().catch(() => {});
+        await channel.delete().catch(()=>{});
         ticketDataMap.delete(channelId);
       }
     } else {
-      // The user has at least 1 message
-      // how long since lastOpenerMsgTime?
-      const hoursInactive = (now - lastOpenerMsgTime) / (1000 * 60 * 60);
-
-      // 24h => reminder
+      // 1+ messages
+      const hoursInactive = (now - lastOpenerMsgTime) / (1000*60*60);
       if (hoursInactive >= 24 && hoursInactive < 48 && !data.reminder24hSent) {
         data.reminder24hSent = true;
         await sendInactivityReminder(channel, openerId);
       }
-      // 48h => close
       if (hoursInactive >= 48) {
-        // log => "Closed After: 48 hours"
+        // close
         await autoCloseLog(channel, openerId, channelName, '48 hours');
-        await channel.delete().catch(() => {});
+        await channel.delete().catch(()=>{});
         ticketDataMap.delete(channelId);
       }
     }
   }
 }
 
-// Helper: auto-close + log message for user-left scenario
+// Helper for user left
 async function autoCloseDeleteChannel(channel, logText) {
   try {
     const closeEmbed = new EmbedBuilder().setDescription('Ticket closed because user left the server.');
     await channel.send({ embeds: [closeEmbed] }).catch(()=>{});
     await channel.delete().catch(()=>{});
-    // Now log in AUTO_CLOSE_LOG_CHANNEL
     const guild = client.guilds.cache.first();
     if (guild) {
       const logChannel = guild.channels.cache.get(AUTO_CLOSE_LOG_CHANNEL);
@@ -227,7 +203,7 @@ async function autoCloseDeleteChannel(channel, logText) {
   }
 }
 
-// Helper: fetch username
+// fetch user
 async function fetchUsername(userId) {
   try {
     const user = await client.users.fetch(userId);
@@ -237,7 +213,7 @@ async function fetchUsername(userId) {
   }
 }
 
-// Helper: log an auto-close
+// auto-close log
 async function autoCloseLog(channel, openerId, channelName, afterLabel) {
   const guild = channel.guild;
   if (!guild) return;
@@ -249,7 +225,7 @@ async function autoCloseLog(channel, openerId, channelName, afterLabel) {
   });
 }
 
-// Helper: 6h/12h no-message reminder
+// no message reminders
 async function sendNoMsgReminder(channel, openerId, hoursSoFar, hoursLeft) {
   const mention = `<@${openerId}>`;
   const embed = new EmbedBuilder()
@@ -261,7 +237,7 @@ async function sendNoMsgReminder(channel, openerId, hoursSoFar, hoursLeft) {
   }).catch(()=>{});
 }
 
-// Helper: 24h inactivity reminder
+// inactivity reminder
 async function sendInactivityReminder(channel, openerId) {
   const mention = `<@${openerId}>`;
   const embed = new EmbedBuilder()
@@ -273,30 +249,25 @@ async function sendInactivityReminder(channel, openerId) {
   }).catch(()=>{});
 }
 
-/********************************************************************
- * Track messages from ticket openers
- * If the channel is in ticketDataMap,
- * and the message author is the opener => we update lastOpenerMsgTime, msgCount, etc.
- ********************************************************************/
+// track messages from the ticket opener
 client.on('messageCreate', (message) => {
   if (message.author.bot) return;
   if (!message.guild) return;
 
   const data = ticketDataMap.get(message.channel.id);
   if (!data) return; 
-  // If the author is the opener
   if (message.author.id === data.openerId) {
     data.msgCount += 1;
     data.lastOpenerMsgTime = Date.now();
   }
 });
 
-// UTILITY
+// helper
 function hasAnyRole(member, roleIds=[]) {
   return roleIds.some(r => member.roles.cache.has(r));
 }
 
-// 3) BUILD /list Slash Command
+// slash /list
 const listCommand = new SlashCommandBuilder()
   .setName('list')
   .setDescription('Add a new account for sale (Restricted).')
@@ -341,7 +312,7 @@ const listCommand = new SlashCommandBuilder()
       .setRequired(true)
   );
 
-// 4) BOT STARTUP
+// start
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
   try {
@@ -352,7 +323,7 @@ client.once('ready', async () => {
   }
 });
 
-// 5) PRESENCE CHECK
+// presence check
 client.on('presenceUpdate', async (oldPresence, newPresence) => {
   if (!newPresence || !newPresence.member) return;
   const member = newPresence.member;
@@ -377,7 +348,7 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
   }
 });
 
-// 6) MESSAGE HANDLER
+// ? commands
 client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
 
@@ -454,13 +425,11 @@ client.on('messageCreate', async (message) => {
 
   // ?adds
   if (cmd === 'adds') {
-    // restricted to role 1292933200389083196
     if (!message.member.roles.cache.has('1292933200389083196')) {
       return message.reply("You don't have permission to use this command!");
     }
 
-    // We remove the "matcherino swap" embed & button
-    // So we only keep the 115k Trophies & 71 R35 Add, and the Matcherino Winner Add
+    // Only 115k & matcherino winner
     const embed2 = new EmbedBuilder()
       .setTitle('115k Trophies & 71 R35 Add')
       .setColor(EMBED_COLOR)
@@ -489,7 +458,6 @@ client.on('messageCreate', async (message) => {
     await message.channel.send({ embeds: [embed2, embed3] });
 
     const rowAll = new ActionRowBuilder().addComponents(
-      // remove the swap button
       new ButtonBuilder()
         .setCustomId('btn_add_115k')
         .setLabel('Add 115k')
@@ -555,7 +523,7 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// 7) SLASH COMMAND /list handler
+// 7) /list
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -567,7 +535,6 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
-    // gather inputs
     const pingChoice = interaction.options.getString('ping');
     const text       = interaction.options.getString('text');
     const price      = interaction.options.getString('price');
@@ -587,7 +554,6 @@ client.on('interactionCreate', async (interaction) => {
       nonEmbedText = '**New account added!**';
     }
 
-    // main embed
     const mainEmbed = new EmbedBuilder()
       .setTitle('New Account Added! <:winmatcherino:1298703851934711848>')
       .setColor(EMBED_COLOR)
@@ -605,7 +571,6 @@ client.on('interactionCreate', async (interaction) => {
       mainEmbed.setImage(imageUrl);
     }
 
-    // Buttons: Purchase, Mark as Sold
     const rowOfButtons = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('purchase_account_temp')
@@ -620,7 +585,6 @@ client.on('interactionCreate', async (interaction) => {
 
     await interaction.reply({ content: 'Listing posted!', ephemeral: true });
 
-    // post the embed
     const listingMessage = await interaction.channel.send({
       content: nonEmbedText,
       embeds: [mainEmbed],
@@ -705,7 +669,7 @@ client.on('interactionCreate', async (interaction) => {
 
   const { customId, member, guild, channel, user } = interaction;
 
-  // Helper: create a modal
+  // create a modal
   function buildModal(modalId, title, questions) {
     const modal = new ModalBuilder()
       .setCustomId(modalId)
@@ -722,9 +686,7 @@ client.on('interactionCreate', async (interaction) => {
     return modal;
   }
 
-  /****************************************************
-   TICKET Panel Buttons
-  ****************************************************/
+  // TICKET Panel
   if (customId === 'ticket_trophies') {
     const modal = buildModal('modal_ticket_trophies','Trophies Ticket', [
       { customId: 'current_brawler_trophies', label: 'How many trophies does your brawler have?' },
@@ -751,7 +713,7 @@ client.on('interactionCreate', async (interaction) => {
     const modal = buildModal('modal_ticket_mastery','Mastery Ticket', [
       { customId: 'current_mastery_rank', label: 'What is your current mastery rank?' },
       { customId: 'desired_mastery_rank', label: 'Desired mastery rank?' },
-      { customId: 'which_brawler', label: 'Which brawler to boost?' }
+      { customId: 'which_brawler', label: 'Which brawler do you want boosted?' }
     ]);
     return interaction.showModal(modal);
   }
@@ -762,24 +724,31 @@ client.on('interactionCreate', async (interaction) => {
     return interaction.showModal(modal);
   }
 
-  /****************************************************
-   Purchase Account => open ticket
-   => mention the opener in plain text
-  ****************************************************/
+  // purchase_account
   if (customId.startsWith('purchase_account_')) {
+    // open a "purchase" ticket
     try {
-      const channelName = `purchase-${interaction.user.username}-${Math.floor(Math.random()*1000)}`;
+      const existingTickets = guild.channels.cache.filter(ch => {
+        if (ch.type === ChannelType.GuildText) {
+          const perm = ch.permissionOverwrites.cache.get(user.id);
+          return perm?.allow.has(PermissionsBitField.Flags.ViewChannel);
+        }
+        return false;
+      });
+      const hasOverflow = (existingTickets.size >= MAX_TICKETS_PER_USER);
+
+      const channelName = `purchase-${user.username}-${Math.floor(Math.random()*1000)}`;
       const purchaseChannel = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
-        parent: PURCHASE_ACCOUNT_CATEGORY,
+        parent: hasOverflow ? null : PURCHASE_ACCOUNT_CATEGORY,
         permissionOverwrites: [
           {
             id: guild.roles.everyone,
             deny: [PermissionsBitField.Flags.ViewChannel]
           },
           {
-            id: interaction.user.id,
+            id: user.id,
             allow: [
               PermissionsBitField.Flags.ViewChannel,
               PermissionsBitField.Flags.SendMessages,
@@ -797,7 +766,7 @@ client.on('interactionCreate', async (interaction) => {
         ]
       });
 
-      const mentionText = `<@${interaction.user.id}>`;
+      const mentionText = `<@${user.id}>`;
       const welcomeEmbed = new EmbedBuilder()
         .setDescription('Welcome, thanks for opening a ticket!\n\nSupport will be with you shortly.');
 
@@ -810,8 +779,7 @@ client.on('interactionCreate', async (interaction) => {
       );
       await purchaseChannel.send({ content: mentionText, embeds: [welcomeEmbed], components: [closeBtnRow] });
 
-      // track in ticketDataMap
-      ticketDataMap.set(purchaseChannel.id, new TicketData(interaction.user.id, purchaseChannel.id, channelName, Date.now()));
+      ticketDataMap.set(purchaseChannel.id, new TicketData(user.id, purchaseChannel.id, channelName, Date.now()));
 
       return interaction.reply({
         content: `Ticket created: <#${purchaseChannel.id}>`,
@@ -826,9 +794,7 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 
-  /****************************************************
-   Mark as Sold => only 1292933200389083196 can press
-  ****************************************************/
+  // listing_mark_sold
   if (customId.startsWith('listing_mark_sold_')) {
     if (!member.roles.cache.has('1292933200389083196')) {
       return interaction.reply({
@@ -845,7 +811,6 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
-    // Single disabled "Sold" button
     const soldButton = new ButtonBuilder()
       .setCustomId('sold_button')
       .setLabel('This account has been sold.')
@@ -869,20 +834,16 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Removed "btn_swap_matcherino" references per your request.
-
-  /****************************************************
-   btn_add_115k
-  ****************************************************/
+  // btn_add_115k
   if (customId === 'btn_add_115k') {
-    let hasRole = false;
+    let hasAtLeastOneRole = false;
     for (const r of ADD_115K_ROLES) {
       if (member.roles.cache.has(r)) {
-        hasRole = true;
+        hasAtLeastOneRole = true;
         break;
       }
     }
-    if (!hasRole) {
+    if (!hasAtLeastOneRole) {
       return interaction.reply({
         embeds: [
           new EmbedBuilder().setDescription('Insufficient Invites, come back when you have enough!')
@@ -907,14 +868,17 @@ client.on('interactionCreate', async (interaction) => {
     return interaction.showModal(modal);
   }
 
-  /****************************************************
-   btn_add_matcherino_winner
-  ****************************************************/
+  // btn_add_matcherino_winner
   if (customId === 'btn_add_matcherino_winner') {
-    const hasAllRolesFn = (member, roles=[]) => roles.every(r => member.roles.cache.has(r));
-    let haveFirstPair = hasAllRolesFn(member,[MATCHERINO_WINNER_ROLE_1A,MATCHERINO_WINNER_ROLE_1B]);
-    let haveSecondPair = hasAllRolesFn(member,[MATCHERINO_WINNER_ROLE_2A,MATCHERINO_WINNER_ROLE_2B]);
-    if (!haveFirstPair && !haveSecondPair) {
+    // We'll remove all 4 roles if they have them
+    const rolesHas = [
+      member.roles.cache.has(MATCHERINO_WINNER_ROLE_1A),
+      member.roles.cache.has(MATCHERINO_WINNER_ROLE_1B),
+      member.roles.cache.has(MATCHERINO_WINNER_ROLE_2A),
+      member.roles.cache.has(MATCHERINO_WINNER_ROLE_2B)
+    ];
+    const hasAny = rolesHas.some(r => r === true);
+    if (!hasAny) {
       return interaction.reply({
         embeds: [
           new EmbedBuilder().setDescription('<:cross:1351689463453061130> - Insufficient Invites!')
@@ -923,6 +887,7 @@ client.on('interactionCreate', async (interaction) => {
       });
     }
 
+    // show modal
     const modal = new ModalBuilder()
       .setCustomId('modal_matcherino_winner')
       .setTitle('Supercell ID');
@@ -939,9 +904,7 @@ client.on('interactionCreate', async (interaction) => {
     return interaction.showModal(modal);
   }
 
-  /****************************************************
-   friendlist => buyAdd, playerinfo
-  ****************************************************/
+  // friendlist => buyAdd
   if (customId === 'friendlist_buyadd') {
     const buyTitle = 'Buy an Add';
     const buyDesc  = 'Please select the player you would like to add.';
@@ -980,6 +943,7 @@ client.on('interactionCreate', async (interaction) => {
     });
   }
 
+  // friendlist => playerinfo
   if (customId === 'friendlist_playerinfo') {
     const infoTitle = 'Player Information';
     const infoDesc  = 'Get more information about the player you would like to add!';
@@ -1018,9 +982,7 @@ client.on('interactionCreate', async (interaction) => {
     });
   }
 
-  /****************************************************
-   friendlist => buy_xxx or info_xxx
-  ****************************************************/
+  // friendlist => buy_xxx or info_xxx
   const buyMap = {
     'buy_luxzoro':'LUX | Zoro',
     'buy_lennox':'Lennox',
@@ -1045,17 +1007,27 @@ client.on('interactionCreate', async (interaction) => {
   if (Object.keys(buyMap).includes(customId)) {
     const chosenName = buyMap[customId];
     try {
+      const existingTickets = guild.channels.cache.filter(ch => {
+        if (ch.type === ChannelType.GuildText) {
+          const perm = ch.permissionOverwrites.cache.get(user.id);
+          return perm?.allow.has(PermissionsBitField.Flags.ViewChannel);
+        }
+        return false;
+      });
+      const hasOverflow = (existingTickets.size >= MAX_TICKETS_PER_USER);
+
+      const channelName = `add-${user.username}-${Math.floor(Math.random()*1000)}`;
       const addChannel = await guild.channels.create({
-        name: `add-${interaction.user.username}-${Math.floor(Math.random()*1000)}`,
+        name: channelName,
         type: ChannelType.GuildText,
-        parent: MOVE_CATEGORIES.add,
+        parent: hasOverflow ? null : MOVE_CATEGORIES.add, 
         permissionOverwrites: [
           {
             id: guild.roles.everyone,
             deny: [PermissionsBitField.Flags.ViewChannel]
           },
           {
-            id: interaction.user.id,
+            id: user.id,
             allow: [
               PermissionsBitField.Flags.ViewChannel,
               PermissionsBitField.Flags.SendMessages,
@@ -1073,7 +1045,7 @@ client.on('interactionCreate', async (interaction) => {
         ]
       });
 
-      const mentionText = `<@${interaction.user.id}>`;
+      const mentionText = `<@${user.id}>`;
       const welcomeEmbed = new EmbedBuilder().setDescription(
         'Welcome, thanks for opening a ticket!\n\nSupport will be with you shortly.'
       );
@@ -1090,8 +1062,7 @@ client.on('interactionCreate', async (interaction) => {
         .setDescription(`**Adding Player:**\n${chosenName}`);
       await addChannel.send({ embeds: [addEmbed] });
 
-      // track
-      ticketDataMap.set(addChannel.id, new TicketData(interaction.user.id, addChannel.id, addChannel.name, Date.now()));
+      ticketDataMap.set(addChannel.id, new TicketData(user.id, addChannel.id, addChannel.name, Date.now()));
 
       return interaction.reply({
         content: `Ticket created: <#${addChannel.id}>`,
@@ -1133,34 +1104,23 @@ client.on('interactionCreate', async (interaction) => {
   if (!interaction.isModalSubmit()) return;
   const { customId } = interaction;
 
-  // helper to create ticket channel
-  async function createTicketChannel(interaction, categoryId, answers) {
+  async function createTicketChannelWithOverflow(interaction, categoryId, answers) {
     const { guild, user } = interaction;
-    // check existing tickets
     const existingTickets = guild.channels.cache.filter(ch => {
-      if (ch.type === ChannelType.GuildText && ch.parentId) {
+      if (ch.type === ChannelType.GuildText) {
         const perm = ch.permissionOverwrites.cache.get(user.id);
-        if (!perm) return false;
-        const isTicketCat = Object.values(TICKET_CATEGORIES).includes(ch.parentId)
-          || ch.parentId === PURCHASE_ACCOUNT_CATEGORY
-          || ch.parentId === MOVE_CATEGORIES.add;
-        return isTicketCat && perm.allow.has(PermissionsBitField.Flags.ViewChannel);
+        return perm?.allow.has(PermissionsBitField.Flags.ViewChannel);
       }
       return false;
     });
-    if (existingTickets.size >= MAX_TICKETS_PER_USER) {
-      return interaction.reply({
-        content: `You already have the maximum of ${MAX_TICKETS_PER_USER} open tickets!`,
-        ephemeral: true
-      });
-    }
+    const hasOverflow = (existingTickets.size >= MAX_TICKETS_PER_USER);
 
     try {
       const channelName = `ticket-${user.username}-${Math.floor(Math.random()*1000)}`;
       const newChan = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
-        parent: categoryId,
+        parent: hasOverflow ? null : categoryId, 
         permissionOverwrites: [
           {
             id: guild.roles.everyone,
@@ -1204,7 +1164,6 @@ client.on('interactionCreate', async (interaction) => {
       );
       await newChan.send({ content: mentionText, embeds: [welcomeEmbed, qnaEmbed], components: [closeBtnRow] });
 
-      // track
       ticketDataMap.set(newChan.id, new TicketData(user.id, newChan.id, newChan.name, Date.now()));
 
       return interaction.reply({
@@ -1230,8 +1189,9 @@ client.on('interactionCreate', async (interaction) => {
       ['Desired brawler trophies?', desired],
       ['Which brawler?', which]
     ];
-    await createTicketChannel(interaction, TICKET_CATEGORIES.TROPHIES, answers);
+    await createTicketChannelWithOverflow(interaction, TICKET_CATEGORIES.TROPHIES, answers);
   }
+
   // Ranked
   if (customId === 'modal_ticket_ranked') {
     const currentRank = interaction.fields.getTextInputValue('current_rank');
@@ -1240,8 +1200,9 @@ client.on('interactionCreate', async (interaction) => {
       ['Current rank?', currentRank],
       ['Desired rank?', desiredRank]
     ];
-    await createTicketChannel(interaction, TICKET_CATEGORIES.RANKED, answers);
+    await createTicketChannelWithOverflow(interaction, TICKET_CATEGORIES.RANKED, answers);
   }
+
   // Bulk
   if (customId === 'modal_ticket_bulk') {
     const currentTotal  = interaction.fields.getTextInputValue('current_total');
@@ -1250,8 +1211,9 @@ client.on('interactionCreate', async (interaction) => {
       ['Current total trophies?', currentTotal],
       ['Desired total trophies?', desiredTotal]
     ];
-    await createTicketChannel(interaction, TICKET_CATEGORIES.BULK, answers);
+    await createTicketChannelWithOverflow(interaction, TICKET_CATEGORIES.BULK, answers);
   }
+
   // Mastery
   if (customId === 'modal_ticket_mastery') {
     const currentMastery = interaction.fields.getTextInputValue('current_mastery_rank');
@@ -1262,39 +1224,36 @@ client.on('interactionCreate', async (interaction) => {
       ['Desired mastery rank?', desiredMastery],
       ['Which brawler?', whichBrawler]
     ];
-    await createTicketChannel(interaction, TICKET_CATEGORIES.MASTERY, answers);
+    await createTicketChannelWithOverflow(interaction, TICKET_CATEGORIES.MASTERY, answers);
   }
+
   // Other
   if (customId === 'modal_ticket_other') {
     const reason = interaction.fields.getTextInputValue('reason');
     const answers = [
       ['Why are you opening this ticket?', reason]
     ];
-    await createTicketChannel(interaction, TICKET_CATEGORIES.OTHER, answers);
+    await createTicketChannelWithOverflow(interaction, TICKET_CATEGORIES.OTHER, answers);
   }
 
   // ?adds => 115k
   if (customId === 'modal_add_115k') {
     const supercellId = interaction.fields.getTextInputValue('supercell_id_input');
-    let foundRole = null;
-    for (const r of ADD_115K_ROLES) {
-      if (interaction.member.roles.cache.has(r)) {
-        foundRole = r; 
-        break;
+    // Remove *all* ADD_115K_ROLES from user
+    let hadAtLeastOne = false;
+    for (const roleId of ADD_115K_ROLES) {
+      if (interaction.member.roles.cache.has(roleId)) {
+        hadAtLeastOne = true;
+        try {
+          await interaction.member.roles.remove(roleId);
+        } catch(err) {
+          console.error(`Error removing role ${roleId}:`, err);
+        }
       }
     }
-    if (!foundRole) {
+    if (!hadAtLeastOne) {
       return interaction.reply({
         content: 'Insufficient Invites; you no longer have the required role.',
-        ephemeral: true
-      });
-    }
-    try {
-      await interaction.member.roles.remove(foundRole);
-    } catch(err) {
-      console.error(err);
-      return interaction.reply({
-        content: 'Error removing your invite role. Please contact staff.',
         ephemeral: true
       });
     }
@@ -1319,10 +1278,26 @@ client.on('interactionCreate', async (interaction) => {
   // ?adds => Add Matcherino Winner
   if (customId === 'modal_matcherino_winner') {
     const supercellId = interaction.fields.getTextInputValue('supercell_id_input');
-    const hasAllRolesFn = (member, roles=[]) => roles.every(r => member.roles.cache.has(r));
-    let haveFirstPair = hasAllRolesFn(interaction.member,[MATCHERINO_WINNER_ROLE_1A,MATCHERINO_WINNER_ROLE_1B]);
-    let haveSecondPair= hasAllRolesFn(interaction.member,[MATCHERINO_WINNER_ROLE_2A,MATCHERINO_WINNER_ROLE_2B]);
-    if (!haveFirstPair && !haveSecondPair) {
+
+    // Remove all 4 roles if present
+    const rolesToRemove = [
+      MATCHERINO_WINNER_ROLE_1A,
+      MATCHERINO_WINNER_ROLE_1B,
+      MATCHERINO_WINNER_ROLE_2A,
+      MATCHERINO_WINNER_ROLE_2B
+    ];
+    let hadAny = false;
+    for (const rId of rolesToRemove) {
+      if (interaction.member.roles.cache.has(rId)) {
+        hadAny = true;
+        try {
+          await interaction.member.roles.remove(rId);
+        } catch(err) {
+          console.error(`Error removing role ${rId}:`, err);
+        }
+      }
+    }
+    if (!hadAny) {
       return interaction.reply({
         embeds: [
           new EmbedBuilder().setDescription('<:cross:1351689463453061130> - **Insufficient Invites**')
@@ -1330,21 +1305,7 @@ client.on('interactionCreate', async (interaction) => {
         ephemeral: true
       });
     }
-    try {
-      if (haveFirstPair) {
-        await interaction.member.roles.remove(MATCHERINO_WINNER_ROLE_1A);
-        await interaction.member.roles.remove(MATCHERINO_WINNER_ROLE_1B);
-      } else {
-        await interaction.member.roles.remove(MATCHERINO_WINNER_ROLE_2A);
-        await interaction.member.roles.remove(MATCHERINO_WINNER_ROLE_2B);
-      }
-    } catch(err) {
-      console.error(err);
-      return interaction.reply({
-        content: 'Error removing your invite roles. Please contact staff.',
-        ephemeral: true
-      });
-    }
+
     const targetChannel = interaction.guild.channels.cache.get(ADD_MATCHERINO_MSG_CHANNEL);
     if (!targetChannel) {
       return interaction.reply({
@@ -1370,9 +1331,8 @@ client.on('interactionCreate', async (interaction) => {
 
   const { customId, channel, guild, user, member } = interaction;
   if (customId === 'close_ticket') {
-    // 1) If it's an account purchase ticket => close immediately
+    // purchase => immediate
     if (channel.parentId === PURCHASE_ACCOUNT_CATEGORY) {
-      // "Close" means removing perms so only staff can see => do not ask confirm
       try {
         await channel.permissionOverwrites.set([
           {
@@ -1405,7 +1365,7 @@ client.on('interactionCreate', async (interaction) => {
 
         await channel.send({ embeds: [closeEmbed], components: [row] });
         return interaction.reply({
-          content: 'Ticket closed (no confirmation needed for purchase tickets).',
+          content: 'Ticket closed (purchase ticket immediate).',
           ephemeral: true
         });
       } catch(err) {
@@ -1416,7 +1376,7 @@ client.on('interactionCreate', async (interaction) => {
         });
       }
     } else {
-      // For other tickets => ephemeral confirm
+      // normal confirm
       const confirmRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('confirm_close_ticket')
@@ -1499,7 +1459,6 @@ client.on('interactionCreate', async (interaction) => {
     }
     await interaction.reply({ content: 'Deleting channel...', ephemeral: true });
     await channel.delete().catch(console.error);
-    // remove from ticketDataMap
     ticketDataMap.delete(channel.id);
   }
 
@@ -1558,17 +1517,11 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-/********************************************************************
- * GUILD MEMBER LEAVE => auto-close tickets
- ********************************************************************/
+// If user leaves => close tickets
 client.on('guildMemberRemove', async (member) => {
-  // If that user is an opener for any open ticket => close it
   const userId = member.id;
-  // We do the actual close check in the checkTicketTimeouts
-  // Or we can do it right here.
   for (const [channelId, data] of ticketDataMap.entries()) {
     if (data.openerId === userId) {
-      // close + delete channel => log
       const guild = member.guild;
       const channel = guild.channels.cache.get(channelId);
       if (channel) {
