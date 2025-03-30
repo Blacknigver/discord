@@ -341,6 +341,11 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
     }
   }
 
+  // Do not remove the role if the user is offline
+  if (newPresence.status === 'offline') {
+    return;
+  }
+
   if (foundLink && !hasAdRole) {
     await member.roles.add(BRAWLSHOP_AD_ROLE).catch(() => {});
   } else if (!foundLink && hasAdRole) {
