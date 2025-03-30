@@ -656,6 +656,11 @@ client.on('interactionCreate', async (interaction) => {
     return interaction.showModal(modal);
   }
   if (customId.startsWith('purchase_account_')) {
+    // FIX: Prevent duplicate purchase tickets from being created.
+    const existingPurchaseTicket = Array.from(ticketDataMap.values()).find(ticket => ticket.openerId === user.id && ticket.channelName.startsWith('purchase-'));
+    if (existingPurchaseTicket) {
+      return interaction.reply({ content: 'You already have an open purchase ticket.', ephemeral: true });
+    }
     try {
       const existingTickets = guild.channels.cache.filter(ch => {
         if (ch.type === ChannelType.GuildText) {
