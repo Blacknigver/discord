@@ -59,7 +59,7 @@ const {
 // Constants & Setup
 const BOT_TOKEN = process.env.TOKEN || '';
 const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_CLIENT_ID_HERE';
-const CATEGORY_LIMIT = 25; // Max channels per category
+const CATEGORY_LIMIT = 50; // Max channels per category
 
 const client = new Client({
   intents: [
