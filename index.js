@@ -56,6 +56,11 @@ const {
   PermissionsBitField
 } = require('discord.js');
 
+// load .env so process.env.DATABASE_URL (and TOKEN) is populated
+require('dotenv').config();
+// our Postgres helper
+const db = require('./database');
+
 // Constants & Setup
 const BOT_TOKEN = process.env.TOKEN || '';
 const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_CLIENT_ID_HERE';
@@ -177,6 +182,16 @@ async function autoCloseLogAndDelete(channel, openerId, channelName, reason) {
   } catch {/* ignore */}
   await autoCloseLog(channel, openerId, channelName, reason);
   await channel.delete().catch(() => {});
+
+  // 🗑 Remove from DB
+  try {
+    await db.query(
+      `DELETE FROM tickets WHERE channel_id = $1`,
+      [channel.id]
+    );
+  } catch (err) {
+    console.error('❌ Failed to delete ticket row on auto-close:', err);
+  }
 }
 
 // Auto-close check every minute
@@ -196,39 +211,90 @@ async function checkTicketTimeouts() {
       ticketDataMap.delete(channelId);
       continue;
     }
-    // Check if opener is still in the server
+
+    // (1) If the opener left the server
     const openerMember = guild.members.cache.get(openerId);
     if (!openerMember) {
       const username = (await fetchUsername(openerId)) || 'Unknown';
-      await autoCloseLogAndDelete(channel, openerId, channelName, `User left the server (was: ${username}).`);
+      await autoCloseLogAndDelete(
+        channel,
+        openerId,
+        channelName,
+        `User left the server (was: ${username}).`
+      );
       ticketDataMap.delete(channelId);
       continue;
     }
 
-    // If user never messaged
+    // (2) No messages yet → 6h, 12h, then 24h auto-close
     if (msgCount === 0) {
-      const hoursSinceOpen = (now - openTime) / (1000 * 60 * 60);
+      const hoursSinceOpen = (now - openTime) / 36e5;
+
+      // 6-hour reminder
       if (hoursSinceOpen >= 6 && !data.reminder6hSent) {
         data.reminder6hSent = true;
+        try {
+          await db.query(
+            `UPDATE tickets SET reminder_6h = TRUE WHERE channel_id = $1`,
+            [channelId]
+          );
+        } catch (err) {
+          console.error('❌ Failed to persist 6h flag', err);
+        }
         await sendNoMsgReminder(channel, openerId, 6, 18);
       }
+
+      // 12-hour reminder
       if (hoursSinceOpen >= 12 && !data.reminder12hSent) {
         data.reminder12hSent = true;
+        try {
+          await db.query(
+            `UPDATE tickets SET reminder_12h = TRUE WHERE channel_id = $1`,
+            [channelId]
+          );
+        } catch (err) {
+          console.error('❌ Failed to persist 12h flag', err);
+        }
         await sendNoMsgReminder(channel, openerId, 12, 12);
       }
+
+      // 24-hour auto-close
       if (hoursSinceOpen >= 24) {
-        await autoCloseLogAndDelete(channel, openerId, channelName, '24 hours (no messages from user).');
+        await autoCloseLogAndDelete(
+          channel,
+          openerId,
+          channelName,
+          '24 hours (no messages from user).'
+        );
         ticketDataMap.delete(channelId);
       }
+
     } else {
-      // If user has at least 1 message
-      const hoursInactive = (now - lastOpenerMsgTime) / (1000 * 60 * 60);
+      // (3) Has ≥1 message → 24h inactivity remind, 48h auto-close
+      const hoursInactive = (now - lastOpenerMsgTime) / 36e5;
+
+      // 24-hour inactivity reminder
       if (hoursInactive >= 24 && hoursInactive < 48 && !data.reminder24hSent) {
         data.reminder24hSent = true;
+        try {
+          await db.query(
+            `UPDATE tickets SET reminder_24h = TRUE WHERE channel_id = $1`,
+            [channelId]
+          );
+        } catch (err) {
+          console.error('❌ Failed to persist 24h flag', err);
+        }
         await sendInactivityReminder(channel, openerId);
       }
+
+      // 48-hour auto-close
       if (hoursInactive >= 48) {
-        await autoCloseLogAndDelete(channel, openerId, channelName, '48 hours (no messages from user).');
+        await autoCloseLogAndDelete(
+          channel,
+          openerId,
+          channelName,
+          '48 hours (no messages from user).'
+        );
         ticketDataMap.delete(channelId);
       }
     }
@@ -257,15 +323,55 @@ async function sendInactivityReminder(channel, openerId) {
   await channel.send({ content: mention, embeds: [embed] }).catch(() => {});
 }
 
-// Message counting
-client.on('messageCreate', (message) => {
+// Message counting + DB persistence
+client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   if (!message.guild) return;
+
   const data = ticketDataMap.get(message.channel.id);
   if (!data) return;
-  if (message.author.id === data.openerId) {
-    data.msgCount += 1;
-    data.lastOpenerMsgTime = Date.now();
+
+  // only count messages from the original opener
+  if (message.author.id !== data.openerId) return;
+
+  // update in-memory
+  data.msgCount += 1;
+  data.lastOpenerMsgTime = Date.now();
+
+  // persist to Postgres
+  try {
+    await db.query(
+      `INSERT INTO tickets(
+          channel_id,
+          opener_id,
+          channel_name,
+          open_time,
+          msg_count,
+          last_msg_time,
+          reminder_6h,
+          reminder_12h,
+          reminder_24h
+        ) VALUES($1,$2,$3,to_timestamp($4/1000),$5,to_timestamp($6/1000),$7,$8,$9)
+        ON CONFLICT (channel_id) DO UPDATE SET
+          msg_count       = EXCLUDED.msg_count,
+          last_msg_time   = EXCLUDED.last_msg_time,
+          reminder_6h     = EXCLUDED.reminder_6h,
+          reminder_12h    = EXCLUDED.reminder_12h,
+          reminder_24h    = EXCLUDED.reminder_24h;`,
+      [
+        message.channel.id,
+        data.openerId,
+        data.channelName,
+        data.openTime,
+        data.msgCount,
+        data.lastOpenerMsgTime,
+        data.reminder6hSent,
+        data.reminder12hSent,
+        data.reminder24hSent
+      ]
+    );
+  } catch (err) {
+    console.error('❌ Failed to upsert ticket row:', err);
   }
 });
 
@@ -322,6 +428,43 @@ const listCommand = new SlashCommandBuilder()
 // 4) Bot startup
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
+
+  // ─── hydrate ticketDataMap from DB ────────────────────────────────────────────────
+  try {
+    const res = await db.query(`
+      SELECT
+        channel_id,
+        opener_id,
+        channel_name,
+        EXTRACT(EPOCH FROM open_time)*1000 AS open_time,
+        msg_count,
+        EXTRACT(EPOCH FROM last_msg_time)*1000 AS last_msg_time,
+        reminder_6h,
+        reminder_12h,
+        reminder_24h
+      FROM tickets
+    `);
+    for (const row of res.rows) {
+      const data = new TicketData(
+        row.opener_id,
+        row.channel_id,
+        row.channel_name,
+        Number(row.open_time)
+      );
+      data.msgCount = row.msg_count;
+      data.lastOpenerMsgTime = Number(row.last_msg_time);
+      data.reminder6hSent  = row.reminder_6h;
+      data.reminder12hSent = row.reminder_12h;
+      data.reminder24hSent = row.reminder_24h;
+      ticketDataMap.set(row.channel_id, data);
+    }
+    console.log(`Loaded ${res.rows.length} tickets from database.`);
+  } catch (err) {
+    console.error('Error loading tickets from DB:', err);
+  }
+  // ─────────────────────────────────────────────────────────────────────────────────
+
+  // now register your slash commands exactly as before
   try {
     await client.application.commands.create(listCommand);
     console.log('[Slash Command] /list registered successfully');
@@ -656,9 +799,9 @@ const RANKED_STEPS_COST = {
   'Legendary1->Legendary2': 7.00,
   'Legendary2->Legendary3': 10.00,
   'Legendary3->Masters1': 13.00,
-  'Masters1->Masters2': 25.00,
-  'Masters2->Masters3': 40.00,
-  'Masters3->Pro': 75.00
+  'Masters1->Masters2': 50.00,
+  'Masters2->Masters3': 80.00,
+  'Masters3->Pro': 120.00
 };
 function calculateRankedPrice(currentRank, desiredRank) {
   const idxStart = RANKED_ORDER.indexOf(currentRank);
@@ -1544,6 +1687,17 @@ client.on('interactionCreate', async (interaction) => {
       const data = ticketDataMap.get(channel.id);
       const openerId = data?.openerId || user.id;
       await autoCloseLog(channel, openerId, channel.name, 'Manually closed');
+
+      // 🗑 Remove from DB on manual close
+      try {
+        await db.query(
+          `DELETE FROM tickets WHERE channel_id = $1`,
+          [channel.id]
+        );
+      } catch (err) {
+        console.error('❌ Failed to delete ticket row on manual close:', err);
+      }
+
       return interaction.reply({ content: 'Ticket closed.', ephemeral: true });
     } catch (err) {
       console.error(err);
