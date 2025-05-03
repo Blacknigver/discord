@@ -60,6 +60,8 @@ const {
 require('dotenv').config();
 // our Postgres helper
 const db = require('./database');
+// review command
+const reviewCommand = require('./review');
 
 // Constants & Setup
 const BOT_TOKEN = process.env.TOKEN || '';
@@ -468,6 +470,8 @@ client.once('ready', async () => {
   try {
     await client.application.commands.create(listCommand);
     console.log('[Slash Command] /list registered successfully');
+    await client.application.commands.create(reviewCommand.data);
+    console.log('[Slash Command] /review registered successfully');
   } catch (err) {
     console.error('Error registering /list:', err);
   }
@@ -632,6 +636,7 @@ client.on('messageCreate', async (message) => {
 // 7) /list Slash Command
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
+
   if (interaction.commandName === 'list') {
     if (!interaction.member.roles.cache.has(LIST_COMMAND_ROLE)) {
       return interaction.reply({ content: "You don't have the required role to use this command.", ephemeral: true });
