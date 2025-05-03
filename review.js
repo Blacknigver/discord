@@ -1,8 +1,14 @@
 // review.js
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} = require('discord.js');
 
-const MOD_CHANNEL_ID = '1368186200741118042';      // where reviews go for accept/deny
-const PUBLIC_CHANNEL_ID = '1293288484487954512'; // where accepted reviews are posted
+const MOD_CHANNEL_ID = '1368186200741118042';       // replace with your mod channel
+const PUBLIC_CHANNEL_ID = '1293288484487954512';// replace with your public reviews channel
 const LOGO_URL = 'https://cdn.discordapp.com/attachments/987753155360079903/1368299826688561212/Untitled70_20250208222905.jpg?ex=6817b804&is=68166684&hm=8fc340221f0b55e17444b6c2ced93e32541ecf95b258509a0ddc9c66667772bd&';
 
 const reviewState = new Map();
@@ -11,27 +17,32 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('review')
     .setDescription('Submit a new review')
-    .addUserOption(opt =>
-      opt.setName('user')
-         .setDescription('Who are you reviewing?')
-         .setRequired(true)
-    )
     .addStringOption(opt =>
-      opt.setName('description')
-         .setDescription('Describe your experience')
+      opt.setName('reviewing_for')
+         .setDescription('What are you reviewing for? Ex: Boost, Account, etc.')
          .setRequired(true)
     )
     .addIntegerOption(opt =>
       opt.setName('rating')
-         .setDescription('Rating out of 5')
+         .setDescription('Select a rating')
          .setRequired(true)
          .addChoices(
-           { name: '1', value: 1 },
-           { name: '2', value: 2 },
-           { name: '3', value: 3 },
-           { name: '4', value: 4 },
-           { name: '5', value: 5 }
+           { name: '⭐️⭐️⭐️⭐️⭐️', value: 5 },
+           { name: '⭐️⭐️⭐️⭐️',     value: 4 },
+           { name: '⭐️⭐️⭐️',       value: 3 },
+           { name: '⭐️⭐️',         value: 2 },
+           { name: '⭐️',           value: 1 }
          )
+    )
+    .addStringOption(opt =>
+      opt.setName('experience')
+         .setDescription('Describe your experience')
+         .setRequired(true)
+    )
+    .addAttachmentOption(opt =>
+      opt.setName('image')
+         .setDescription('Attach an image (optional)')
+         .setRequired(false)
     )
     .addBooleanOption(opt =>
       opt.setName('anonymous')
@@ -40,36 +51,57 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const subject = interaction.options.getUser('user', true);
-    const description = interaction.options.getString('description', true);
+    const reviewingFor = interaction.options.getString('reviewing_for', true);
     const rating = interaction.options.getInteger('rating', true);
+    const experience = interaction.options.getString('experience', true);
+    const image = interaction.options.getAttachment('image');
     const anonymous = interaction.options.getBoolean('anonymous') || false;
 
-    // Build timestamp footer
+    // compute relative time string
     const now = new Date();
-    const msPerDay = 24 * 60 * 60 * 1000;
-    const diffDays = Math.floor((now - now) / msPerDay); // always zero
-    const use12h = interaction.locale === 'en-US';
-    const timeOpts = { hour: '2-digit', minute: '2-digit', hour12: use12h };
-    const timeStr = new Intl.DateTimeFormat(interaction.locale, timeOpts).format(now);
-    let footerTime;
-    footerTime = `Today at ${timeStr}`; // since always now
+    const diff = now - now; // always 0 for now timestamp
+    const h = now.getHours().toString().padStart(2, '0');
+    const m = now.getMinutes().toString().padStart(2, '0');
+    let timeStr;
+    if (diff < 86400000) {
+      timeStr = `Today at ${h}:${m}`;
+    } else if (diff < 2*86400000) {
+      timeStr = `Yesterday at ${h}:${m}`;
+    } else if (diff < 7*86400000) {
+      const days = Math.floor(diff/86400000);
+      timeStr = `${days} days ago at ${h}:${m}`;
+    } else {
+      const d = now.getDate().toString().padStart(2,'0');
+      const mo = (now.getMonth()+1).toString().padStart(2,'0');
+      const y = now.getFullYear();
+      timeStr = `${d}/${mo}/${y} at ${h}:${m}`;
+    }
 
-    // Prepare embed
+    // build embed
+    const starMap = {
+      5: '⭐️⭐️⭐️⭐️⭐️',
+      4: '⭐️⭐️⭐️⭐️',
+      3: '⭐️⭐️⭐️',
+      2: '⭐️⭐️',
+      1: '⭐️'
+    };
     const embed = new EmbedBuilder()
       .setDescription('# New review' + (anonymous ? '' : ` by ${interaction.user.tag}`))
       .addFields(
-        { name: '**Reviewing For:**', value: `> ${subject}`, inline: false },
-        { name: '**Experience:**',     value: `> ${description}`, inline: false },
-        { name: '**Rating:**',         value: `> ${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}`, inline: false }
+        { name: '**Reviewing For:**', value: `> ${reviewingFor}` },
+        { name: '**Rating:**',        value: `> ${starMap[rating]}` },
+        { name: '**Experience:**',    value: `> ${experience}` }
       )
-      .setFooter({ text: `Brawl Shop - ${footerTime}`, iconURL: LOGO_URL });
+      .setFooter({ text: `Brawl Shop - ${timeStr}`, iconURL: LOGO_URL });
 
     if (!anonymous) {
       embed.setThumbnail(interaction.user.displayAvatarURL({ dynamic: true, size: 128 }));
     }
+    if (image) {
+      embed.setImage(image.url);
+    }
 
-    // Send to moderation channel with buttons
+    // send to moderation channel
     const modChannel = await interaction.client.channels.fetch(MOD_CHANNEL_ID);
     if (!modChannel?.isText()) {
       return interaction.reply({ content: '❌ Moderation channel not found.', ephemeral: true });
@@ -87,31 +119,31 @@ module.exports = {
     );
 
     const modMsg = await modChannel.send({ embeds: [embed], components: [row] });
-    // Store state for this message
+
+    // store state
     reviewState.set(modMsg.id, {
-      subjectTag: subject.tag,
-      description,
-      rating,
+      reviewingFor,
+      rating: starMap[rating],
+      experience,
+      anonymous,
       reviewerTag: anonymous ? null : interaction.user.tag,
       reviewerAvatar: anonymous ? null : interaction.user.displayAvatarURL({ dynamic: true, size: 128 }),
-      timestamp: now,
-      footerTime,
-      anonymous
+      timeStr,
+      imageUrl: image ? image.url : null
     });
 
     await interaction.reply({ content: '✅ Your review has been submitted for approval.', ephemeral: true });
   },
 
-  // button handler
   async handleButton(interaction) {
     if (!interaction.isButton()) return;
-    const { customId, message, user: moderator } = interaction;
+    const { customId, message } = interaction;
     const state = reviewState.get(message.id);
     if (!state) {
-      return interaction.reply({ content: '⚠️ Review state not found.', ephemeral: true });
+      return interaction.reply({ content: '⚠️ Could not find review data.', ephemeral: true });
     }
 
-    // Disable buttons
+    // disable buttons
     const disabledRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('review_accept')
@@ -127,32 +159,32 @@ module.exports = {
     await message.edit({ components: [disabledRow] });
 
     if (customId === 'review_accept') {
-      // Publish to public channel
-      const publicChannel = await interaction.client.channels.fetch(PUBLIC_CHANNEL_ID);
-      if (!publicChannel?.isText()) {
+      const pubChannel = await interaction.client.channels.fetch(PUBLIC_CHANNEL_ID);
+      if (!pubChannel?.isText()) {
         await interaction.reply({ content: '❌ Public reviews channel not found.', ephemeral: true });
         return;
       }
-
-      const publishEmbed = new EmbedBuilder()
+      // rebuild embed for public
+      const publicEmbed = new EmbedBuilder()
         .setDescription('# New review' + (state.anonymous ? '' : ` by ${state.reviewerTag}`))
         .addFields(
-          { name: '**Reviewing For:**', value: `> ${state.subjectTag}`, inline: false },
-          { name: '**Experience:**',     value: `> ${state.description}`, inline: false },
-          { name: '**Rating:**',         value: `> ${'★'.repeat(state.rating)}${'☆'.repeat(5 - state.rating)}`, inline: false }
+          { name: '**Reviewing For:**', value: `> ${state.reviewingFor}` },
+          { name: '**Rating:**',        value: `> ${state.rating}` },
+          { name: '**Experience:**',    value: `> ${state.experience}` }
         )
-        .setFooter({ text: `Brawl Shop - ${state.footerTime}`, iconURL: LOGO_URL });
+        .setFooter({ text: `Brawl Shop - ${state.timeStr}`, iconURL: LOGO_URL });
       if (!state.anonymous) {
-        publishEmbed.setThumbnail(state.reviewerAvatar);
+        publicEmbed.setThumbnail(state.reviewerAvatar);
       }
-      await publicChannel.send({ embeds: [publishEmbed] });
+      if (state.imageUrl) {
+        publicEmbed.setImage(state.imageUrl);
+      }
+      await pubChannel.send({ embeds: [publicEmbed] });
       await interaction.reply({ content: '✅ Review accepted and published.', ephemeral: true });
-
-    } else if (customId === 'review_deny') {
+    } else {
       await interaction.reply({ content: '❌ Review denied.', ephemeral: true });
     }
 
-    // Clean up
     reviewState.delete(message.id);
   }
 };
