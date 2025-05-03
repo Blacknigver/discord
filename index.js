@@ -635,9 +635,11 @@ client.on('messageCreate', async (message) => {
 
 // 7) /list Slash Command
 client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-
-  if (interaction.commandName === 'list') {
+  if (interaction.isChatInputCommand()) {
+    if (interaction.commandName === 'review') {
+      return reviewCommand.execute(interaction);
+    }
+    if (interaction.commandName === 'list') {
     if (!interaction.member.roles.cache.has(LIST_COMMAND_ROLE)) {
       return interaction.reply({ content: "You don't have the required role to use this command.", ephemeral: true });
     }
@@ -860,6 +862,10 @@ const ephemeralFlowState = new Map();
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
   const { customId, member, guild, channel, user } = interaction;
+
+  if (reviewCommand.handleButton && customId.startsWith('review_')) {
+    return reviewCommand.handleButton(interaction);
+  }
 
   // Purchase listing
   if (customId.startsWith('purchase_account_')) {
