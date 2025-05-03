@@ -633,84 +633,6 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// 7) /list Slash Command
-client.on('interactionCreate', async (interaction) => {
-  if (interaction.isChatInputCommand()) {
-    if (interaction.commandName === 'review') {
-      return reviewCommand.execute(interaction);
-    }
-    if (interaction.commandName === 'list') {
-    if (!interaction.member.roles.cache.has(LIST_COMMAND_ROLE)) {
-      return interaction.reply({ content: "You don't have the required role to use this command.", ephemeral: true });
-    }
-    const pingChoice = interaction.options.getString('ping');
-    const text = interaction.options.getString('text');
-    const price = interaction.options.getString('price');
-    const trophies = interaction.options.getString('trophies');
-    const p11 = interaction.options.getString('p11');
-    const tierMax = interaction.options.getString('tier_max');
-    const mainImage = interaction.options.getAttachment('image');
-    const imageUrl = mainImage?.url;
-
-    let nonEmbedText;
-    if (pingChoice === 'everyone') {
-      nonEmbedText = '**||@everyone|| New account added!**';
-    } else if (pingChoice === 'here') {
-      nonEmbedText = '**||@here|| New account added!**';
-    } else {
-      nonEmbedText = '**New account added!**';
-    }
-
-    const mainEmbed = new EmbedBuilder()
-      .setTitle('New Account Added! <:winmatcherino:1298703851934711848>')
-      .setColor(EMBED_COLOR)
-      .addFields(
-        { name: 'Description', value: text, inline: false },
-        { name: '<:Money:1351665747641766022> Price', value: price, inline: true },
-        { name: '<:gold_trophy:1351658932434768025> Trophies', value: trophies, inline: true },
-        { name: '<:P11:1351683038127591529> P11', value: p11, inline: true },
-        { name: '<:tiermax:1301899953320497243> Tier Max', value: tierMax, inline: true },
-        { name: '\u200B', value: '\u200B', inline: true },
-        { name: '\u200B', value: '\u200B', inline: true }
-      );
-    if (imageUrl) {
-      mainEmbed.setImage(imageUrl);
-    }
-
-    const rowOfButtons = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('purchase_account_temp')
-        .setLabel('Purchase Account')
-        .setEmoji('<:Shopping_Cart:1351686041559367752>')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('listing_mark_sold_temp')
-        .setLabel('Mark as Sold')
-        .setStyle(ButtonStyle.Danger)
-    );
-
-    await interaction.reply({ content: 'Listing posted!', ephemeral: true });
-    const listingMessage = await interaction.channel.send({ content: nonEmbedText, embeds: [mainEmbed], components: [rowOfButtons] });
-
-    // fix customId
-    const newPurchaseId = `purchase_account_${listingMessage.id}`;
-    const newSoldId = `listing_mark_sold_${listingMessage.id}`;
-    const updatedRows = [];
-    for (const rowComp of listingMessage.components) {
-      const rowBuilder = ActionRowBuilder.from(rowComp);
-      for (const comp of rowBuilder.components) {
-        if (comp.customId === 'purchase_account_temp') {
-          comp.setCustomId(newPurchaseId);
-        } else if (comp.customId === 'listing_mark_sold_temp') {
-          comp.setCustomId(newSoldId);
-        }
-      }
-      updatedRows.push(rowBuilder);
-    }
-    await listingMessage.edit({ components: updatedRows });
-  }
-});
-
 // PRICE CALC UTILS
 function calculateTrophyPrice(current, desired) {
   let totalCents = 0;
@@ -862,10 +784,6 @@ const ephemeralFlowState = new Map();
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
   const { customId, member, guild, channel, user } = interaction;
-
-  if (reviewCommand.handleButton && customId.startsWith('review_')) {
-    return reviewCommand.handleButton(interaction);
-  }
 
   // Purchase listing
   if (customId.startsWith('purchase_account_')) {
@@ -1355,399 +1273,912 @@ async function createTicketChannelWithOverflow(interaction, categoryId, answers)
   }
 }
 
-// 10) TICKET CLOSE / REOPEN / DELETE
+// 8) Button Interactions
 client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isButton()) return;
-  const { customId, channel, guild, user, member } = interaction;
+  if (!interaction.isChatInputCommand() && !interaction.isButton() && !interaction.isModalSubmit()) return;
 
-  // CANCEL (Trophies/Bulk final price)
-  if (customId === 'trophies_cancel' || customId === 'bulk_cancel') {
-    ephemeralFlowState.delete(user.id);
-    return interaction.update({ content: 'Cancelled.', embeds: [], components: [] });
-  }
-
-  // Trophies / Bulk purchase
-  if (customId === 'trophies_purchase_boost' || customId === 'bulk_purchase_boost') {
-    const data = ephemeralFlowState.get(user.id);
-    if (!data) {
-      return interaction.reply({ content: 'No data found. Please try again.', ephemeral: true });
+  // Slash Command: /list
+  if (interaction.isChatInputCommand() && interaction.commandName === 'list') {
+    if (!interaction.member.roles.cache.has(LIST_COMMAND_ROLE)) {
+      return interaction.reply({ content: "You don't have the required role to use this command.", ephemeral: true });
     }
-    ephemeralFlowState.delete(user.id);
-    if (data.panelType === 'trophies') {
-      const lines = [
-        ['Which Brawler Do You Want Boosted?', data.brawlerName],
-        ['How Many Trophies Does Your Brawler Have?', data.currentTrophies],
-        ['What Are Your Desired Trophies?', data.desiredTrophies],
-        ['Price', `€${data.price}`]
-      ];
-      return createTicketChannelWithOverflow(interaction, TICKET_CATEGORIES.TROPHIES, lines);
+    const pingChoice = interaction.options.getString('ping');
+    const text = interaction.options.getString('text');
+    const price = interaction.options.getString('price');
+    const trophies = interaction.options.getString('trophies');
+    const p11 = interaction.options.getString('p11');
+    const tierMax = interaction.options.getString('tier_max');
+    const mainImage = interaction.options.getAttachment('image');
+    const imageUrl = mainImage?.url;
+
+    let nonEmbedText;
+    if (pingChoice === 'everyone') {
+      nonEmbedText = '**||@everyone|| New account added!**';
+    } else if (pingChoice === 'here') {
+      nonEmbedText = '**||@here|| New account added!**';
     } else {
-      // bulk
-      const lines = [
-        ['How Many Trophies Do You Currently Have?', data.current],
-        ['What Is Your Desired Total Trophies?', data.desired],
-        ['Price', `€${data.price}`]
+      nonEmbedText = '**New account added!**';
+    }
+
+    const mainEmbed = new EmbedBuilder()
+      .setTitle('New Account Added! <:winmatcherino:1298703851934711848>')
+      .setColor(EMBED_COLOR)
+      .addFields(
+        { name: 'Description', value: text, inline: false },
+        { name: '<:Money:1351665747641766022> Price', value: price, inline: true },
+        { name: '<:gold_trophy:1351658932434768025> Trophies', value: trophies, inline: true },
+        { name: '<:P11:1351683038127591529> P11', value: p11, inline: true },
+        { name: '<:tiermax:1301899953320497243> Tier Max', value: tierMax, inline: true },
+        { name: '\u200B', value: '\u200B', inline: true },
+        { name: '\u200B', value: '\u200B', inline: true }
+      );
+    if (imageUrl) {
+      mainEmbed.setImage(imageUrl);
+    }
+
+    const rowOfButtons = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('purchase_account_temp')
+        .setLabel('Purchase Account')
+        .setEmoji('<:Shopping_Cart:1351686041559367752>')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('listing_mark_sold_temp')
+        .setLabel('Mark as Sold')
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    await interaction.reply({ content: 'Listing posted!', ephemeral: true });
+    const listingMessage = await interaction.channel.send({ content: nonEmbedText, embeds: [mainEmbed], components: [rowOfButtons] });
+
+    // fix customId
+    const newPurchaseId = `purchase_account_${listingMessage.id}`;
+    const newSoldId = `listing_mark_sold_${listingMessage.id}`;
+    const updatedRows = [];
+    for (const rowComp of listingMessage.components) {
+      const rowBuilder = ActionRowBuilder.from(rowComp);
+      for (const comp of rowBuilder.components) {
+        if (comp.customId === 'purchase_account_temp') {
+          comp.setCustomId(newPurchaseId);
+        } else if (comp.customId === 'listing_mark_sold_temp') {
+          comp.setCustomId(newSoldId);
+        }
+      }
+      updatedRows.push(rowBuilder);
+    }
+    await listingMessage.edit({ components: updatedRows });
+    return;
+  }
+
+
+  // Button Interactions
+  if (interaction.isButton()) {
+    const { customId, member, guild, channel, user } = interaction;
+
+    // Purchase listing
+    if (customId.startsWith('purchase_account_')) {
+      try {
+        const existingTickets = guild.channels.cache.filter(ch => {
+          return ch.type === ChannelType.GuildText && ch.name.startsWith(`purchase-${user.username}-`);
+        });
+        const hasOverflowUser = (existingTickets.size >= MAX_TICKETS_PER_USER);
+        const categoryFull = isCategoryFull(PURCHASE_ACCOUNT_CATEGORY, guild);
+        const parentToUse = (hasOverflowUser || categoryFull) ? null : PURCHASE_ACCOUNT_CATEGORY;
+        const channelName = `purchase-${user.username}-${Math.floor(Math.random()*1000)}`;
+        const purchaseChannel = await guild.channels.create({
+          name: channelName,
+          type: ChannelType.GuildText,
+          parent: parentToUse,
+          permissionOverwrites: [
+            { id: guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
+            { id: user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+            ...STAFF_ROLES.map(rid => ({ id: rid, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }))
+          ]
+        });
+        const mentionText = `<@${user.id}>`;
+        const welcomeEmbed = new EmbedBuilder().setDescription('Welcome, thanks for opening a ticket!\n\nSupport will be with you shortly.');
+        const closeBtnRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('close_ticket')
+            .setLabel('Close Ticket')
+            .setEmoji('<:Lock:1349157009244557384>')
+            .setStyle(ButtonStyle.Danger)
+        );
+        await purchaseChannel.send({ content: mentionText, embeds: [welcomeEmbed], components: [closeBtnRow] });
+        ticketDataMap.set(purchaseChannel.id, new TicketData(user.id, purchaseChannel.id, channelName, Date.now()));
+        return interaction.reply({ content: `Ticket created: <#${purchaseChannel.id}>`, ephemeral: true });
+      } catch (err) {
+        console.error(err);
+        return interaction.reply({ content: 'Failed to create purchase ticket channel.', ephemeral: true });
+      }
+    }
+
+    if (customId.startsWith('listing_mark_sold_')) {
+      if (!member.roles.cache.has('1292933200389083196')) {
+        return interaction.reply({ content: 'Only members with role 1292933200389083196 can mark this as sold.', ephemeral: true });
+      }
+      const originalMsg = interaction.message;
+      if (!originalMsg) {
+        return interaction.reply({ content: 'Could not fetch the original message to edit.', ephemeral: true });
+      }
+      const soldButton = new ButtonBuilder()
+        .setCustomId('sold_button')
+        .setLabel('This account has been sold.')
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(true);
+      const soldRow = new ActionRowBuilder().addComponents(soldButton);
+      try {
+        await originalMsg.edit({ components: [soldRow] });
+        return interaction.reply({ content: 'Listing marked as sold!', ephemeral: true });
+      } catch (err) {
+        console.error(err);
+        return interaction.reply({ content: 'Failed to mark as sold. Check permissions.', ephemeral: true });
+      }
+    }
+
+    // 115k / matcherino
+    if (customId === 'btn_add_115k') {
+      if (!member.roles.cache.has(ADD_115K_ROLE)) {
+        return interaction.reply({
+          embeds: [new EmbedBuilder().setDescription('Insufficient Invites: You must have the role 1351281086134747298.')],
+          ephemeral: true
+        });
+      }
+      const modal = new ModalBuilder().setCustomId('modal_add_115k').setTitle('Supercell ID');
+      const input = new TextInputBuilder()
+        .setCustomId('supercell_id_input')
+        .setLabel('Supercell ID')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+      const row = new ActionRowBuilder().addComponents(input);
+      modal.addComponents(row);
+      return interaction.showModal(modal);
+    }
+
+    if (customId === 'btn_add_matcherino_winner') {
+      if (!member.roles.cache.has(MATCHERINO_WINNER_ROLE)) {
+        return interaction.reply({
+          embeds: [new EmbedBuilder().setDescription('Insufficient Invites: You must have the role 1351281117445099631.')],
+          ephemeral: true
+        });
+      }
+      const modal = new ModalBuilder().setCustomId('modal_matcherino_winner').setTitle('Supercell ID');
+      const input = new TextInputBuilder()
+        .setCustomId('supercell_id_input')
+        .setLabel('Supercell ID')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+      const row = new ActionRowBuilder().addComponents(input);
+      modal.addComponents(row);
+      return interaction.showModal(modal);
+    }
+
+    // FRIENDLIST
+    if (customId === 'friendlist_buyadd') {
+      const buyTitle = 'Buy an Add';
+      const buyDesc = 'Please select the player you would like to add.';
+      const friendlistPlayers = [
+        'LUX | Zoro',
+        'Lennox',
+        'Melih',
+        'Elox',
+        'Kazu',
+        'Izana',
+        'SKC | Rafiki',
+        'HMB | BosS'
       ];
-      return createTicketChannelWithOverflow(interaction, TICKET_CATEGORIES.BULK, lines);
+      const row1 = new ActionRowBuilder();
+      const row2 = new ActionRowBuilder();
+      const customIds = ['buy_luxzoro','buy_lennox','buy_melih','buy_elox','buy_kazu','buy_izana','buy_rafiki','buy_boss'];
+      for (let i = 0; i < 5; i++) {
+        row1.addComponents(
+          new ButtonBuilder().setCustomId(customIds[i]).setLabel(friendlistPlayers[i]).setStyle(ButtonStyle.Success)
+        );
+      }
+      for (let i = 5; i < 8; i++) {
+        row2.addComponents(
+          new ButtonBuilder().setCustomId(customIds[i]).setLabel(friendlistPlayers[i]).setStyle(ButtonStyle.Success)
+        );
+      }
+      const embed = new EmbedBuilder().setTitle(buyTitle).setDescription(buyDesc).setColor(EMBED_COLOR);
+      return interaction.reply({ embeds: [embed], components: [row1, row2], ephemeral: true });
     }
-  }
 
-  // RANKED STEPS
-  if (customId.startsWith('ranked_current_')) {
-    // e.g. ranked_current_Masters
-    const rankBase = customId.replace('ranked_current_', ''); // "Masters"
-    ephemeralFlowState.set(user.id, { step: 'ranked_current_sub', rankBase });
-
-    // same color & emoji
-    let style = ButtonStyle.Success;
-    let emoji = '';
-    if (rankBase === 'Masters')    { emoji = '<:Masters:1293283897618075728>'; style = ButtonStyle.Success; }
-    if (rankBase === 'Legendary')  { emoji = '<:Legendary:1264709440561483818>'; style = ButtonStyle.Danger; }
-    if (rankBase === 'Mythic')     { emoji = '<:mythic:1357482343555666181>'; style = ButtonStyle.Danger; }
-    if (rankBase === 'Diamond')    { emoji = '<:diamond:1357482488506613920>'; style = ButtonStyle.Primary; }
-    if (rankBase === 'Gold')       { emoji = '<:gold:1357482374048256131>'; style = ButtonStyle.Success; }
-    if (rankBase === 'Silver')     { emoji = '<:silver:1357482400333955132>'; style = ButtonStyle.Primary; }
-    if (rankBase === 'Bronze')     { emoji = '<:bronze:1357482418654937332>'; style = ButtonStyle.Secondary; }
-
-    const embed = new EmbedBuilder()
-      .setDescription(`Please specify exactly which ${rankBase} rank you have.`)
-      .setColor(EMBED_COLOR);
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`ranked_curr_sub_${rankBase}1`).setLabel(`${rankBase} 1`).setEmoji(emoji).setStyle(style),
-      new ButtonBuilder().setCustomId(`ranked_curr_sub_${rankBase}2`).setLabel(`${rankBase} 2`).setEmoji(emoji).setStyle(style),
-      new ButtonBuilder().setCustomId(`ranked_curr_sub_${rankBase}3`).setLabel(`${rankBase} 3`).setEmoji(emoji).setStyle(style)
-    );
-    return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-  }
-
-  if (customId.startsWith('ranked_curr_sub_')) {
-    // e.g. ranked_curr_sub_Masters1 => "Masters1"
-    const rankSelected = customId.replace('ranked_curr_sub_', '');
-    ephemeralFlowState.set(user.id, {
-      step: 'ranked_desired_main',
-      currentRank: rankSelected
-    });
-    const embed = new EmbedBuilder()
-      .setTitle('Desired Rank')
-      .setDescription('What Is Your Desired Rank?')
-      .setColor(EMBED_COLOR);
-
-    const row1 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('ranked_desired_Masters').setLabel('Masters').setEmoji('<:Masters:1293283897618075728>').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('ranked_desired_Legendary').setLabel('Legendary').setEmoji('<:Legendary:1264709440561483818>').setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('ranked_desired_Mythic').setLabel('Mythic').setEmoji('<:mythic:1357482343555666181>').setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('ranked_desired_Diamond').setLabel('Diamond').setEmoji('<:diamond:1357482488506613920>').setStyle(ButtonStyle.Primary)
-    );
-    const row2 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('ranked_desired_Gold').setLabel('Gold').setEmoji('<:gold:1357482374048256131>').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('ranked_desired_Silver').setLabel('Silver').setEmoji('<:silver:1357482400333955132>').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('ranked_desired_Bronze').setLabel('Bronze').setEmoji('<:bronze:1357482418654937332>').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('ranked_desired_Pro').setLabel('Pro').setEmoji('<:pro:1351687685328208003>').setStyle(ButtonStyle.Success)
-    );
-    return interaction.reply({ embeds: [embed], components: [row1, row2], ephemeral: true });
-  }
-
-  if (customId.startsWith('ranked_desired_')) {
-    const data = ephemeralFlowState.get(user.id);
-    if (!data?.currentRank) {
-      return interaction.reply({ content: 'No current rank stored. Please restart.', ephemeral: true });
+    if (customId === 'friendlist_playerinfo') {
+      const infoTitle = 'Player Information';
+      const infoDesc = 'Get more information about the player you would like to add!';
+      const row1 = new ActionRowBuilder();
+      const row2 = new ActionRowBuilder();
+      const friendlistPlayers = [
+        'LUX | Zoro',
+        'Lennox',
+        'Melih',
+        'Elox',
+        'Kazu',
+        'Izana',
+        'SKC | Rafiki',
+        'HMB | BosS'
+      ];
+      const customIds = [
+        'info_luxzoro','info_lennox','info_melih','info_elox',
+        'info_kazu','info_izana','info_rafiki','info_boss'
+      ];
+      for (let i = 0; i < 5; i++) {
+        row1.addComponents(
+          new ButtonBuilder().setCustomId(customIds[i]).setLabel(friendlistPlayers[i]).setStyle(ButtonStyle.Primary)
+        );
+      }
+      for (let i = 5; i < 8; i++) {
+        row2.addComponents(
+          new ButtonBuilder().setCustomId(customIds[i]).setLabel(friendlistPlayers[i]).setStyle(ButtonStyle.Primary)
+        );
+      }
+      const embed = new EmbedBuilder().setTitle(infoTitle).setDescription(infoDesc).setColor(EMBED_COLOR);
+      return interaction.reply({ embeds: [embed], components: [row1, row2], ephemeral: true });
     }
-    const base = customId.replace('ranked_desired_', '');
-    if (base === 'Pro') {
-      // final price
-      const cost = calculateRankedPrice(data.currentRank, 'Pro');
+
+    const buyMap = {
+      'buy_luxzoro': 'LUX | Zoro',
+      'buy_lennox': 'Lennox',
+      'buy_melih': 'Melih',
+      'buy_elox': 'Elox',
+      'buy_kazu': 'Kazu',
+      'buy_izana': 'Izana',
+      'buy_rafiki': 'SKC | Rafiki',
+      'buy_boss': 'HMB | BosS'
+    };
+    if (Object.keys(buyMap).includes(customId)) {
+      try {
+        const existingTickets = guild.channels.cache.filter(ch => {
+          if (ch.type === ChannelType.GuildText) {
+            const perm = ch.permissionOverwrites.cache.get(user.id);
+            return perm?.allow.has(PermissionsBitField.Flags.ViewChannel);
+          }
+          return false;
+        });
+        const hasOverflow = (existingTickets.size >= MAX_TICKETS_PER_USER);
+        const categoryFull = isCategoryFull(MOVE_CATEGORIES.add, guild);
+        const parentToUse = (hasOverflow || categoryFull) ? null : MOVE_CATEGORIES.add;
+        const channelName = `add-${user.username}-${Math.floor(Math.random()*1000)}`;
+        const addChannel = await guild.channels.create({
+          name: channelName,
+          type: ChannelType.GuildText,
+          parent: parentToUse,
+          permissionOverwrites: [
+            { id: guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
+            { id: user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+            ...STAFF_ROLES.map(rid => ({ id: rid, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }))
+          ]
+        });
+        const mentionText = `<@${user.id}>`;
+        const welcomeEmbed = new EmbedBuilder().setDescription('Welcome, thanks for opening a ticket!\n\nSupport will be with you shortly.');
+        const closeBtnRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('close_ticket')
+            .setLabel('Close Ticket')
+            .setEmoji('<:Lock:1349157009244557384>')
+            .setStyle(ButtonStyle.Danger)
+        );
+        await addChannel.send({ content: mentionText, embeds: [welcomeEmbed], components: [closeBtnRow] });
+        ticketDataMap.set(addChannel.id, new TicketData(user.id, addChannel.id, addChannel.name, Date.now()));
+        return interaction.reply({ content: `Ticket created: <#${addChannel.id}>`, ephemeral: true });
+      } catch (err) {
+        console.error(err);
+        return interaction.reply({ content: 'Failed to create add ticket channel.', ephemeral: true });
+      }
+    }
+
+    // INFO
+    const infoMap = {
+      'info_luxzoro': 'LUX | Zoro',
+      'info_lennox': 'Lennox',
+      'info_melih': 'Melih',
+      'info_elox': 'Elox',
+      'info_kazu': 'Kazu',
+      'info_izana': 'Izana',
+      'info_rafiki': 'SKC | Rafiki',
+      'info_boss': 'HMB | BosS'
+    };
+    if (Object.keys(infoMap).includes(customId)) {
+      // ...
+      // Already coded above, returning info
+    }
+
+    // Trophies
+    if (customId === 'ticket_trophies') {
+      // EXACT question text
+      const modal = new ModalBuilder()
+        .setCustomId('modal_trophies_start')
+        .setTitle('Trophies Boost');
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('brawler_name')
+            .setLabel('Which Brawler Do You Want Boosted?')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('brawler_current')
+            .setLabel('How Many Trophies Does Your Brawler Have?')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('brawler_desired')
+            .setLabel('What Are Your Desired Trophies?')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+        )
+      );
+      return interaction.showModal(modal);
+    }
+
+    // Bulk
+    if (customId === 'ticket_bulk') {
+      const modal = new ModalBuilder()
+        .setCustomId('modal_bulk_start')
+        .setTitle('Bulk Trophies');
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('bulk_current')
+            .setLabel('How Many Trophies Do You Currently Have?')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('bulk_desired')
+            .setLabel('What Is Your Desired Total Trophies?')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+        )
+      );
+      return interaction.showModal(modal);
+    }
+
+    // Other
+    if (customId === 'ticket_other') {
+      const modal = new ModalBuilder()
+        .setCustomId('modal_ticket_other')
+        .setTitle('Other Request');
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('other_purchase')
+            .setLabel('What Are You Purchasing?')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+        )
+      );
+      return interaction.showModal(modal);
+    }
+
+    // RANKED
+    if (customId === 'ticket_ranked') {
+      // We'll store ephemeral state
+      ephemeralFlowState.set(user.id, { step: 'ranked_current_main' });
+      const embed = new EmbedBuilder()
+        .setTitle('Current Rank')
+        .setDescription('What Is Your Current Rank?')
+        .setColor(EMBED_COLOR);
+
+      const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('ranked_current_Masters').setLabel('Masters').setEmoji('<:Masters:1293283897618075728>').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('ranked_current_Legendary').setLabel('Legendary').setEmoji('<:Legendary:1264709440561483818>').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('ranked_current_Mythic').setLabel('Mythic').setEmoji('<:mythic:1357482343555666181>').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('ranked_current_Diamond').setLabel('Diamond').setEmoji('<:diamond:1357482488506613920>').setStyle(ButtonStyle.Primary)
+      );
+      const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('ranked_current_Gold').setLabel('Gold').setEmoji('<:gold:1357482374048256131>').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('ranked_current_Silver').setLabel('Silver').setEmoji('<:silver:1357482400333955132>').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('ranked_current_Bronze').setLabel('Bronze').setEmoji('<:bronze:1357482418654937332>').setStyle(ButtonStyle.Secondary)
+      );
+      return interaction.reply({ embeds: [embed], components: [row1, row2], ephemeral: true });
+    }
+
+    // Mastery
+    if (customId === 'ticket_mastery') {
+      // "Which Brawler Do You Want Boosted?" in a modal
+      const modal = new ModalBuilder()
+        .setCustomId('modal_mastery_brawler')
+        .setTitle('Mastery Boost');
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('mastery_brawler')
+            .setLabel('Which Brawler Do You Want Boosted?')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+        )
+      );
+      return interaction.showModal(modal);
+    }
+
+    // Modal Submissions
+    if (interaction.isModalSubmit()) {
+      const { customId, user } = interaction;
+
+      // TROPHIES
+      if (customId === 'modal_trophies_start') {
+        const brawlerName = interaction.fields.getTextInputValue('brawler_name')?.trim();
+        const currentStr = interaction.fields.getTextInputValue('brawler_current')?.trim();
+        const desiredStr = interaction.fields.getTextInputValue('brawler_desired')?.trim();
+        const currentTrophies = parseInt(currentStr, 10);
+        const desiredTrophies = parseInt(desiredStr, 10);
+
+        if (isNaN(currentTrophies) || isNaN(desiredTrophies) || currentTrophies >= desiredTrophies) {
+          return interaction.reply({ content: 'Please Enter A Valid Trophy Amount.', ephemeral: true });
+        }
+        const price = calculateTrophyPrice(currentTrophies, desiredTrophies);
+
+        const embed = new EmbedBuilder()
+          .setTitle('Your Price')
+          .setDescription(`Your Price Will Be:\n\n\`€${price}\``)
+          .setColor(EMBED_COLOR);
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('trophies_purchase_boost').setLabel('Purchase Boost').setEmoji('<:checkmark:1357478063616688304>').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId('trophies_cancel').setLabel('Cancel').setEmoji('<:cross:1351689463453061130>').setStyle(ButtonStyle.Danger)
+        );
+        ephemeralFlowState.set(user.id, {
+          panelType: 'trophies',
+          brawlerName,
+          currentTrophies,
+          desiredTrophies,
+          price
+        });
+        return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+      }
+
+      // BULK
+      if (customId === 'modal_bulk_start') {
+        const currentStr = interaction.fields.getTextInputValue('bulk_current')?.trim();
+        const desiredStr = interaction.fields.getTextInputValue('bulk_desired')?.trim();
+        const current = parseInt(currentStr, 10);
+        const desired = parseInt(desiredStr, 10);
+
+        if (isNaN(current) || isNaN(desired) || current >= desired) {
+          return interaction.reply({ content: 'Please Enter A Valid Trophy Amount.', ephemeral: true });
+        }
+        const price = calculateBulkPrice(current, desired);
+
+        const embed = new EmbedBuilder()
+          .setTitle('Your Price')
+          .setDescription(`Your Price Will Be:\n\n\`€${price}\`\n\n**Up to a 50% Discount can be given if you buy several Thousands of Trophies.**`)
+          .setColor(EMBED_COLOR);
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('bulk_purchase_boost').setLabel('Purchase Boost').setEmoji('<:checkmark:1357478063616688304>').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId('bulk_cancel').setLabel('Cancel').setEmoji('<:cross:1351689463453061130>').setStyle(ButtonStyle.Danger)
+        );
+        ephemeralFlowState.set(user.id, {
+          panelType: 'bulk',
+          current,
+          desired,
+          price
+        });
+        return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+      }
+
+      // OTHER
+      if (customId === 'modal_ticket_other') {
+        const whatPurchase = interaction.fields.getTextInputValue('other_purchase')?.trim();
+        const lines = [
+          ['What Are You Purchasing?', whatPurchase]
+        ];
+        return createTicketChannelWithOverflow(interaction, TICKET_CATEGORIES.OTHER, lines);
+      }
+
+      // MASTERY "Which Brawler?"
+      if (customId === 'modal_mastery_brawler') {
+        const brawlerName = interaction.fields.getTextInputValue('mastery_brawler')?.trim() || 'Unknown Brawler';
+        ephemeralFlowState.set(interaction.user.id, {
+          step: 'mastery_current_main',
+          brawlerName
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle('Current Mastery')
+          .setDescription('What Is Your Current Mastery?')
+          .setColor(EMBED_COLOR);
+        // 3 buttons: Bronze, Silver, Gold (with correct color/emoji)
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('mastery_current_Bronze').setLabel('Bronze').setEmoji('<:mastery_bronze:1357487786394914847>').setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId('mastery_current_Silver').setLabel('Silver').setEmoji('<:mastery_silver:1357487832481923153>').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('mastery_current_Gold').setLabel('Gold').setEmoji('<:mastery_gold:1357487865029722254>').setStyle(ButtonStyle.Success)
+        );
+        return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+      }
+      return;
+    }
+
+    // CANCEL (Trophies/Bulk final price)
+    if (customId === 'trophies_cancel' || customId === 'bulk_cancel') {
+      ephemeralFlowState.delete(user.id);
+      return interaction.update({ content: 'Cancelled.', embeds: [], components: [] });
+    }
+
+    // Trophies / Bulk purchase
+    if (customId === 'trophies_purchase_boost' || customId === 'bulk_purchase_boost') {
+      const data = ephemeralFlowState.get(user.id);
+      if (!data) {
+        return interaction.reply({ content: 'No data found. Please try again.', ephemeral: true });
+      }
+      ephemeralFlowState.delete(user.id);
+      if (data.panelType === 'trophies') {
+        const lines = [
+          ['Which Brawler Do You Want Boosted?', data.brawlerName],
+          ['How Many Trophies Does Your Brawler Have?', data.currentTrophies],
+          ['What Are Your Desired Trophies?', data.desiredTrophies],
+          ['Price', `€${data.price}`]
+        ];
+        return createTicketChannelWithOverflow(interaction, TICKET_CATEGORIES.TROPHIES, lines);
+      } else {
+        // bulk
+        const lines = [
+          ['How Many Trophies Do You Currently Have?', data.current],
+          ['What Is Your Desired Total Trophies?', data.desired],
+          ['Price', `€${data.price}`]
+        ];
+        return createTicketChannelWithOverflow(interaction, TICKET_CATEGORIES.BULK, lines);
+      }
+    }
+
+    // RANKED STEPS
+    if (customId.startsWith('ranked_current_')) {
+      // e.g. ranked_current_Masters
+      const rankBase = customId.replace('ranked_current_', ''); // "Masters"
+      ephemeralFlowState.set(user.id, { step: 'ranked_current_sub', rankBase });
+
+      // same color & emoji
+      let style = ButtonStyle.Success;
+      let emoji = '';
+      if (rankBase === 'Masters')    { emoji = '<:Masters:1293283897618075728>'; style = ButtonStyle.Success; }
+      if (rankBase === 'Legendary')  { emoji = '<:Legendary:1264709440561483818>'; style = ButtonStyle.Danger; }
+      if (rankBase === 'Mythic')     { emoji = '<:mythic:1357482343555666181>'; style = ButtonStyle.Danger; }
+      if (rankBase === 'Diamond')    { emoji = '<:diamond:1357482488506613920>'; style = ButtonStyle.Primary; }
+      if (rankBase === 'Gold')       { emoji = '<:gold:1357482374048256131>'; style = ButtonStyle.Success; }
+      if (rankBase === 'Silver')     { emoji = '<:silver:1357482400333955132>'; style = ButtonStyle.Primary; }
+      if (rankBase === 'Bronze')     { emoji = '<:bronze:1357482418654937332>'; style = ButtonStyle.Secondary; }
+
+      const embed = new EmbedBuilder()
+        .setDescription(`Please specify exactly which ${rankBase} rank you have.`)
+        .setColor(EMBED_COLOR);
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`ranked_curr_sub_${rankBase}1`).setLabel(`${rankBase} 1`).setEmoji(emoji).setStyle(style),
+        new ButtonBuilder().setCustomId(`ranked_curr_sub_${rankBase}2`).setLabel(`${rankBase} 2`).setEmoji(emoji).setStyle(style),
+        new ButtonBuilder().setCustomId(`ranked_curr_sub_${rankBase}3`).setLabel(`${rankBase} 3`).setEmoji(emoji).setStyle(style)
+      );
+      return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+    }
+
+    if (customId.startsWith('ranked_curr_sub_')) {
+      // e.g. ranked_curr_sub_Masters1 => "Masters1"
+      const rankSelected = customId.replace('ranked_curr_sub_', '');
+      ephemeralFlowState.set(user.id, {
+        step: 'ranked_desired_main',
+        currentRank: rankSelected
+      });
+      const embed = new EmbedBuilder()
+        .setTitle('Desired Rank')
+        .setDescription('What Is Your Desired Rank?')
+        .setColor(EMBED_COLOR);
+
+      const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('ranked_desired_Masters').setLabel('Masters').setEmoji('<:Masters:1293283897618075728>').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('ranked_desired_Legendary').setLabel('Legendary').setEmoji('<:Legendary:1264709440561483818>').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('ranked_desired_Mythic').setLabel('Mythic').setEmoji('<:mythic:1357482343555666181>').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('ranked_desired_Diamond').setLabel('Diamond').setEmoji('<:diamond:1357482488506613920>').setStyle(ButtonStyle.Primary)
+      );
+      const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('ranked_desired_Gold').setLabel('Gold').setEmoji('<:gold:1357482374048256131>').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('ranked_desired_Silver').setLabel('Silver').setEmoji('<:silver:1357482400333955132>').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('ranked_desired_Bronze').setLabel('Bronze').setEmoji('<:bronze:1357482418654937332>').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('ranked_desired_Pro').setLabel('Pro').setEmoji('<:pro:1351687685328208003>').setStyle(ButtonStyle.Success)
+      );
+      return interaction.reply({ embeds: [embed], components: [row1, row2], ephemeral: true });
+    }
+
+    if (customId.startsWith('ranked_desired_')) {
+      const data = ephemeralFlowState.get(user.id);
+      if (!data?.currentRank) {
+        return interaction.reply({ content: 'No current rank stored. Please restart.', ephemeral: true });
+      }
+      const base = customId.replace('ranked_desired_', '');
+      if (base === 'Pro') {
+        // final price
+        const cost = calculateRankedPrice(data.currentRank, 'Pro');
+        if (cost === null) {
+          return interaction.reply({ content: 'Invalid rank range.', ephemeral: true });
+        }
+        ephemeralFlowState.set(user.id, {
+          step: 'ranked_final',
+          currentRank: data.currentRank,
+          desiredRank: 'Pro',
+          price: cost
+        });
+        const embed = new EmbedBuilder()
+          .setTitle('Your Price')
+          .setDescription(`Your Price Will Be:\n\n\`€${cost}\``)
+          .setColor(EMBED_COLOR);
+        // final step => purchase or cancel
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('ranked_purchase_final').setLabel('Purchase Boost').setEmoji('<:checkmark:1357478063616688304>').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId('ranked_cancel_final').setLabel('Cancel').setEmoji('<:cross:1351689463453061130>').setStyle(ButtonStyle.Danger)
+        );
+        return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+      } else {
+        // sub-rank
+        let style = ButtonStyle.Success;
+        let emoji = '';
+        if (base === 'Masters')    { emoji = '<:Masters:1293283897618075728>'; style = ButtonStyle.Success; }
+        if (base === 'Legendary')  { emoji = '<:Legendary:1264709440561483818>'; style = ButtonStyle.Danger; }
+        if (base === 'Mythic')     { emoji = '<:mythic:1357482343555666181>'; style = ButtonStyle.Danger; }
+        if (base === 'Diamond')    { emoji = '<:diamond:1357482488506613920>'; style = ButtonStyle.Primary; }
+        if (base === 'Gold')       { emoji = '<:gold:1357482374048256131>'; style = ButtonStyle.Success; }
+        if (base === 'Silver')     { emoji = '<:silver:1357482400333955132>'; style = ButtonStyle.Primary; }
+        if (base === 'Bronze')     { emoji = '<:bronze:1357482418654937332>'; style = ButtonStyle.Secondary; }
+
+        ephemeralFlowState.set(user.id, {
+          step: 'ranked_desired_sub',
+          currentRank: data.currentRank,
+          baseDesired: base
+        });
+        const embed = new EmbedBuilder()
+          .setDescription(`Please specify exactly which ${base} rank you want.`)
+          .setColor(EMBED_COLOR);
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`ranked_dsub_${base}1`).setLabel(`${base} 1`).setEmoji(emoji).setStyle(style),
+          new ButtonBuilder().setCustomId(`ranked_dsub_${base}2`).setLabel(`${base} 2`).setEmoji(emoji).setStyle(style),
+          new ButtonBuilder().setCustomId(`ranked_dsub_${base}3`).setLabel(`${base} 3`).setEmoji(emoji).setStyle(style)
+        );
+        return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+      }
+    }
+
+    if (customId.startsWith('ranked_dsub_')) {
+      const data = ephemeralFlowState.get(user.id);
+      if (!data?.currentRank) {
+        return interaction.reply({ content: 'No current rank. Please restart.', ephemeral: true });
+      }
+      const finalPick = customId.replace('ranked_dsub_', ''); // e.g. "Masters1"
+      const cost = calculateRankedPrice(data.currentRank, finalPick);
       if (cost === null) {
         return interaction.reply({ content: 'Invalid rank range.', ephemeral: true });
       }
       ephemeralFlowState.set(user.id, {
         step: 'ranked_final',
         currentRank: data.currentRank,
-        desiredRank: 'Pro',
+        desiredRank: finalPick,
         price: cost
       });
       const embed = new EmbedBuilder()
         .setTitle('Your Price')
         .setDescription(`Your Price Will Be:\n\n\`€${cost}\``)
         .setColor(EMBED_COLOR);
-      // final step => purchase or cancel
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('ranked_purchase_final').setLabel('Purchase Boost').setEmoji('<:checkmark:1357478063616688304>').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('ranked_cancel_final').setLabel('Cancel').setEmoji('<:cross:1351689463453061130>').setStyle(ButtonStyle.Danger)
       );
       return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-    } else {
-      // sub-rank
-      let style = ButtonStyle.Success;
-      let emoji = '';
-      if (base === 'Masters')    { emoji = '<:Masters:1293283897618075728>'; style = ButtonStyle.Success; }
-      if (base === 'Legendary')  { emoji = '<:Legendary:1264709440561483818>'; style = ButtonStyle.Danger; }
-      if (base === 'Mythic')     { emoji = '<:mythic:1357482343555666181>'; style = ButtonStyle.Danger; }
-      if (base === 'Diamond')    { emoji = '<:diamond:1357482488506613920>'; style = ButtonStyle.Primary; }
-      if (base === 'Gold')       { emoji = '<:gold:1357482374048256131>'; style = ButtonStyle.Success; }
-      if (base === 'Silver')     { emoji = '<:silver:1357482400333955132>'; style = ButtonStyle.Primary; }
-      if (base === 'Bronze')     { emoji = '<:bronze:1357482418654937332>'; style = ButtonStyle.Secondary; }
+    }
 
-      ephemeralFlowState.set(user.id, {
-        step: 'ranked_desired_sub',
-        currentRank: data.currentRank,
-        baseDesired: base
-      });
+    if (customId === 'ranked_cancel_final') {
+      ephemeralFlowState.delete(user.id);
+      return interaction.update({ content: 'Cancelled.', embeds: [], components: [] });
+    }
+
+    if (customId === 'ranked_purchase_final') {
+      const data = ephemeralFlowState.get(user.id);
+      if (!data) {
+        return interaction.reply({ content: 'No data found, please retry.', ephemeral: true });
+      }
+      ephemeralFlowState.delete(user.id);
+      const lines = [
+        ['Current Rank?', data.currentRank],
+        ['Desired Rank?', data.desiredRank],
+        ['Price', `€${data.price}`]
+      ];
+      return createTicketChannelWithOverflow(interaction, TICKET_CATEGORIES.RANKED, lines);
+    }
+
+    // MASTERY flow
+    if (customId.startsWith('mastery_current_')) {
+      const data = ephemeralFlowState.get(user.id);
+      if (!data) {
+        return interactionreply({ content: 'No mastery data found, please re-open.', ephemeral: true });
+      }
+      const base = customId.replace('mastery_current_', ''); // "Bronze"/"Silver"/"Gold"
+      ephemeralFlowState.set(user.id, { ...data, step: 'mastery_current_sub', baseMastery: base });
+
+      // same color & emoji
+      let style = ButtonStyle.Danger;
+      let emoji = '<:mastery_bronze:1357487786394914847>';
+      if (base === 'Silver') { style = ButtonStyle.Primary; emoji = '<:mastery_silver:1357487832481923153>'; }
+      if (base === 'Gold') { style = ButtonStyle.Success; emoji = '<:mastery_gold:1357487865029722254>'; }
+
       const embed = new EmbedBuilder()
-        .setDescription(`Please specify exactly which ${base} rank you want.`)
+        .setDescription(`Please specify exactly which ${base} mastery you have.`)
         .setColor(EMBED_COLOR);
       const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`ranked_dsub_${base}1`).setLabel(`${base} 1`).setEmoji(emoji).setStyle(style),
-        new ButtonBuilder().setCustomId(`ranked_dsub_${base}2`).setLabel(`${base} 2`).setEmoji(emoji).setStyle(style),
-        new ButtonBuilder().setCustomId(`ranked_dsub_${base}3`).setLabel(`${base} 3`).setEmoji(emoji).setStyle(style)
+        new ButtonBuilder().setCustomId(`mastery_csub_${base}1`).setLabel(`${base} 1`).setEmoji(emoji).setStyle(style),
+        new ButtonBuilder().setCustomId(`mastery_csub_${base}2`).setLabel(`${base} 2`).setEmoji(emoji).setStyle(style),
+        new ButtonBuilder().setCustomId(`mastery_csub_${base}3`).setLabel(`${base} 3`).setEmoji(emoji).setStyle(style)
       );
       return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
     }
-  }
 
-  if (customId.startsWith('ranked_dsub_')) {
-    const data = ephemeralFlowState.get(user.id);
-    if (!data?.currentRank) {
-      return interaction.reply({ content: 'No current rank. Please restart.', ephemeral: true });
-    }
-    const finalPick = customId.replace('ranked_dsub_', ''); // e.g. "Masters1"
-    const cost = calculateRankedPrice(data.currentRank, finalPick);
-    if (cost === null) {
-      return interaction.reply({ content: 'Invalid rank range.', ephemeral: true });
-    }
-    ephemeralFlowState.set(user.id, {
-      step: 'ranked_final',
-      currentRank: data.currentRank,
-      desiredRank: finalPick,
-      price: cost
-    });
-    const embed = new EmbedBuilder()
-      .setTitle('Your Price')
-      .setDescription(`Your Price Will Be:\n\n\`€${cost}\``)
-      .setColor(EMBED_COLOR);
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('ranked_purchase_final').setLabel('Purchase Boost').setEmoji('<:checkmark:1357478063616688304>').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('ranked_cancel_final').setLabel('Cancel').setEmoji('<:cross:1351689463453061130>').setStyle(ButtonStyle.Danger)
-    );
-    return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-  }
+    if (customId.startsWith('mastery_csub_')) {
+      // e.g. mastery_csub_Bronze1
+      const data = ephemeralFlowState.get(user.id);
+      if (!data) {
+        return interaction.reply({ content: 'No mastery data found, please re-open.', ephemeral: true });
+      }
+      const pick = customId.replace('mastery_csub_', ''); // e.g. "Bronze1"
+      ephemeralFlowState.set(user.id, { ...data, currentMastery: pick, step: 'mastery_desired_main' });
 
-  if (customId === 'ranked_cancel_final') {
-    ephemeralFlowState.delete(user.id);
-    return interaction.update({ content: 'Cancelled.', embeds: [], components: [] });
-  }
-
-  if (customId === 'ranked_purchase_final') {
-    const data = ephemeralFlowState.get(user.id);
-    if (!data) {
-      return interaction.reply({ content: 'No data found, please retry.', ephemeral: true });
-    }
-    ephemeralFlowState.delete(user.id);
-    const lines = [
-      ['Current Rank?', data.currentRank],
-      ['Desired Rank?', data.desiredRank],
-      ['Price', `€${data.price}`]
-    ];
-    return createTicketChannelWithOverflow(interaction, TICKET_CATEGORIES.RANKED, lines);
-  }
-
-  // MASTERY flow
-  if (customId.startsWith('mastery_current_')) {
-    const data = ephemeralFlowState.get(user.id);
-    if (!data) {
-      return interaction.reply({ content: 'No mastery data found, please re-open.', ephemeral: true });
-    }
-    const base = customId.replace('mastery_current_', ''); // "Bronze"/"Silver"/"Gold"
-    ephemeralFlowState.set(user.id, { ...data, step: 'mastery_current_sub', baseMastery: base });
-
-    // same color & emoji
-    let style = ButtonStyle.Danger;
-    let emoji = '<:mastery_bronze:1357487786394914847>';
-    if (base === 'Silver') { style = ButtonStyle.Primary; emoji = '<:mastery_silver:1357487832481923153>'; }
-    if (base === 'Gold') { style = ButtonStyle.Success; emoji = '<:mastery_gold:1357487865029722254>'; }
-
-    const embed = new EmbedBuilder()
-      .setDescription(`Please specify exactly which ${base} mastery you have.`)
-      .setColor(EMBED_COLOR);
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`mastery_csub_${base}1`).setLabel(`${base} 1`).setEmoji(emoji).setStyle(style),
-      new ButtonBuilder().setCustomId(`mastery_csub_${base}2`).setLabel(`${base} 2`).setEmoji(emoji).setStyle(style),
-      new ButtonBuilder().setCustomId(`mastery_csub_${base}3`).setLabel(`${base} 3`).setEmoji(emoji).setStyle(style)
-    );
-    return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-  }
-
-  if (customId.startsWith('mastery_csub_')) {
-    // e.g. mastery_csub_Bronze1
-    const data = ephemeralFlowState.get(user.id);
-    if (!data) {
-      return interaction.reply({ content: 'No mastery data found, please re-open.', ephemeral: true });
-    }
-    const pick = customId.replace('mastery_csub_', ''); // e.g. "Bronze1"
-    ephemeralFlowState.set(user.id, { ...data, currentMastery: pick, step: 'mastery_desired_main' });
-
-    const embed = new EmbedBuilder()
-      .setTitle('Desired Mastery')
-      .setDescription('What Is Your Desired Mastery?')
-      .setColor(EMBED_COLOR);
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('mastery_desired_Bronze').setLabel('Bronze').setEmoji('<:mastery_bronze:1357487786394914847>').setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('mastery_desired_Silver').setLabel('Silver').setEmoji('<:mastery_silver:1357487832481923153>').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('mastery_desired_Gold').setLabel('Gold').setEmoji('<:mastery_gold:1357487865029722254>').setStyle(ButtonStyle.Success)
-    );
-    return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-  }
-
-  if (customId.startsWith('mastery_desired_')) {
-    const data = ephemeralFlowState.get(user.id);
-    if (!data?.currentMastery) {
-      return interaction.reply({ content: 'No current mastery set, please re-open.', ephemeral: true });
-    }
-    const base = customId.replace('mastery_desired_', '');
-    ephemeralFlowState.set(user.id, { ...data, step: 'mastery_desired_sub', baseDesired: base });
-
-    let style = ButtonStyle.Danger;
-    let emoji = '<:mastery_bronze:1357487786394914847>';
-    if (base === 'Silver') { style = ButtonStyle.Primary; emoji = '<:mastery_silver:1357487832481923153>'; }
-    if (base === 'Gold') { style = ButtonStyle.Success; emoji = '<:mastery_gold:1357487865029722254>'; }
-
-    const embed = new EmbedBuilder()
-      .setDescription(`Please specify exactly which ${base} mastery you want.`)
-      .setColor(EMBED_COLOR);
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`mastery_dsub_${base}1`).setLabel(`${base} 1`).setEmoji(emoji).setStyle(style),
-      new ButtonBuilder().setCustomId(`mastery_dsub_${base}2`).setLabel(`${base} 2`).setEmoji(emoji).setStyle(style),
-      new ButtonBuilder().setCustomId(`mastery_dsub_${base}3`).setLabel(`${base} 3`).setEmoji(emoji).setStyle(style)
-    );
-    return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-  }
-
-  if (customId.startsWith('mastery_dsub_')) {
-    // e.g. mastery_dsub_Bronze1
-    const data = ephemeralFlowState.get(user.id);
-    if (!data?.currentMastery) {
-      return interaction.reply({ content: 'No current mastery set, please re-open.', ephemeral: true });
-    }
-    const finalPick = customId.replace('mastery_dsub_', '');
-    const cost = calculateMasteryPrice(data.currentMastery, finalPick);
-    if (cost === null) {
-      return interaction.reply({ content: 'Invalid mastery range.', ephemeral: true });
-    }
-    ephemeralFlowState.set(user.id, {
-      ...data,
-      desiredMastery: finalPick,
-      price: cost,
-      step: 'mastery_price'
-    });
-    const embed = new EmbedBuilder()
-      .setTitle('Your Price')
-      .setDescription(`Your Price Will Be:\n\n\`€${cost}\``)
-      .setColor(EMBED_COLOR);
-    // final step => purchase / cancel
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('mastery_purchase_final').setLabel('Purchase Boost').setEmoji('<:checkmark:1357478063616688304>').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId('mastery_cancel_final').setLabel('Cancel').setEmoji('<:cross:1351689463453061130>').setStyle(ButtonStyle.Danger)
-    );
-    return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-  }
-
-});
-
-// 10) Mastery final purchase
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isButton()) return;
-  const { customId, user } = interaction;
-  if (customId === 'mastery_cancel_final') {
-    ephemeralFlowState.delete(user.id);
-    return interaction.update({ content: 'Cancelled.', embeds: [], components: [] });
-  }
-  if (customId === 'mastery_purchase_final') {
-    const data = ephemeralFlowState.get(user.id);
-    if (!data?.currentMastery || !data?.desiredMastery) {
-      return interaction.reply({ content: 'No data found, please retry.', ephemeral: true });
-    }
-    ephemeralFlowState.delete(user.id);
-    const lines = [
-      ['Which Brawler Do You Want Boosted?', data.brawlerName || 'Unknown'],
-      ['Current Mastery?', data.currentMastery],
-      ['Desired Mastery?', data.desiredMastery],
-      ['Price', `€${data.price}`]
-    ];
-    return createTicketChannelWithOverflow(interaction, TICKET_CATEGORIES.MASTERY, lines);
-  }
-});
-
-// 10) TICKET CLOSE / REOPEN / DELETE
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isButton()) return;
-  const { customId, channel, guild, user, member } = interaction;
-
-  if (customId === 'close_ticket') {
-    try {
-      await channel.permissionOverwrites.set([
-        { id: guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: '1292933924116500532', allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
-      ]);
-      const closeEmbed = new EmbedBuilder().setTitle('Ticket Closed').setDescription(`This ticket has been closed by <@${user.id}>.`);
+      const embed = new EmbedBuilder()
+        .setTitle('Desired Mastery')
+        .setDescription('What Is Your Desired Mastery?')
+        .setColor(EMBED_COLOR);
       const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('delete_ticket').setLabel('Delete').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('reopen_ticket').setLabel('Re-Open').setStyle(ButtonStyle.Success)
+        new ButtonBuilder().setCustomId('mastery_desired_Bronze').setLabel('Bronze').setEmoji('<:mastery_bronze:1357487786394914847>').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('mastery_desired_Silver').setLabel('Silver').setEmoji('<:mastery_silver:1357487832481923153>').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('mastery_desired_Gold').setLabel('Gold').setEmoji('<:mastery_gold:1357487865029722254>').setStyle(ButtonStyle.Success)
       );
-      await channel.send({ embeds: [closeEmbed], components: [row] });
-      // log
-      const data = ticketDataMap.get(channel.id);
-      const openerId = data?.openerId || user.id;
-      await autoCloseLog(channel, openerId, channel.name, 'Manually closed');
+      return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+    }
 
-      // 🗑 Remove from DB on manual close
-      try {
-        await db.query(
-          `DELETE FROM tickets WHERE channel_id = $1`,
-          [channel.id]
-        );
-      } catch (err) {
-        console.error('❌ Failed to delete ticket row on manual close:', err);
+    if (customId.startsWith('mastery_desired_')) {
+      const data = ephemeralFlowState.get(user.id);
+      if (!data?.currentMastery) {
+        return interaction.reply({ content: 'No current mastery set, please re-open.', ephemeral: true });
+      }
+      const base = customId.replace('mastery_desired_', '');
+      ephemeralFlowState.set(user.id, { ...data, step: 'mastery_desired_sub', baseDesired: base });
+
+      let style = ButtonStyle.Danger;
+      let emoji = '<:mastery_bronze:1357487786394914847>';
+      if (base === 'Silver') { style = ButtonStyle.Primary; emoji = '<:mastery_silver:1357487832481923153>'; }
+      if (base === 'Gold') { style = ButtonStyle.Success; emoji = '<:mastery_gold:1357487865029722254>'; }
+
+      const embed = new EmbedBuilder()
+        .setDescription(`Please specify exactly which ${base} mastery you want.`)
+        .setColor(EMBED_COLOR);
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`mastery_dsub_${base}1`).setLabel(`${base} 1`).setEmoji(emoji).setStyle(style),
+        new ButtonBuilder().setCustomId(`mastery_dsub_${base}2`).setLabel(`${base} 2`).setEmoji(emoji).setStyle(style),
+        new ButtonBuilder().setCustomId(`mastery_dsub_${base}3`).setLabel(`${base} 3`).setEmoji(emoji).setStyle(style)
+      );
+      return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+    }
+
+    if (customId.startsWith('mastery_dsub_')) {
+      // e.g. mastery_dsub_Bronze1
+      const data = ephemeralFlowState.get(user.id);
+      if (!data?.currentMastery) {
+        return interaction.reply({ content: 'No current mastery set, please re-open.', ephemeral: true });
+      }
+      const finalPick = customId.replace('mastery_dsub_', '');
+      const cost = calculateMasteryPrice(data.currentMastery, finalPick);
+      if (cost === null) {
+        return interaction.reply({ content: 'Invalid mastery range.', ephemeral: true });
+      }
+      ephemeralFlowState.set(user.id, {
+        ...data,
+        desiredMastery: finalPick,
+        price: cost,
+        step: 'mastery_price'
+      });
+      const embed = new EmbedBuilder()
+        .setTitle('Your Price')
+        .setDescription(`Your Price Will Be:\n\n\`€${cost}\``)
+        .setColor(EMBED_COLOR);
+      // final step => purchase / cancel
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('mastery_purchase_final').setLabel('Purchase Boost').setEmoji('<:checkmark:1357478063616688304>').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('mastery_cancel_final').setLabel('Cancel').setEmoji('<:cross:1351689463453061130>').setStyle(ButtonStyle.Danger)
+      );
+      return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+    }
+
+    if (customId === 'mastery_cancel_final' || customId === 'close_ticket' || customId === 'delete_ticket' || customId === 'reopen_ticket') {
+      //All the ticket close/reopen/delete logic from the original code is included here.
+      if (customId === 'mastery_cancel_final') {
+        ephemeralFlowState.delete(user.id);
+        return interaction.update({ content: 'Cancelled.', embeds: [], components: [] });
+      }
+      const { customId, channel, guild, user, member } = interaction;
+
+      if (customId === 'close_ticket') {
+        try {
+          await channel.permissionOverwrites.set([
+            { id: guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
+            { id: '1292933924116500532', allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
+          ]);
+          const closeEmbed = new EmbedBuilder().setTitle('Ticket Closed').setDescription(`This ticket has been closed by <@${user.id}>.`);
+          const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('delete_ticket').setLabel('Delete').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId('reopen_ticket').setLabel('Re-Open').setStyle(ButtonStyle.Success)
+          );
+          await channel.send({ embeds: [closeEmbed], components: [row] });
+          // log
+          const data = ticketDataMap.get(channel.id);
+          const openerId = data?.openerId || user.id;
+          await autoCloseLog(channel, openerId, channel.name, 'Manually closed');
+
+          // 🗑 Remove from DB on manual close
+          try {
+            await db.query(
+              `DELETE FROM tickets WHERE channel_id = $1`,
+              [channel.id]
+            );
+          } catch (err) {
+            console.error('❌ Failed to delete ticket row on manual close:', err);
+          }
+
+          return interaction.reply({ content: 'Ticket closed.', ephemeral: true });
+        } catch (err) {
+          console.error(err);
+          return interaction.reply({ content: 'Failed to close the ticket.', ephemeral: true });
+        }
       }
 
-      return interaction.reply({ content: 'Ticket closed.', ephemeral: true });
-    } catch (err) {
-      console.error(err);
-      return interaction.reply({ content: 'Failed to close the ticket.', ephemeral: true });
+      if (customId === 'delete_ticket') {
+        if (!hasAnyRole(member, STAFF_ROLES)) {
+          return interaction.reply({ content: 'Only staff can delete tickets.', ephemeral: true });
+        }
+        await interaction.reply({ content: 'Deleting channel...', ephemeral: true });
+        await channel.delete().catch(console.error);
+        ticketDataMap.delete(channel.id);
+      }
+
+      if (customId === 'reopen_ticket') {
+        if (!hasAnyRole(member, STAFF_ROLES)) {
+          return interaction.reply({ content: 'Only staff can re-open tickets.', ephemeral: true });
+        }
+        const data = ticketDataMap.get(channel.id);
+        const openerId = data?.openerId;
+        if (!openerId) {
+          return interaction.reply({ content: 'Could not find who opened this ticket originally.', ephemeral: true });
+        }
+        try {
+          await channel.permissionOverwrites.set([
+            { id: guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
+            { id: openerId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+            ...STAFF_ROLES.map(rid => ({ id: rid, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }))
+          ]);
+          await interaction.reply({ content: 'Ticket re-opened!', ephemeral: true });
+          const reopenEmbed = new EmbedBuilder().setDescription('Ticket has been re-opened. Original user and staff can now see it again.');
+          await channel.send({ embeds: [reopenEmbed] });
+        } catch (err) {
+          console.error(err);
+          return interaction.reply({ content: 'Failed to re-open ticket.', ephemeral: true });
+        }
+      }
+      return;
     }
+
+    if (customId === 'mastery_purchase_final') {
+      const data = ephemeralFlowState.get(user.id);
+      if (!data?.currentMastery || !data?.desiredMastery) {
+        return interaction.reply({ content: 'No data found, please retry.', ephemeral: true });
+      }
+      ephemeralFlowState.delete(user.id);
+      const lines = [
+        ['Which Brawler Do You Want Boosted?', data.brawlerName || 'Unknown'],
+        ['Current Mastery?', data.currentMastery],
+        ['Desired Mastery?', data.desiredMastery],
+        ['Price', `€${data.price}`]
+      ];
+      return createTicketChannelWithOverflow(interaction, TICKET_CATEGORIES.MASTERY, lines);
+    }
+
   }
 
-  if (customId === 'delete_ticket') {
-    if (!hasAnyRole(member, STAFF_ROLES)) {
-      return interaction.reply({ content: 'Only staff can delete tickets.', ephemeral: true });
-    }
-    await interaction.reply({ content: 'Deleting channel...', ephemeral: true });
-    await channel.delete().catch(console.error);
-    ticketDataMap.delete(channel.id);
-  }
-
-  if (customId === 'reopen_ticket') {
-    if (!hasAnyRole(member, STAFF_ROLES)) {
-      return interaction.reply({ content: 'Only staff can re-open tickets.', ephemeral: true });
-    }
-    const data = ticketDataMap.get(channel.id);
-    const openerId = data?.openerId;
-    if (!openerId) {
-      return interaction.reply({ content: 'Could not find who opened this ticket originally.', ephemeral: true });
-    }
-    try {
-      await channel.permissionOverwrites.set([
-        { id: guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: openerId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
-        ...STAFF_ROLES.map(rid => ({ id: rid, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }))
-      ]);
-      await interaction.reply({ content: 'Ticket re-opened!', ephemeral: true });
-      const reopenEmbed = new EmbedBuilder().setDescription('Ticket has been re-opened. Original user and staff can now see it again.');
-      await channel.send({ embeds: [reopenEmbed] });
-    } catch (err) {
-      console.error(err);
-      return interaction.reply({ content: 'Failed to re-open ticket.', ephemeral: true });
-    }
-  }
 });
 
 // If opener leaves => auto close
