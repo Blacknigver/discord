@@ -62,6 +62,9 @@ require('dotenv').config();
 const db = require('./database');
 // review command
 const reviewCommand = require('./review');
+if (interaction.isModalSubmit())  await reviewCommand.handleModal(interaction);
+if (interaction.isButton())       await reviewCommand.handleButton(interaction);
+
 
 // Constants & Setup
 const BOT_TOKEN = process.env.TOKEN || '';
