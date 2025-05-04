@@ -68,6 +68,18 @@ const BOT_TOKEN = process.env.TOKEN || '';
 const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_CLIENT_ID_HERE';
 const CATEGORY_LIMIT = 50; // Max channels per category
 
+
+//───────────────────────────────────────────────────────────────────────────────
+// Auto-close log helper (needed by autoCloseLogAndDelete and manual close)
+async function autoCloseLog(channel, openerId, channelName, afterLabel) {
+  const logChannel = channel.guild.channels.cache.get(AUTO_CLOSE_LOG_CHANNEL);
+  if (!logChannel || !logChannel.isTextBased()) return;
+  await logChannel.send({
+    content: `**Ticket Closed**\nUser: <@${openerId}>\nTicket Name: ${channelName}\nClosed After: ${afterLabel}`
+  });
+}
+//───────────────────────────────────────────────────────────────────────────────
+
 // PRICE CALC UTILS
 function calculateTrophyPrice(current, desired) {
   let totalCents = 0;
