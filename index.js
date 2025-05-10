@@ -243,7 +243,7 @@ async function createTicketChannelWithOverflow(interaction, categoryId, answers)
       ]
     });
     const mentionText = `<@${user.id}>`;
-    const welcomeEmbed = new EmbedBuilder().setDescription('Welcome, thanks for opening a ticket!\n\nSupport will respond soon.');
+    const welcomeEmbed = new EmbedBuilder().setDescription('Welcome, thanks for opening a ticket!\n\n**Support will be with you shortly.**\n\nIf there is any more details or information you would like to share, feel free to do so!');
     let desc = '';
     for (const [q, ans] of answers) {
       desc += `**${q}:**\n${ans}\n\n`;
@@ -392,10 +392,70 @@ const listCommand = new SlashCommandBuilder()
       .setDescription('Tier Max info')
       .setRequired(true)
   )
+  .addStringOption(opt =>
+    opt.setName('rare_skins')
+      .setDescription('Rare skins info')
+      .setRequired(true)
+  )
+  .addStringOption(opt =>
+    opt.setName('super_rare_skins')
+      .setDescription('Super rare skins info')
+      .setRequired(true)
+  )
+  .addStringOption(opt =>
+    opt.setName('epic_skins')
+      .setDescription('Epic skins info')
+      .setRequired(true)
+  )
+  .addStringOption(opt =>
+    opt.setName('mythic_skins')
+      .setDescription('Mythic skins info')
+      .setRequired(true)
+  )
+  .addStringOption(opt =>
+    opt.setName('legendary_skins')
+      .setDescription('Legendary skins info')
+      .setRequired(true)
+  )
+  .addStringOption(opt =>
+    opt.setName('titles')
+      .setDescription('Titles info')
+      .setRequired(true)
+  )
+  .addStringOption(opt =>
+    opt.setName('hypercharges')
+      .setDescription('Hypercharges info')
+      .setRequired(true)
+  )
+  .addStringOption(opt =>
+    opt.setName('power_10s')
+      .setDescription('Power 10s info')
+      .setRequired(true)
+  )
+  .addStringOption(opt =>
+    opt.setName('power_9s')
+      .setDescription('Power 9s info')
+      .setRequired(true)
+  )
+  .addStringOption(opt =>
+    opt.setName('old_ranked_rank')
+      .setDescription('Old ranked rank info')
+      .setRequired(true)
+  )
+  .addStringOption(opt =>
+    opt.setName('new_ranked_rank')
+      .setDescription('New ranked rank info')
+      .setRequired(true)
+  )
   .addAttachmentOption(opt =>
     opt.setName('image')
       .setDescription('Main image (upload a file)')
       .setRequired(true)
+  )
+  .addAttachmentOption(opt =>
+    opt.setName('image2')
+      .setDescription('Additional image for more information (optional)')
+      .setRequired(false)
   );
 
 // Handle slash commands & buttons
@@ -407,18 +467,37 @@ client.on('interactionCreate', async interaction => {
     }
     if (interaction.commandName === 'list') {
       if (!interaction.member.roles.cache.has(LIST_COMMAND_ROLE)) {
+        console.log(`[LIST] Permission denied for user ${interaction.user.tag} (${interaction.user.id})`);
         return interaction.reply({ content: "You don't have permission to use this.", ephemeral: true });
       }
+      console.log(`[LIST] Command used by ${interaction.user.tag} (${interaction.user.id})`);
+      
       const pingChoice = interaction.options.getString('ping');
       const text = interaction.options.getString('text');
       const price = interaction.options.getString('price');
       const trophies = interaction.options.getString('trophies');
       const p11 = interaction.options.getString('p11');
       const tierMax = interaction.options.getString('tier_max');
+      const rareSkins = interaction.options.getString('rare_skins');
+      const superRareSkins = interaction.options.getString('super_rare_skins');
+      const epicSkins = interaction.options.getString('epic_skins');
+      const mythicSkins = interaction.options.getString('mythic_skins');
+      const legendarySkins = interaction.options.getString('legendary_skins');
+      const titles = interaction.options.getString('titles');
+      const hypercharges = interaction.options.getString('hypercharges');
+      const power10s = interaction.options.getString('power_10s');
+      const power9s = interaction.options.getString('power_9s');
+      const oldRankedRank = interaction.options.getString('old_ranked_rank');
+      const newRankedRank = interaction.options.getString('new_ranked_rank');
       const image = interaction.options.getAttachment('image')?.url;
+      const image2 = interaction.options.getAttachment('image2')?.url;
+
+      console.log('[LIST] All options received successfully');
+
       let mention = '**New account added!**';
       if (pingChoice === 'everyone') mention = '**||@everyone|| New account added!**';
       if (pingChoice === 'here') mention = '**||@here|| New account added!**';
+
       const embed = new EmbedBuilder()
         .setTitle('New Account Added! <:winmatcherino:1298703851934711848>')
         .setColor(EMBED_COLOR)
@@ -430,34 +509,65 @@ client.on('interactionCreate', async interaction => {
           { name: '<:tiermax:1301899953320497243> Tier Max', value: tierMax, inline: true }
         );
       if (image) embed.setImage(image);
+
+      // Create the more info embed data
+      const moreInfoData = {
+        rareSkins,
+        superRareSkins,
+        epicSkins,
+        mythicSkins,
+        legendarySkins,
+        titles,
+        hypercharges,
+        power10s,
+        power9s,
+        oldRankedRank,
+        newRankedRank,
+        image2
+      };
+
+      console.log('[LIST] Created embeds and stored more info data');
+
       await interaction.reply({ content: 'Listing posted!', ephemeral: true });
+      
+      // Create our buttons with proper IDs from the start
+      // We'll use a temporary variable to store our components
+      const actionRow = new ActionRowBuilder();
+      
+      // Create the message first so we have the ID
       const msg = await interaction.channel.send({
         content: mention,
-        embeds: [embed],
-        components: [new ActionRowBuilder().addComponents(
+        embeds: [embed]
+        // Don't add components yet, we'll add them after we have the message ID
+      });
+      
+      console.log(`[LIST] Message sent with ID: ${msg.id}`);
+      
+      // Store the more info data
+      ephemeralFlowState.set(msg.id, moreInfoData);
+      console.log(`[LIST] More info data stored for message ${msg.id}`);
+      
+      // Now create the buttons with the proper IDs
+      actionRow.addComponents(
           new ButtonBuilder()
-            .setCustomId('purchase_account_temp')
+          .setCustomId(`purchase_account_${msg.id}`)
             .setLabel('Purchase Account')
             .setEmoji('<:Shopping_Cart:1351686041559367752>')
             .setStyle(ButtonStyle.Success),
           new ButtonBuilder()
-            .setCustomId('listing_mark_sold_temp')
+          .setCustomId(`more_info_${msg.id}`)
+          .setLabel('More Information')
+          .setEmoji('<:Information:1370838179334066217>')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(`listing_mark_sold_${msg.id}`)
             .setLabel('Mark as Sold')
             .setStyle(ButtonStyle.Danger)
-        )]
-      });
-      // update IDs
-      const purchaseId = `purchase_account_${msg.id}`;
-      const soldId = `listing_mark_sold_${msg.id}`;
-      const rows = msg.components.map(row => {
-        const builder = ActionRowBuilder.from(row);
-        builder.components.forEach(c => {
-          if (c.customId === 'purchase_account_temp') c.setCustomId(purchaseId);
-          if (c.customId === 'listing_mark_sold_temp') c.setCustomId(soldId);
-        });
-        return builder;
-      });
-      await msg.edit({ components: rows });
+      );
+      
+      // Edit the message to add the components with correct IDs
+      await msg.edit({ components: [actionRow] });
+      console.log(`[LIST] Button IDs set correctly for message ${msg.id}`);
     }
   }
 });
@@ -477,7 +587,11 @@ client.on('messageCreate', async message => {
     const embed = new EmbedBuilder()
       .setColor(EMBED_COLOR)
       .setTitle('Order a Boost')
-      .setDescription('Select the boost you want:');
+      .setDescription('Get Boosted to your Dream Rank/Tier now!\n\nThe bot will automatically calculate the price of the boost if you select what type of boost you want.\n\nSelect the type of boost you want below.')
+      .setFooter({
+        text: 'Brawl Shop',
+        iconURL: 'https://media.discordapp.net/attachments/987753155360079903/1370862482717147247/Untitled70_20250208222905.jpg?ex=68210aad&is=681fb92d&hm=c9f876a09be906de33276bf0155f65c369d6b557e4c2deeb33cfaa2355a3b24b&=&format=webp'
+      });
     const row1 = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('ticket_trophies').setLabel('Trophies').setEmoji('<:trophy:1301901071471345664>').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('ticket_ranked').setLabel('Ranked').setEmoji('<:Masters:1293283897618075728>').setStyle(ButtonStyle.Primary),
@@ -554,6 +668,11 @@ client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
   const { customId, member, guild, channel, user } = interaction;
 
+  // Review system buttons
+  if (customId.startsWith('review_accept_') || customId.startsWith('review_deny_')) {
+    return reviewCommand.handleButton(interaction);
+  }
+
   // Purchase listing
   if (customId.startsWith('purchase_account_')) {
     try {
@@ -564,6 +683,23 @@ client.on('interactionCreate', async (interaction) => {
       const categoryFull = isCategoryFull(PURCHASE_ACCOUNT_CATEGORY, guild);
       const parentToUse = (hasOverflowUser || categoryFull) ? null : PURCHASE_ACCOUNT_CATEGORY;
       const channelName = `purchase-${user.username}-${Math.floor(Math.random() * 1000)}`;
+      
+      // Fix the permission overwrites by checking each role exists
+      const validStaffRoles = [];
+      for (const roleId of STAFF_ROLES) {
+        const role = guild.roles.cache.get(roleId);
+        if (role) {
+          validStaffRoles.push({
+            id: roleId,
+            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
+          });
+        } else {
+          console.log(`[WARNING] Staff role ${roleId} not found in guild, skipping`);
+        }
+      }
+      
+      console.log(`[PURCHASE] Creating channel for ${user.tag} with ${validStaffRoles.length} staff roles`);
+      
       const purchaseChannel = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
@@ -571,14 +707,11 @@ client.on('interactionCreate', async (interaction) => {
         permissionOverwrites: [
           { id: guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
           { id: user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
-          ...STAFF_ROLES.map(rid => ({
-            id: rid,
-            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
-          }))
+          ...validStaffRoles
         ]
       });
       const mentionText = `<@${user.id}>`;
-      const welcomeEmbed = new EmbedBuilder().setDescription('Welcome, thanks for opening a ticket!\n\nSupport will be with you shortly.');
+      const welcomeEmbed = new EmbedBuilder().setDescription('Welcome, thanks for opening a ticket!\n\n**Support will be with you shortly.**\n\nIf there is any more details or information you would like to share, feel free to do so!');
       const closeBtnRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId('close_ticket')
@@ -587,11 +720,112 @@ client.on('interactionCreate', async (interaction) => {
           .setStyle(ButtonStyle.Danger)
       );
       await purchaseChannel.send({ content: mentionText, embeds: [welcomeEmbed], components: [closeBtnRow] });
+
+      // Send order recap embed
+      const originalEmbed = interaction.message.embeds[0];
+      const orderRecapEmbed = new EmbedBuilder()
+        .setTitle('Order Recap')
+        .setColor(EMBED_COLOR)
+        .addFields(originalEmbed.data.fields);
+      if (originalEmbed.data.image) {
+        orderRecapEmbed.setImage(originalEmbed.data.image.url);
+      }
+      await purchaseChannel.send({ embeds: [orderRecapEmbed] });
+
       ticketDataMap.set(purchaseChannel.id, new TicketData(user.id, purchaseChannel.id, channelName, Date.now()));
       return interaction.reply({ content: `Ticket created: <#${purchaseChannel.id}>`, ephemeral: true });
     } catch (err) {
-      console.error(err);
-      return interaction.reply({ content: 'Failed to create purchase ticket channel.', ephemeral: true });
+      console.error('[PURCHASE ERROR]', err);
+      return interaction.reply({ content: 'Failed to create purchase ticket channel. Please contact staff.', ephemeral: true });
+    }
+  }
+
+  // More Information button
+  if (customId.startsWith('more_info_')) {
+    try {
+      const msgId = customId.replace('more_info_', '');
+      console.log(`[MORE_INFO] Button clicked for message ${msgId} by ${interaction.user.tag}`);
+      
+      // First try getting from ephemeralFlowState
+      let moreInfoData = ephemeralFlowState.get(msgId);
+      
+      // If not found (e.g., after bot restart), try reconstructing from the message
+      if (!moreInfoData) {
+        console.log(`[MORE_INFO] No data in ephemeralFlowState for message ${msgId}, attempting fallback`);
+        try {
+          const message = await interaction.channel.messages.fetch(msgId).catch(err => {
+            console.error(`[MORE_INFO] Failed to fetch message ${msgId}:`, err);
+            return null;
+          });
+          
+          if (message) {
+            console.log(`[MORE_INFO] Message found, attempting to extract fields from original command`);
+            
+            // Check if we have the command options stored in the database
+            // If not, try to extract info from the listing message
+            
+            // Create fallback data for display
+            const description = message.embeds[0].data.fields[0].value || "N/A";
+            
+            // Create a generic response with what we have
+            const fallbackEmbed = new EmbedBuilder()
+              .setColor(EMBED_COLOR)
+              .setTitle('Account Details')
+              .setDescription(`We couldn't retrieve all the detailed information (possibly due to a bot restart), but here's what we know:\n\n**Description:**\n${description}\n\nPlease ask a staff member for more details.`);
+              
+            // If the original message has an image, use it
+            if (message.embeds[0].data.image) {
+              fallbackEmbed.setImage(message.embeds[0].data.image.url);
+            }
+            
+            console.log(`[MORE_INFO] Created fallback embed for ${interaction.user.tag}`);
+            return interaction.reply({ embeds: [fallbackEmbed], ephemeral: true });
+          }
+        } catch (fetchErr) {
+          console.error(`[MORE_INFO] Error in fallback attempt:`, fetchErr);
+        }
+        
+        console.log(`[MORE_INFO] No data found for message ${msgId} and fallback failed`);
+        return interaction.reply({ 
+          content: 'Information not found. This may be due to a bot restart. Please ask a staff member for the details.', 
+          ephemeral: true 
+        });
+      }
+
+      console.log(`[MORE_INFO] Found data for message ${msgId}, creating embed`);
+
+      // Create a more visually appealing embed with fields in a 3-column layout
+      const moreInfoEmbed = new EmbedBuilder()
+        .setColor(EMBED_COLOR)
+        .setTitle('Account Details')
+        .addFields(
+          { name: '<:rare:1351963849322004521> Rare Skins', value: moreInfoData.rareSkins, inline: true },
+          { name: '<:super_rare:1351963921967218839> Super Rare Skins', value: moreInfoData.superRareSkins, inline: true },
+          { name: '<:epic:1351963993442353365> Epic Skins', value: moreInfoData.epicSkins, inline: true },
+          
+          { name: '<:mythic:1351964047179907235> Mythic Skins', value: moreInfoData.mythicSkins, inline: true },
+          { name: '<:legendary:1351964089454428261> Legendary Skins', value: moreInfoData.legendarySkins, inline: true },
+          { name: '<:brawler:1351965712582705152> Titles', value: moreInfoData.titles, inline: true },
+          
+          { name: '<:hypercharge:1351963655234650143> Hypercharges', value: moreInfoData.hypercharges, inline: true },
+          { name: '<:p10:1351981538740404355> Power 10\'s', value: moreInfoData.power10s, inline: true },
+          { name: '<:power_9:1351963484207841331> Power 9\'s', value: moreInfoData.power9s, inline: true },
+          
+          { name: '<:Masters:1293283897618075728> Old Ranked Rank', value: moreInfoData.oldRankedRank, inline: true },
+          { name: '<:pro:1351687685328208003> New Ranked Rank', value: moreInfoData.newRankedRank, inline: true },
+          { name: '\u200B', value: '\u200B', inline: true }  // Empty field to maintain 3-column layout
+        );
+      
+      if (moreInfoData.image2) moreInfoEmbed.setImage(moreInfoData.image2);
+
+      console.log(`[MORE_INFO] Sending embed to ${interaction.user.tag}`);
+      return interaction.reply({ embeds: [moreInfoEmbed], ephemeral: true });
+    } catch (error) {
+      console.error(`[MORE_INFO] Unexpected error:`, error);
+      return interaction.reply({ 
+        content: 'An error occurred while retrieving the information. Please try again or contact a staff member.', 
+        ephemeral: true 
+      });
     }
   }
 
@@ -1128,10 +1362,44 @@ client.on('interactionCreate', async (interaction) => {
   // Close ticket
   if (customId === 'close_ticket') {
     try {
+      // Check if this is a purchase ticket
+      const isPurchaseTicket = channel.name.startsWith('purchase-');
+      
+      if (isPurchaseTicket) {
+        // For purchase tickets, delete immediately
+        console.log(`[TICKET] Directly deleting purchase ticket: ${channel.name}`);
+        const data = ticketDataMap.get(channel.id);
+        
+        // Log before deleting
+        if (data) {
+          await autoCloseLog(channel, data.openerId || user.id, channel.name, 'Purchase ticket closed');
+        }
+        
+        await interaction.reply({ content: 'Deleting ticket...', ephemeral: true });
+        await channel.delete().catch(err => {
+          console.error('[TICKET] Error deleting purchase ticket:', err);
+          return interaction.followUp({ content: 'Failed to delete ticket. Please try again.', ephemeral: true });
+        });
+        
+        ticketDataMap.delete(channel.id);
+        return;
+      }
+      
+      // For regular tickets, follow the normal close procedure
       await channel.permissionOverwrites.set([
         { id: guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: STAFF_ROLES[0], allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
+        ...STAFF_ROLES.map(rid => {
+          const role = guild.roles.cache.get(rid);
+          if (role) {
+            return {
+              id: rid,
+              allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
+            };
+          }
+          return null;
+        }).filter(Boolean) // Remove any null entries
       ]);
+      
       const closeEmbed = new EmbedBuilder().setTitle('Ticket Closed').setDescription(`Closed by <@${user.id}>.`);
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('delete_ticket').setLabel('Delete').setStyle(ButtonStyle.Danger),
@@ -1143,8 +1411,8 @@ client.on('interactionCreate', async (interaction) => {
       await db.query('DELETE FROM tickets WHERE channel_id = $1', [channel.id]);
       return interaction.reply({ content: 'Ticket closed.', ephemeral: true });
     } catch (err) {
-      console.error(err);
-      return interaction.reply({ content: 'Failed to close ticket.', ephemeral: true });
+      console.error('[TICKET] Error closing ticket:', err);
+      return interaction.reply({ content: 'An error occurred. Please try again or contact an administrator.', ephemeral: true });
     }
   }
 
@@ -1163,22 +1431,50 @@ client.on('interactionCreate', async (interaction) => {
     if (!hasAnyRole(member, STAFF_ROLES)) {
       return interaction.reply({ content: 'Only staff can re-open tickets.', ephemeral: true });
     }
-    const data = ticketDataMap.get(channel.id);
-    const openerId = data?.openerId;
+    
     try {
-      await channel.permissionOverwrites.set([
+      const data = ticketDataMap.get(channel.id);
+      const openerId = data?.openerId;
+      
+      if (!openerId) {
+        console.log(`[TICKET] No opener found for ticket ${channel.id}, using interaction user as fallback`);
+      }
+      
+      // Get valid staff roles
+      const validStaffRoles = [];
+      for (const roleId of STAFF_ROLES) {
+        const role = guild.roles.cache.get(roleId);
+        if (role) {
+          validStaffRoles.push({
+            id: roleId,
+            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
+          });
+        }
+      }
+      
+      const permissionOverwrites = [
         { id: guild.roles.everyone, deny: [PermissionsBitField.Flags.ViewChannel] },
-        { id: openerId, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
-        ...STAFF_ROLES.map(rid => ({
-          id: rid,
+        ...validStaffRoles
+      ];
+      
+      // Only add the opener if they exist
+      if (openerId) {
+        permissionOverwrites.push({
+          id: openerId,
           allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
-        }))
-      ]);
+        });
+      }
+      
+      await channel.permissionOverwrites.set(permissionOverwrites);
+      
       await interaction.reply({ content: 'Ticket re-opened!', ephemeral: true });
       await channel.send({ embeds: [new EmbedBuilder().setDescription('Ticket has been re-opened.')] });
     } catch (err) {
-      console.error(err);
-      return interaction.reply({ content: 'Failed to re-open ticket.', ephemeral: true });
+      console.error('[TICKET] Error reopening ticket:', err);
+      return interaction.reply({ 
+        content: 'An error occurred while trying to reopen the ticket. Please try again or contact an administrator.', 
+        ephemeral: true 
+      });
     }
   }
 });
@@ -1340,3 +1636,29 @@ client.on('guildMemberRemove', async (member) => {
 
 // Log in
 client.login(BOT_TOKEN).catch(err => console.error('[Login Error]', err));
+
+// After the sendInactivityReminder function, add these functions
+async function autoCloseLog(channel, userId, channelName, reason) {
+  try {
+    const logChannel = client.channels.cache.get(AUTO_CLOSE_LOG_CHANNEL);
+    if (!logChannel) {
+      console.error('[TICKET] Log channel not found');
+      return;
+    }
+    
+    await logChannel.send({
+      content: `Ticket \`${channelName}\` for <@${userId}> was closed. Reason: ${reason}`
+    });
+  } catch (err) {
+    console.error('[TICKET] Error logging ticket close:', err);
+  }
+}
+
+async function autoCloseLogAndDelete(channel, userId, channelName, reason) {
+  try {
+    await autoCloseLog(channel, userId, channelName, reason);
+    await channel.delete().catch(err => console.error('[TICKET] Error deleting channel:', err));
+  } catch (err) {
+    console.error('[TICKET] Error in autoCloseLogAndDelete:', err);
+  }
+}
