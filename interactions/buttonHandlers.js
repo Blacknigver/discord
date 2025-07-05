@@ -1300,10 +1300,32 @@ const buttonHandlers = {
         }
     },
 
-    // Copy IBAN (use handler from paymentHandlers.js)
-    copy_iban: allButtonHandlers.copy_iban,
+    // Copy IBAN (uses PAYMENT_METHODS)
+    copy_iban: async (interaction) => {
+        try {
+            const ibanAccount = (PAYMENT_METHODS.IBAN && PAYMENT_METHODS.IBAN.account) ? PAYMENT_METHODS.IBAN.account : 'NL12 ABNA 0882 8893 97'; 
+            await interaction.reply({
+                content: `IBAN: \`${ibanAccount}\``, 
+                ephemeral: true
+            });
+            console.log(`[COPY_IBAN] User ${interaction.user.id} requested IBAN.`);
+        } catch (error) {
+            console.error('[COPY_IBAN] Error:', error);
+        }
+    },
 
-    // Payment Completed - IBAN (removed duplicate, using allButtonHandlers version above)
+    // Payment Completed - IBAN (uses sendPaymentConfirmationEmbedWithCountdown)
+    payment_completed_iban: async (interaction) => {
+        try {
+            await sendPaymentConfirmationEmbedWithCountdown(interaction, 'iban');
+            console.log(`[PAYMENT_COMPLETED_IBAN] User ${interaction.user.id} initiated IBAN payment confirmation.`);
+        } catch (error) {
+            console.error('[PAYMENT_COMPLETED_IBAN] Error:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ content: 'An error occurred.', ephemeral: true }).catch(console.error);
+            }
+        }
+    },
 
     // Cancel Payment Confirmation (generic for ephemeral countdown messages)
     cancel_payment_confirm: async (interaction) => {
@@ -1319,12 +1341,7 @@ const buttonHandlers = {
         }
     },
 
-    // IBAN Payment handlers
-    payment_completed_iban: allButtonHandlers.payment_completed_iban,
-    confirm_payment_iban: allButtonHandlers.confirm_payment_iban,
-    cancel_payment_iban: allButtonHandlers.cancel_payment_iban,
-    
-    // Boost functionality handlers  
+    // Boost functionality handlers
     boost_completed: allButtonHandlers.boost_completed,
     boost_cancel: allButtonHandlers.boost_cancel,
     boost_is_completed: allButtonHandlers.boost_is_completed,
@@ -1333,7 +1350,6 @@ const buttonHandlers = {
     boost_confirm_not_completed: allButtonHandlers.boost_confirm_not_completed, 
     boost_cancel_confirmation: allButtonHandlers.boost_cancel_confirmation,
     payout_completed: allButtonHandlers.payout_completed,
-    claim_boost: allButtonHandlers.claim_boost,
 
     // Review and Feedback buttons
     review_button: async (interaction) => {

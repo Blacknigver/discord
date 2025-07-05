@@ -140,18 +140,30 @@ async function handleSelectMenuInteraction(interaction) {
   try {
     console.log(`[INTERACTION] Select menu used: ${customId} by user ${interaction.user.id}, values: ${interaction.values}`);
     
-    // Handle payment method selection
+    // Import handlers from paymentHandlers.js
+    const { allButtonHandlers } = require('../../paymentHandlers.js');
+    
+    // Handle payment method selection using the comprehensive handler
     if (customId === 'payment_method_select') {
+      if (allButtonHandlers.payment_method_select) {
+        return allButtonHandlers.payment_method_select(interaction);
+      }
       return handlePaymentMethodSelect(interaction);
     }
     
-    // Handle Dutch payment method selection
+    // Handle Dutch payment method selection using the comprehensive handler
     if (customId === 'dutch_method_select') {
+      if (allButtonHandlers.dutch_method_select) {
+        return allButtonHandlers.dutch_method_select(interaction);
+      }
       return handleDutchMethodSelect(interaction);
     }
     
-    // Handle crypto type selection
-    if (customId === 'crypto_type_select') {
+    // Handle crypto type selection using the comprehensive handler
+    if (customId === 'crypto_type_select' || customId === 'crypto_select') {
+      if (allButtonHandlers.crypto_select) {
+        return allButtonHandlers.crypto_select(interaction);
+      }
       return handleCryptoTypeSelect(interaction);
     }
     

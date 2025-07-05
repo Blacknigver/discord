@@ -27,16 +27,17 @@ client.handlers.set('ticketManager', new TicketManager(client));
 
 // Debug logging
 console.log('Environment variables loaded:');
-console.log('BOT_TOKEN exists:', !!process.env.BOT_TOKEN);
-console.log('BOT_TOKEN length:', process.env.BOT_TOKEN ? process.env.BOT_TOKEN.length : 0);
-console.log('BOT_TOKEN first 5 chars:', process.env.BOT_TOKEN ? process.env.BOT_TOKEN.substring(0, 5) : 'none');
-console.log('BOT_TOKEN contains spaces:', process.env.BOT_TOKEN ? process.env.BOT_TOKEN.includes(' ') : false);
-console.log('BOT_TOKEN contains quotes:', process.env.BOT_TOKEN ? (process.env.BOT_TOKEN.includes('"') || process.env.BOT_TOKEN.includes("'")) : false);
+console.log('TOKEN exists:', !!process.env.TOKEN);
+console.log('TOKEN length:', process.env.TOKEN ? process.env.TOKEN.length : 0);
+console.log('TOKEN first 5 chars:', process.env.TOKEN ? process.env.TOKEN.substring(0, 5) : 'none');
+console.log('TOKEN contains spaces:', process.env.TOKEN ? process.env.TOKEN.includes(' ') : false);
+console.log('TOKEN contains quotes:', process.env.TOKEN ? (process.env.TOKEN.includes('"') || process.env.TOKEN.includes("'")) : false);
 
 // Use only the new handler for button interactions
 const { handleInteraction } = require('./src/handlers/interactionHandler');
 const processedInteractions = new Set(); // Track processed interactions
 
+// SINGLE UNIFIED INTERACTION HANDLER
 client.on('interactionCreate', async interaction => {
   try {
     // Check if this interaction has already been processed
@@ -52,23 +53,40 @@ client.on('interactionCreate', async interaction => {
     setTimeout(() => {
       processedInteractions.delete(interaction.id);
     }, 5000);
+
+    let handled = false;
+
+    // Use interaction utilities if available
+    if (client.interactionUtils) {
+      if (interaction.isChatInputCommand()) {
+        handled = await client.interactionUtils.handleSlashCommand(interaction);
+      } else if (interaction.isButton()) {
+        handled = await client.interactionUtils.handleButtonInteraction(interaction);
+      } else if (interaction.isStringSelectMenu()) {
+        handled = await client.interactionUtils.handleSelectMenuInteraction(interaction);
+      } else if (interaction.isModalSubmit()) {
+        handled = await client.interactionUtils.handleModalSubmit(interaction);
+      }
+    }
+
+    // If not handled by utilities, try the unified handler
+    if (!handled) {
+      handled = await handleInteraction(interaction);
+    }
     
-    if (interaction.isChatInputCommand()) {
-      const command = client.commands.get(interaction.commandName);
-      if (!command) return;
-      await command.execute(interaction);
-    } else if (interaction.isButton()) {
-      // Process button interactions
-      await processButtonInteraction(interaction);
-    } else {
-      // Use our new unified interaction handler for all other interaction types
-      await handleInteraction(interaction);
+    // If still not handled, try legacy handlers
+    if (!handled) {
+      if (interaction.isChatInputCommand()) {
+        await handleSlashCommand(interaction);
+      } else if (interaction.isButton()) {
+        await processButtonInteraction(interaction);
+      }
     }
   } catch (error) {
     console.error('Error handling interaction:', error);
     const reply = {
       content: 'There was an error processing your request!',
-        ephemeral: true 
+      ephemeral: true 
     };
     
     try {
@@ -83,10 +101,39 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
+// Helper function for slash commands
+async function handleSlashCommand(interaction) {
+  const { commandName } = interaction;
+
+  try {
+    // Handle ticket panel slash command
+    if (commandName === 'ticket-panel') {
+      if (!config.TICKET_PANEL_ALLOWED_USERS.includes(interaction.user.id)) {
+        return interaction.reply({ 
+          content: "You don't have permission to create ticket panels.", 
+          ephemeral: true 
+        });
+      }
+      
+      await interaction.reply({
+        content: 'Ticket panel created!',
+        ephemeral: true
+      });
+    }
+  } catch (error) {
+    console.error(`Error handling slash command ${commandName}:`, error);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ 
+        content: 'There was an error executing this command!', 
+        ephemeral: true 
+      });
+    }
+  }
+}
+
 /********************************************************************
  * Brawl Stars Boosting Discord Bot
  * Discord.js v14
- * Uses process.env.TOKEN for the bot token.
  *
  * FEATURES INCLUDED:
  * - Auto-close logic with reminders:
@@ -130,7 +177,7 @@ const { setupTicketHandlers } = require('./tickets.js');
 const { commands } = require('./commands.js');
 
 // Bot token from environment variable
-const token = process.env.BOT_TOKEN;
+const token = process.env.TOKEN;
 
 // Define slash commands
 const defaultCommands = [
@@ -156,7 +203,7 @@ client.once(Events.ClientReady, async readyClient => {
     );
     
     console.log('Successfully reloaded application (/) commands.');
-    } catch (error) {
+  } catch (error) {
     console.error('Error refreshing application commands:', error);
   }
   
@@ -166,52 +213,19 @@ client.once(Events.ClientReady, async readyClient => {
     const handlers = require('./handlers.js');
     console.log('Successfully loaded handlers.js');
     
-    // Setup ticket handlers
-  if (typeof setupTicketHandlers === 'function') {
-    setupTicketHandlers(client);
+    // Setup ticket handlers ONLY ONCE
+    if (typeof setupTicketHandlers === 'function') {
+      setupTicketHandlers(client);
       console.log('Ticket handlers have been set up');
-  }
-  
-    // Setup interactions
-  if (typeof setupInteractions === 'function') {
-    setupInteractions(client);
+    }
+    
+    // Setup interactions ONLY ONCE 
+    if (typeof setupInteractions === 'function') {
+      setupInteractions(client);
       console.log('Interaction handlers have been set up');
     }
   } catch (error) {
     console.error('Error loading handlers:', error);
-  }
-});
-
-// Handle message commands
-// Handle slash commands
-client.on(Events.InteractionCreate, async interaction => {
-  if (!interaction.isCommand()) return;
-
-  const { commandName } = interaction;
-
-  try {
-    // Handle ticket panel slash command
-    if (commandName === 'ticket-panel') {
-      if (!config.TICKET_PANEL_ALLOWED_USERS.includes(interaction.user.id)) {
-        return interaction.reply({ 
-          content: "You don't have permission to create ticket panels.", 
-          ephemeral: true 
-        });
-      }
-      
-      // Create and send the ticket panel
-      // This is a simplified example - you'll need to implement the actual panel creation
-      await interaction.reply({
-        content: 'Ticket panel created!',
-        ephemeral: true
-      });
-    }
-  } catch (error) {
-    console.error(`Error handling slash command ${commandName}:`, error);
-    await interaction.reply({ 
-      content: 'There was an error executing this command!', 
-      ephemeral: true 
-    });
   }
 });
 
@@ -249,7 +263,7 @@ process.on('unhandledRejection', error => {
 });
 
 // Log in to Discord with your client's token
-client.login(process.env.BOT_TOKEN)
+client.login(process.env.TOKEN)
   .then(() => console.log('Successfully logged in!'))
   .catch(error => {
     console.error('Failed to log in:', error);

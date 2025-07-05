@@ -20,7 +20,7 @@ fi
 if [ ! -f ".env" ]; then
     echo "Warning: .env file not found. You may need to create one with your bot token."
     echo "Creating sample .env file..."
-    echo "BOT_TOKEN=your_token_here" > .env
+    echo "TOKEN=your_token_here" > .env
     echo "Please edit the .env file with your actual bot token."
     exit 1
 fi

@@ -1,3 +1,9 @@
+/**
+ * Alternative bot implementation with different structure
+ * NOTE: This is NOT the main entry point. The main bot entry is index.js in the root directory.
+ * This file provides an alternative implementation with different handler organization.
+ */
+
 const {
   Client,
   GatewayIntentBits,
@@ -14,11 +20,8 @@ const {
   Collection
 } = require('discord.js');
 
-// Load environment variables
-require('dotenv').config();
-
 // Import modules
-const { BOT_TOKEN, CLIENT_ID } = require('./constants');
+const { TOKEN, CLIENT_ID } = require('./constants');
 const { listCommand, messageCommands, buttonHandlers, modalHandlers } = require('./commands');
 const { checkTicketTimeouts, ticketDataMap, TicketData } = require('./utils/ticketManager');
 const db = require('../database');
@@ -230,7 +233,7 @@ client.on('warn', (warning) => {
 });
 
 // Login
-client.login(config.BOT_TOKEN).catch((error) => {
+client.login(config.TOKEN).catch((error) => {
   console.error('Failed to login:', error);
 });
 

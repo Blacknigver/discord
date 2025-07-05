@@ -1,11 +1,9 @@
 /**
  * Main configuration file
  */
-require('dotenv').config();
-
 const config = {
   // Bot configuration
-  BOT_TOKEN: process.env.BOT_TOKEN || '',
+  TOKEN: process.env.TOKEN || '',
   CLIENT_ID: process.env.CLIENT_ID || '',
   GUILD_ID: process.env.GUILD_ID || '',
 

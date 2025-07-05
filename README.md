@@ -37,11 +37,17 @@ A feature-rich Discord bot designed for managing ticket systems, orders, and pay
 
 1. Clone the repository
 2. Install dependencies: `npm install`
-3. Create a `.env` file with the following variables:
+3. Copy the example environment variables file and fill in your values.
+   ```sh
+   cp .env.example .env
    ```
-   BOT_TOKEN=your_discord_bot_token
+4. Create a `.env` file with the following variables:
    ```
-4. Run the bot: `node index.js`
+   TOKEN=your_discord_bot_token
+   CLIENT_ID=your_discord_app_client_id
+   GUILD_ID=your_discord_guild_id
+   ```
+5. Run the bot: `node index.js`
 
 ## Commands
 
