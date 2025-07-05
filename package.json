@@ -1,17 +1,27 @@
 {
-  "name": "brawl-stars-boosting-bot",
+  "name": "discord-brawlstars-bot",
   "version": "1.0.0",
-  "description": "Discord.js v14 bot for Brawl Stars boosting (tickets, auto-close, etc.)",
+  "description": "Discord bot for Brawl Stars boosting services",
   "main": "index.js",
-  "engines": {
-    "node": "18.x"
-  },
+  "type": "commonjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "node --no-warnings index.js",
+    "dev": "nodemon --no-warnings index.js",
+    "deploy": "node deploy-commands.js"
   },
   "dependencies": {
-    "discord.js": "^14.14.0",
-    "dotenv": "^16.0.3",
-    "pg": "^8.10.0"
+    "@discordjs/rest": "^1.7.0",
+    "axios": "^1.9.0",
+    "discord-api-types": "^0.37.54",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.5.0",
+    "node-cron": "^3.0.2",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=16.9.0"
   }
 }

@@ -1,154 +1,220 @@
 // review.js
 const {
   SlashCommandBuilder,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
-  ActionRowBuilder,
   EmbedBuilder,
+  time,
+  ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  time,
+  PermissionFlagsBits
 } = require('discord.js');
 
-const MOD_CHANNEL_ID    = '1368186200741118042';
+const MOD_CHANNEL_ID = '1368186200741118042';
 const REVIEW_CHANNEL_ID = '1293288484487954512';
 const EMBED_COLOR       = '#E68DF2';
-const LOGO_URL          = 'https://cdn.discordapp.com/attachments/987753155360079903/1368299826688561212/Untitled70_20250208222905.jpg?ex=6817b804&is=68166684&hm=8fc340221f0b55e17444b6c2ced93e32541ecf95b258509a0ddc9c66667772bd';
+const LOGO_URL          = 'https://cdn.discordapp.com/attachments/987753155360079903/1370862482717147247/Untitled70_20250208222905.jpg?ex=68210aad&is=681fb92d&hm=c9f876a09be906de33276bf0155f65c369d6b557e4c2deeb33cfaa2355a3b24b&format=webp';
+
+// Users and roles with permission to moderate reviews
+const ALLOWED_ROLES = ['1292933200389083196', '1358101527658627270'];
+const ALLOWED_USERS = ['658351335967686659', '986164993080836096', '987751357773672538'];
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('review')
-    .setDescription('Submit a review')
-    .addBooleanOption(opt =>
-      opt
-        .setName('anonymous')
-        .setDescription('Post anonymously?')
-        .setRequired(false)
-    ),
+    .setDescription('Make a review for our services! You can also do this anonymously.')
+    .addStringOption(option => 
+      option.setName('reviewing_for')
+            .setDescription('What are you reviewing for? Ex; Boost, Account, etc')
+            .setRequired(true))
+    .addStringOption(option => 
+      option.setName('text')
+            .setDescription('How was your experience with us? Please let us know')
+            .setRequired(true))
+    .addStringOption(option => 
+      option.setName('rating')
+            .setDescription('What do you rate us from 1-5?')
+            .setRequired(true)
+            .addChoices(
+              { name: '⭐⭐⭐⭐⭐', value: '5' },
+              { name: '⭐⭐⭐⭐', value: '4' },
+              { name: '⭐⭐⭐', value: '3' },
+              { name: '⭐⭐', value: '2' },
+              { name: '⭐', value: '1' }
+            ))
+    .addAttachmentOption(option => 
+      option.setName('image')
+            .setDescription('Add an image as proof! (optional)')
+            .setRequired(false))
+    .addStringOption(option => 
+      option.setName('anonymous')
+            .setDescription('Post your review anonymously (HIGHLY PREFERRED NOT TO❗)')
+            .setRequired(false)
+            .addChoices(
+              { name: 'Stay Anonymous (Preferably NOT)', value: 'anonymous' },
+              { name: 'Include Username (PREFERRED❗)', value: 'username' }
+            )),
 
-  // 1) Slash command opens the modal
-  async execute(interaction) {
-    const modal = new ModalBuilder()
-      .setCustomId(`review_modal:${interaction.options.getBoolean('anonymous') ?? false}`)
-      .setTitle('Submit a Review');
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('reviewingFor')
-          .setLabel('What are you reviewing for? Ex: Boost, Account, etc')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('experience')
-          .setLabel('Experience')
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(true)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('rating')
-          .setLabel('Rating (1–5)')
-          .setStyle(TextInputStyle.Short)
-          .setPlaceholder('Enter a number 1 through 5')
-          .setRequired(true)
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('imageUrl')
-          .setLabel('Image URL (optional)')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false)
-      )
-    );
-    await interaction.showModal(modal);
-  },
-
-  // 2) Handle the modal submit
-  async handleModal(interaction) {
-    const [_, anonFlag] = interaction.customId.split(':');
-    const anonymous = anonFlag === 'true';
-
-    const reviewingFor = interaction.fields.getTextInputValue('reviewingFor').trim();
-    const experience   = interaction.fields.getTextInputValue('experience').trim();
-    const ratingInput  = interaction.fields.getTextInputValue('rating').trim();
-    const imageUrl     = interaction.fields.getTextInputValue('imageUrl').trim();
-
-    // Map numeric rating to your star patterns:
-    const starsMap = {
-      '1': '⭐️⭐️⭐️⭐️⭐️',
-      '2': '⭐️⭐️⭐️⭐️',
-      '3': '⭐️⭐️⭐️',
-      '4': '⭐️⭐️',
-      '5': '⭐️',
-    };
-    const ratingStars = starsMap[ratingInput] || '⭐️';
-
-    // Build the embed
-    const embed = new EmbedBuilder()
-      .setColor(EMBED_COLOR)
-      .setDescription('# New Review')                 // big heading
-      .setThumbnail(interaction.user.displayAvatarURL())  // top-right
-      .addFields(
+  execute: async function(interaction) {
+    try {
+      // Get all the input values
+      const reviewingFor = interaction.options.getString('reviewing_for');
+      const experience = interaction.options.getString('text');
+      const rating = interaction.options.getString('rating');
+      const image = interaction.options.getAttachment('image');
+      const anonymous = interaction.options.getString('anonymous') === 'anonymous';
+      
+      // Generate star display
+      const stars = '⭐'.repeat(parseInt(rating));
+      
+      // Create the embed
+      const embed = new EmbedBuilder()
+        .setColor(EMBED_COLOR)
+        .setTimestamp()
+        .setFooter({
+          text: 'Brawl Shop',
+          iconURL: LOGO_URL
+        });
+      
+      if (anonymous) {
+        embed.setTitle('New Anonymous Review');
+      } else {
+        embed.setTitle('New Review');
+        embed.setAuthor({
+          name: `Review by ${interaction.user.username}`,
+          iconURL: interaction.user.displayAvatarURL()
+        });
+        
+        // Always show profile picture in top right, regardless of image attachment
+        embed.setThumbnail(interaction.user.displayAvatarURL());
+      }
+      
+      embed.addFields(
         { name: '**Reviewing For:**', value: `> ${reviewingFor}` },
-        { name: '**Experience:**',    value: `> ${experience}`  },
-        { name: '**Rating:**',        value: `> ${ratingStars}`   }
-      )
-      .setFooter({
-        text: `Brawl Shop – ${time(interaction.createdAt, 'R')}`,
-        iconURL: LOGO_URL
+        { name: '**Experience:**', value: `> ${experience}` },
+        { name: '**Rating:**', value: `> ${stars}` }
+      );
+      
+      // Add image if provided
+      if (image) {
+        embed.setImage(image.url);
+      }
+      
+      // Create the moderation buttons
+      const moderationRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`review_accept_${interaction.user.id}_${anonymous}`)
+          .setLabel('Accept')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`review_deny_${interaction.user.id}`)
+          .setLabel('Deny')
+          .setStyle(ButtonStyle.Danger)
+      );
+      
+      // Send to moderation channel first
+      const modChannel = interaction.client.channels.cache.get(MOD_CHANNEL_ID);
+      if (!modChannel) {
+        console.error('Moderation channel not found');
+        return interaction.reply({ content: 'There was an error submitting your review. Please try again later.', ephemeral: true });
+      }
+      
+      await modChannel.send({ 
+        content: `New review submitted by <@${interaction.user.id}>. Please moderate.`,
+        embeds: [embed], 
+        components: [moderationRow] 
       });
-
-    if (imageUrl) {
-      embed.setImage(imageUrl);
+      
+      // Confirm to the user
+      await interaction.reply({ 
+        content: 'Your review has been submitted for moderation. Thank you for your feedback!', 
+        ephemeral: true 
+      });
+      
+    } catch (error) {
+      console.error('Error in review command:', error);
+      await interaction.reply({ 
+        content: 'There was an error submitting your review. Please try again later.', 
+        ephemeral: true 
+      });
     }
-
-    // Buttons
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`review_accept`)
-        .setLabel('Accept')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(`review_deny`)
-        .setLabel('Deny')
-        .setStyle(ButtonStyle.Danger)
-    );
-
-    // Send to moderation channel
-    const modCh = interaction.client.channels.cache.get(MOD_CHANNEL_ID);
-    await modCh.send({ embeds: [embed], components: [row] });
-
-    // Acknowledge to user
-    await interaction.reply({
-      content: '✅ Your review has been submitted for moderation.',
-      ephemeral: true
-    });
   },
 
-  // 3) Handle button clicks
-  async handleButton(interaction) {
-    const modCh = interaction.client.channels.cache.get(MOD_CHANNEL_ID);
-    const revCh = interaction.client.channels.cache.get(REVIEW_CHANNEL_ID);
-
-    // Disable the buttons in mod channel and take action:
-    const disabledRow = new ActionRowBuilder().addComponents(
-      interaction.message.components[0].components.map(btn =>
-        ButtonBuilder.from(btn).setDisabled(true)
-      )
-    );
-
-    if (interaction.customId === 'review_accept') {
-      // repost the same embed into the review channel
-      await revCh.send({ embeds: interaction.message.embeds });
-      await interaction.update({ content: '✅ Accepted & posted!', embeds: interaction.message.embeds, components: [disabledRow] });
-    } else if (interaction.customId === 'review_deny') {
-      // DM the user
-      // Extract original author from embed footer/icon? We can DM via modal reply ID, but simplest: “we cannot DM.” 
-      // Instead just update mod message:
-      await interaction.update({ content: '❌ Denied.', embeds: interaction.message.embeds, components: [disabledRow] });
+  // Handle button interactions for the review system
+  handleButton: async function(interaction) {
+    try {
+      // Check permissions
+      const hasPermission = ALLOWED_USERS.includes(interaction.user.id) || 
+                           ALLOWED_ROLES.some(roleId => interaction.member.roles.cache.has(roleId));
+      
+      if (!hasPermission) {
+        return interaction.reply({ content: "You don't have permission to moderate reviews.", ephemeral: true });
+      }
+      
+      const customId = interaction.customId;
+      
+      if (customId.startsWith('review_accept_')) {
+        // Extract user ID and anonymous flag
+        const parts = customId.split('_');
+        const originalUserId = parts[2];
+        const wasAnonymous = parts[3] === 'true';
+        
+        // Create a copy of the original embed
+        const originalEmbed = interaction.message.embeds[0];
+        const embed = EmbedBuilder.from(originalEmbed);
+        
+        // Create the "Order Now" button
+        const orderRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setLabel('Order Now')
+            .setURL('https://discord.com/channels/1292895164595175444/1292896201859141722')
+            .setStyle(ButtonStyle.Link)
+        );
+        
+        // Send to the review channel
+        const reviewChannel = interaction.client.channels.cache.get(REVIEW_CHANNEL_ID);
+        if (!reviewChannel) {
+          return interaction.reply({ content: 'Review channel not found.', ephemeral: true });
+        }
+        
+        await reviewChannel.send({ embeds: [embed], components: [orderRow] });
+        
+        // Update the original message to show it was accepted
+        const disabledRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('review_accepted')
+            .setLabel('Review Accepted')
+            .setStyle(ButtonStyle.Success)
+            .setDisabled(true)
+        );
+        
+        await interaction.update({ 
+          content: `Review accepted by <@${interaction.user.id}> and posted to <#${REVIEW_CHANNEL_ID}>.`,
+          components: [disabledRow] 
+        });
+        
+        return;
+      }
+      
+      if (customId.startsWith('review_deny_')) {
+        // Update the original message to show it was denied
+        const deniedRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('review_denied')
+            .setLabel('This review has been denied')
+            .setStyle(ButtonStyle.Danger)
+            .setDisabled(true)
+        );
+        
+        await interaction.update({ 
+          content: `Review denied by <@${interaction.user.id}>.`,
+          components: [deniedRow] 
+        });
+        
+        return;
+      }
+    } catch (error) {
+      console.error('Error handling review button:', error);
+      await interaction.reply({ content: 'An error occurred while processing this action.', ephemeral: true });
     }
   }
-};
+}

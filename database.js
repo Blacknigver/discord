@@ -1,6 +1,7 @@
 // database.js
 const { Pool } = require('pg');
 
+// For using with Replit/Render environment variables
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }

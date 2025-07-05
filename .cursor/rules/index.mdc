@@ -1,0 +1,11 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Discord Bot - Cursor Rules Index
+
+This index file connects all rule categories for easy navigation.
+
+## Business Logic
+[Pricing System](mdc:.cursor/rules/pricing-system.mdc)

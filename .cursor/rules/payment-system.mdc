@@ -1,0 +1,568 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Payment System
+
+This rule connects all components related to payment handling and confirmation.
+
+## Core Payment Logic
+[ticketPayments.js](mdc:ticketPayments.js)
+
+## Payment UI Logic
+[ticketFlow.js](mdc:src/modules/ticketFlow.js)
+
+## Payment Handlers
+[handlers.js](mdc:handlers.js)
+
+## Key Functions
+- `showPaymentMethodSelection` in ticketFlow.js
+- `showCryptoSelection` in ticketFlow.js
+- `showDutchPaymentMethodSelection` in ticketFlow.js
+- `sendPaymentConfirmationEmbed` in ticketPayments.js
+- `sendStaffPaymentVerificationEmbed` in ticketPayments.js
+- `createCryptoTxForm` in ticketPayments.js
+
+
+
+# payment method selection
+
+Before people get to see the price for the ticket panel, so
+Title: Your Price
+text: `price`
+Make it it first sends the embed:
+Title: Payment Method
+Text: Please select your payment method.
+
+Below this will be a selector with different options:
+1. PayPal
+Description/Small Text: Friends & Family + PayPal Balance Payments ONLY!
+Emoji: <:paypal:1371862922766192680>
+
+2. Crypto
+Description: No memecoins or such.
+Emoji: <:crypto:1371863500720177314>
+
+3. IBAN Bank Transfer
+Description: IBAN only. This will not work for US banks.
+Emoji: <:bank:1371863843789209691>
+
+4. PayPal Giftcard
+Description: Purchaseable on G2A.com or Eneba.com - Extra fees may apply.
+Emoji: <:paypal:1371862922766192680>
+
+5. Dutch Payment Methods
+Description: Only for Dutch people - the Netherlands - No other countries.
+Emoji: <:tikkie:1371869238259875922>
+
+6. German Apple Giftcard.
+Description: German Apple giftcards only, other countries are not accepted.
+Emoji: <:applepay:1371864533047578755>
+
+
+If users select crypto, and crypto only, it will send ANOTHER embed before finally showing the price which will be:
+Title: Crypto Currency.
+Text: Please select what type of Crypto Coin you will be sending.
+
+With that a selector, with the options:
+1. Litecoin
+Emoji: <:Litecoin:1371864997012963520>
+2. Solana
+Emoji: <:Solana:1371865225824960633>
+3. Bitcoin
+Description: We will not be covering transaction fees.
+Emoji: <:Bitcoin:1371865397623652443>
+4. Other
+Description: Mainstream only - No memecoins.
+Emoji: <:crypto:1371863500720177314>
+
+If they select other, show a form that requests:
+1. Crypto Coin
+Description/Placeholder: The Crypto you will be sending.
+
+If users select 'Dutch Payment Methods' it will show the embed:
+Title: Dutch Payment Method.
+Text: Please select what type of Dutch Payment Method you will be sending.
+
+Below that a selector with the options:
+
+1. Tikkie
+Emoji: <:tikkie:1371869238259875922>
+
+2. Bol.com Giftcard
+Description/Placeholder: Additional Fees may Apply - 20-50%
+Emoji: <:bolcom:1371870572237160448>
+
+
+
+After this is all done, it will additionally show on the embed that shows the information
+
+Like this:
+**Payment Method:**
+`(whatever they selected)`
+
+if users selected crypto, add what type of crypto below it
+**Crypto Coin:**
+`the crypto coin they selected`
+
+if users selected dutch payment methods, add
+**Type of Payment:**
+`what they selected, so Bol.com giftcard or tikkie`
+
+add that below payment method 
+
+So an example embed with this implemented, where someone orders a rank boost, from mythic 1 to masters 2, also I just saw but make it there's 1 space between it, right now it says 'Mythic1' instead of 'Mythic 1', and let's say I send crypto, solana as type of crypto, the information embed would be:
+
+I just saw we also currently dont have `and` to give the info a font, so heres how it looks now:
+**Current Rank:**
+Mythic1
+
+**Desired Rank:**
+Masters2
+
+**Price:**
+€89
+
+Here's how it should look with that info I just gave u:
+**Current Rank:**
+`Mythic 1`
+
+**Desired Rank:**
+`Masters 2`
+
+**Price:**
+`€89`
+
+**Payment Method:**
+`Crypto`
+
+**Crypto Coin:**
+`Solana:`
+
+
+
+
+
+
+
+
+And for purchase tickets, add the following, whenever someone clicks purchase account they also get sent the following embed:
+Title: Payment Method
+Text: Please select your payment method.
+
+Below this will be a selector with different options:
+1. IBAN Bank Transfer
+Description: IBAN only. This will not work for US banks.
+Emoji: <:bank:1371863843789209691>
+
+2. Crypto
+Description: No memecoins or such.
+Emoji: <:crypto:1371863500720177314>
+
+3. PayPal
+Description/Small Text: 10% Extra Fees - Only for Accounts, not for Boosts and such.
+Emoji: <:paypal:1371862922766192680>
+
+OPTION 4 WILL ONLY SHOW FOR ACCOUNTS BELOW A PRICE OF 100, I always set the price by setting <amount> or €<amount> or <amount>€, always in one of these 3 formats
+
+4. PayPal Giftcard
+Description: Purchaseable on G2A.com or Eneba.com - Extra fees may apply.
+Emoji: <:paypal:1371862922766192680>
+
+5 (or 4 if the amount is over 100 since paypal giftcard wont show). Dutch Payment Methods
+Description: Only for Dutch people - the Netherlands - No other countries.
+Emoji: <:tikkie:1371869238259875922>
+
+
+If users select crypto, and crypto only, it will send ANOTHER embed before finally showing the price which will be:
+Title: Crypto Currency.
+Text: Please select what type of Crypto Coin you will be sending.
+
+With that a selector, with the options:
+1. Litecoin
+Emoji: <:Litecoin:1371864997012963520>
+2. Solana
+Emoji: <:Solana:1371865225824960633>
+3. Bitcoin
+Description: We will not be covering transaction fees.
+Emoji: <:Bitcoin:1371865397623652443>
+4. Other
+Description: Mainstream only - No memecoins.
+Emoji: <:crypto:1371863500720177314>
+
+If they select other, show a form that requests:
+1. Crypto Coin
+Description/Placeholder: The Crypto you will be sending.
+
+
+
+If users select 'Dutch Payment Methods' it will show the embed:
+Title: Dutch Payment Method.
+Text: Please select what type of Dutch Payment Method you will be sending.
+
+Below that a selector with the options - Oh and by the way for those selectors the name on it should always be 'Select Payment Method', the same goes for other selectors used in selecting a payment method for accounts or the ticket panel:
+
+1. Tikkie
+Emoji: <:tikkie:1371869238259875922>
+
+
+OPTION 2 (Bol.com giftcard) will only show if the price is below 100 euros, for prices above 100 IT WILL NOT SHOW!
+2. Bol.com Giftcard
+Description/Placeholder: Additional Fees may Apply - 20-50%
+Emoji: <:bolcom:1371870572237160448>
+
+
+
+Now in the ticket, below order recap, u will also send another embed with the payment information below it now:
+no title
+Text:
+**Payment Method:**
+`(type of payment method selected)`
+
+if users selected crypto, add what type of crypto below it
+**Crypto Coin:**
+`the crypto coin they selected`
+
+if users selected dutch payment methods, add
+**Type of Payment:**
+`what they selected, so Bol.com giftcard or tikkie`
+
+this will be below the payments method
+
+
+
+
+
+# More payment handling
+So what we are gonna add is, it sends ANOTHER embed when someone opens a ticket, this embed will respond to the embed that shows the order information or for purchase account the last embed that was sent by the bot, it is very important it responds/replies to the embed that was sent last before this one
+
+
+The embeds will depend on the payment method:
+If the payment method is PayPal:
+Send the embed:
+Non-embed text: Mention the user
+Title: PayPal Terms of Services
+Text:
+
+> <:shield:1371879600560541756>[+] If our PayPal Account gets locked, you will have to wait for us to unlock it, if we fail to unlock it no product or refund will be given.
+> <:shield:1371879600560541756>[+] We will not be covering any transaction fees.
+> <:shield:1371879600560541756>[+] Send **Friends and Family** ONLY - Goods and Services is __Strictly Forbidden__
+> <:shield:1371879600560541756>[+] Send from **PayPal Balance** ONLY - Card/Bank Payments are __Strictly Forbidden__
+> <:shield:1371879600560541756>[+] Send **Euro Currency** Only.
+> <:shield:1371879600560541756>[+] Do **NOT add a note** to the payment.
+> <:shield:1371879600560541756>[+] Must send a Summary Screenshot after sending.
+
+**Breaking any will result in additional fees being added - and may also result in no Product and no Refund.**
+
+By clicking 'Confirm' you **Confirm you have read and agreed to the Terms of Services.**
+
+To this add a green 'I Confirm I have read and agreed.' button with the emoji <:checkmark:1357478063616688304>
+
+This button can ONLY be clicked by the user who opened the ticket, else it will not allow it.
+If the button gets clicked, turn the button into a green sort of non-clickable already clicked button, like the type of button you have on the /list embed when you click 'Mark as Sold', so as I said it should be green and say '(user who clicked the button/opened the ticket since only that user can) Agreed to the Terms of Services.'
+
+And it should send a follow up embed, replying to the previous embed:
+Title: PayPal Payment Information
+**PayPal E-Mail:**
+`mathiasbenedetto@gmail.com`
+
+**Make sure to follow the Terms of Services!**
+
+This should have the button 'Copy E-Mail' in blue, with the emoji <:copy:1372240644013035671>
+Whenever someone clicks this it sends an empheral which sends mathiasbenedetto@gmail.com in plain text, JUST THAT NOTHING ELSE
+
+
+
+For PayPal giftcard send the embed:
+Non-embed text: mention the user
+Title: PayPal Giftcard Information
+Text:
+**Where to purchase:**
+> https://www.g2a.com/paypal-gift-card-5-eur-by-rewarble-global-i10000339995019
+> https://www.eneba.com/rewarble-paypal-rewarble-paypal-20-eur-voucher-global
+
+Purchase a **Global** and **Euro Currency** Giftcard only.
+
+Please wait for a Admin or above, since fees apply, they will tell you what Giftcard amount you need to purchase.
+
+**Do __NOT__ send the Code to someone below Admin role, and only send the code in __DMS__, not in the ticket.**
+-# If you do this, we are not responsible if you somehow get scammed.
+
+
+For crypto:
+Litecoin:
+non-embed text: mention user
+Title: Litecoin Information
+Text: 
+**Litecoin Address:**
+`LMEBUghAdAKKdNTtUBExHyN33b6JS75TkH`
+
+**Amount of Litecoin:**
+`(convert the price in euros that the item costs to an amount in ltc, while writing this ltc is 88,59 euros, so lets say the client was purchasing an item worth 88,59 euros, so thats the price, the LTC amount would be 1, ofcourse do not round this up so people can send the exact amount)`
+**Must be the __EXACT!__ Amount.**
+
+# You have 30 minutes to send the payment and click 'Payment Completed'.
+
+We will not cover any transaction fees.
+
+Add the button 'Copy Address' in blue, with the emoji <:copy:1372240644013035671>
+Whenever someone clicks this it sends an empheral which sends LMEBUghAdAKKdNTtUBExHyN33b6JS75TkH in plain text
+
+And add the button 'Copy Amount' in blue,  with the emoji <:copy:1372240644013035671>, which sends an empheral with the exact ltc amount in plain text.
+
+
+Solana:
+non-embed text: mention user
+Title: Solana Information
+Text: 
+**Solana Address:**
+`B9z5EhzPnPFf8t5CptAArYRFhzkrQkv1i7URz1pVSNdH`
+
+*Amount of Solana:**
+`(convert the price in euros that the item costs to an amount in solana, ofcourse do not round this up so people can send the exact amount)`
+**Must be the __EXACT!__ Amount.**
+
+# You have 30 minutes to send the payment and click 'Payment Completed'.
+
+We will not cover any transaction fees.
+
+Add the button 'Copy Address' in blue, with the emoji <:copy:1372240644013035671>
+Whenever someone clicks this it sends an empheral which sends B9z5EhzPnPFf8t5CptAArYRFhzkrQkv1i7URz1pVSNdH in plain text
+
+And add the button 'Copy Amount' in blue,  with the emoji <:copy:1372240644013035671>, which sends an empheral with the exact solana amount in plain text.
+
+
+Bitcoin:
+non-embed text: mention user
+Title: Bitcoin Information
+Text: 
+**Bitcoin Address:**
+`bc1qcxrteqq6rgr4u5s6hg9n4d27zar22ssgzx7s8v`
+
+**We will not cover any transaction fees.**
+Make sure to check on the fees yourself, we use Exodus wallet to receive your payment.
+
+Add the button 'Copy Address' in blue, with the emoji <:copy:1372240644013035671>
+Whenever someone clicks this it sends an empheral which sends bc1qcxrteqq6rgr4u5s6hg9n4d27zar22ssgzx7s8v in plain text
+
+
+Other Crypto sends nothing
+
+
+
+
+IBAN Bank Transfer:
+non-embed text: mention user
+Title: IBAN Bank Transfer Information
+Text: 
+**IBAN:**
+`NL12 ABNA 0882 8893 97`
+**Name:**
+`Ruben`
+
+If you need the last name please enter a random one to see if it works.
+
+Add the button 'Copy IBAN' in blue, with the emoji <:copy:1372240644013035671>
+Whenever someone clicks this it sends an empheral which sends NL12 ABNA 0882 8893 97 in plain text
+
+
+German Apple Giftcard send:
+Non-embed text: mention the user
+Title: German Apple Giftcard Information
+Text:
+Please wait for <@1078003651701915779> to assist you.
+
+**__ONLY__ send the code to <@1078003651701915779> or an Owner, and only send the code in __DMS__, not in the ticket.**
+
+For payments above €100 using a German Apple Giftcard please do not send anything yet, and wait for an **Owner**
+-# If you do this, we are not responsible if you somehow get scammed.
+
+
+
+For Dutch Payment methods:
+Bol.com giftcard:
+non-embed text: mention user
+Title: Bol.com Giftcard Information
+Text:
+Please wait for <@658351335967686659> to assist you. Since fees apply, they will tell you what Giftcard amount you need to purchase.
+
+**__ONLY__ send the Code to an __Owner__, and only send the code in __DMS__, not in the ticket.**
+-# If you do this, we are not responsible if you somehow get scammed.
+
+Tikkie:
+non-embed text: mention user
+Title: Tikkie Information
+Text: 
+**Payment Link:**
+https://tikkie.me/pay/im6epjm7vgj0d48n04p4 
+
+The link may have expired, if so, please click the 'Link Expired' button.
+
+Add the button 'Copy Link' in blue, with the emoji <:copy:1372240644013035671>
+Whenever someone clicks this it sends an empheral which sends https://tikkie.me/pay/im6epjm7vgj0d48n04p4  in plain text
+
+
+
+
+
+
+Now some other stuff, to the 'Tikkie' embed add a 'Link Expired' button, in red, emoji: <:cross:1351689463453061130>, which will send the embed:
+Non-embed text: <@658351335967686659>
+Title: Link Expired
+Text: The Payment Link has expired.
+
+Please send a new, non-expired one.
+
+Also add the button 'Payment Completed' button in green with the emoji <:checkmark:1357478063616688304>
+
+After this send a follow-up empheral embed:
+Title: Payment Completed
+Text: Are you sure you have successfully sent the money?
+
+Buttons: (xs) Confirm, in green, emoji: <:checkmark:1357478063616688304>
+Cancel, in red, emoji: <:cross:1351689463453061130>
+
+the 'x' infront of seconds is because there will be a 5 second countdown, so 5, 4, 3, 2, 1 during all those seconds the button will not be clickable, after the countdown ends the button turns into a regular 'Confirm' without (xs), or if x is 5 (5s) infront of it, 
+
+if that is clicked it sends the embed:
+non-embed text: <@658351335967686659>
+Title: Payment Confirmed
+Text: Please confirm you have received the payment.
+
+With a confirm button on it, in green, color <:checkmark:1357478063616688304>, that ONLY 658351335967686659 can click. And a cancel button, color red, emoji <:cross:1351689463453061130>, that can ONLY be used by 658351335967686659
+
+If cancel is clicked please remove the current buttons and edit it to a non-clickable (like for mark as sold for /list) red button with the text 'Payment has not been received.'
+
+If it is clicked send the embed:
+Non-embed text: <@&1303702944696504441>
+Title: Boost Available
+Text: This boost has been paid for and is now available!
+
+Order Information:
+(repeating the order information here)
+`(enter the current rank/trophies or whatever) **To** (the desired rank, trophies, mastery etc)`
+**Amount:** `(the amount the boost costs)`
+
+
+To PayPal add the same button as for tikkie, with 'Payment Completed' which does the same exact thing, but with 1 small difference:
+the embed after the client confirms they completed the payment has a different ping, and is:
+if that is clicked it sends the embed:
+non-embed text: <@986164993080836096>
+Title: Payment Confirmed
+Text: Please confirm you have received the payment.
+
+and the confirm and cancel button on this, which pings role <@&1303702944696504441> , can only be used by 986164993080836096
+
+
+and once again to IBAN also add the same button as for tikkie, the exact same one, where it also pings 658351335967686659 and where the last confirm and cancel button can only be used by 658351335967686659
+
+
+For PayPal giftcard, do not add any button, however if a ticket with that payment method is opened, send the message:
+<@774511191376265217> <@986164993080836096>
+And delete it after 0,1 second like the greet ping whenever someone joins the server
+
+For german apple giftcard, send the message: <@&1292933200389083196> <@1078003651701915779> and delete it after 1 second aswell same for pp giftcard and the greet
+
+And for bol.com giftcard do the same thing, send the message: <@658351335967686659> and then delete it after 0,1 seconds
+
+
+For crypto we're gonna do it a little differently:
+Also add the button 'Payment Completed' button in green with the emoji <:checkmark:1357478063616688304>
+
+However, if this is clicked, send a form that requests the TXid, or transfer ID of the deal, once this is entered, check it, and check if the recipient's wallet address matches our address, it ofcourse depends on the type of crypto, here are all addresses repeated:
+Litecoin: LMEBUghAdAKKdNTtUBExHyN33b6JS75TkH
+Solana: B9z5EhzPnPFf8t5CptAArYRFhzkrQkv1i7URz1pVSNdH
+we are not doing this for bitcoin (fees)
+
+If it is not a real/valid TXid tell them this.
+
+The amount sent must match the exact amount of litecoin/solana as specified on the embed, if it does not, send the embed:
+non-embed text: <@658351335967686659>
+Title: Insufficient Amount
+Text: An unsufficient amount has been sent.
+
+Please resolve this.
+
+If the TXid does match a transaction that sent the CORRECT AMOUNT to the CORRECT address, please sent a follow-up embed:
+Title: Please wait 20 minutes ⏰
+Text: This is so the transaction can be confirmed.
+
+after 20 minutes you will re-check the transaction, if it has been FULLY confirmed, you will send the embed:
+If it is clicked send the embed:
+Non-embed text: <@&1303702944696504441>
+Title: Boost Available
+Text: This boost has been paid for and is now available!
+
+Order Information:
+(repeating the order information here)
+`(enter the current rank/trophies or whatever) **To** (the desired rank, trophies, mastery etc)`
+**Amount:** `(the amount the boost costs)`
+
+
+If it has NOT been fully confirmed after 20 minutes, send the embed:
+Non-embed text: After 20 minutes the transaction is still not fully confirmed.
+Title: Please wait another 20 minutes ⏰
+Text: This is so the transaction can be confirmed.
+
+And once again check the confirm status after 20 minutes, when it's finally confirmed, sent the embed I showed u
+
+
+
+BY THE WAY:
+When checking the TXid of a transaction, check if the transaction was sent in the last 30 minutes, was it not, than REJECT THAT SHIT, DO NOT MAKE IT WORK! FOR EVERY coin, btc, ltc, solana everything, and please also store a TXid when it is used in a form, if it is later re-used, reject it, it must be a new (last 30m), not used before transfer ID.
+
+
+
+We will do pretty much the same for bitcoin:
+Add a payment confirmed button, request the TXid in the form, however if the TXid matches our wallet address for btc (bc1qcxrteqq6rgr4u5s6hg9n4d27zar22ssgzx7s8v) do not do the wait 20 minutes stuff, and do not check the amount of money, instead send the embed:
+
+non-embed text: <@658351335967686659>
+Title: Confirm Transaction
+Text: Please confirm you have received the correct amount with all confirms.
+
+With a confirm button on it, in green, color <:checkmark:1357478063616688304>, that ONLY 658351335967686659 can click. And a cancel button, color red, emoji <:cross:1351689463453061130>, that can ONLY be used by 658351335967686659
+
+If cancel is clicked please remove the current buttons and edit it to a non-clickable (like for mark as sold for /list) red button with the text 'Payment has not been received.'
+
+If it is clicked send the embed:
+Non-embed text: <@&1303702944696504441>
+Title: Boost Available
+Text: This boost has been paid for and is now available!
+
+
+
+
+
+
+
+
+
+
+
+Now some things are very important:
+This is only for the ticket panel for now, when buying accounts, PAYPAL SHOULD NOT do the same thing as specified here, because ofcourse the payment methods for 'Purchase Account' for /list are different
+
+For purchase account every payment method will do as specified above. However PayPal will NOT do the thing specified above, so send the Payment Terms of Services embed
+
+Instead, when someone selects 'PayPal' for purchase account, all it does is send the message: <@658351335967686659> and it deletes that after 0,1s after sending
+
+
+
+
+
+
+
+
+# what happens if the money isn't sent in a 30m timeframe, solana and litecoin ONLY
+
+
+if the money was not sent in a 30 minute timeframe, DELETE the old embed, this is for solana and litecoin only by the way, and send the embed:
+
+Title: Payment Failed
+Text: Client failed to send the money in a 30 minute time frame.
+
+with the button:
+Send Again in green, emoji depends on the crypto, if it is litecoin the emoji is: <:Litecoin:1371864997012963520>, if it is solana the emoji is: <:Solana:1371865225824960633>
+
+This will re-sent the crypto embed that shows the address and amount etc, however the amount of litecoin/solana will be updated to have the current price, since in 30 minutes or whenever the user clicks the button a lot will have changed, so edit the crypto amount to be updated to match the exact price

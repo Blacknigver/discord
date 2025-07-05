@@ -1,0 +1,10 @@
+{
+  "ruleIndexes": [
+    ".cursor/rules/index.mdc"
+  ],
+  "mainFiles": [
+    "handlers.js",
+    "src/modules/ticketFlow.js",
+    "ticketPayments.js"
+  ]
+} 

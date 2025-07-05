@@ -1,0 +1,10 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Most Important Rules
+
+1. Never edit anything when I did not ask for it
+2. Never stop editing something until it is 100% working
+3. Don't remove a lot of code/logic if I did not ask for it, unless it is useless/something I don't want/requested.

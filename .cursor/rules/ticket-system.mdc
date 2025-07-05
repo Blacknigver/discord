@@ -1,0 +1,31 @@
+---
+description: Defines ticket creation, management
+globs: 
+alwaysApply: false
+---
+Rule Name: ticket-system
+Description: 
+# Ticket System
+
+This rule defines the ticket creation, management, and payment flow processes.
+
+## Core Components
+[tickets.js](mdc:tickets.js)
+[ticketFlow.js](mdc:src/modules/ticketFlow.js)
+[interactions.js](mdc:interactions.js)
+
+## Boost Types
+- Ranked Boost
+- Bulk Trophies Boost
+- Mastery Boost
+- Custom/Other Boosts
+
+## Key Functions
+- `handleRankedFlow` in ticketFlow.js
+- `handleBulkFlow` in ticketFlow.js 
+- `handleMasteryFlow` in ticketFlow.js
+- `showPaymentMethodSelection` in ticketFlow.js
+- `showPriceEmbed` in ticketFlow.js
+- `createTicketChannelWithOverflow` in tickets.js
+
+

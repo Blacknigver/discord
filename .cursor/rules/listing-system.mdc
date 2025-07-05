@@ -1,0 +1,25 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+Rule Name: listing-system
+Description: 
+# Listing System
+
+This rule defines the functionality for listing and selling accounts.
+
+## Core Components
+[commands.js](mdc:commands.js)
+[interactions.js](mdc:interactions.js)
+
+## Key Features
+- `/list` command for creating new account listings
+- "Purchase Account" button functionality
+- "More Information" button to show detailed account info
+- "Mark as Sold" button for staff to mark accounts as sold
+
+## Key Functions
+- `listCommand` in commands.js
+- `handleListButtons` in commands.js
+- `ephemeralFlowState` for storing listing details
