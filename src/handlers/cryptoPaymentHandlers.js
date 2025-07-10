@@ -139,44 +139,10 @@ const cryptoSelectHandler = async (interaction) => {
  * Handle crypto payment completed buttons
  */
 const cryptoPaymentCompletedHandlers = {
-  'payment_completed_ltc': async (interaction) => {
-    try {
-      const { createCryptoTxForm } = require('../../ticketPayments');
-      await createCryptoTxForm(interaction, 'ltc');
-    } catch (error) {
-      console.error('[PAYMENT] Error handling LTC payment completion:', error);
-      await interaction.reply({
-        content: 'An error occurred while processing your payment. Please try again.',
-        ephemeral: true
-      });
-    }
-  },
-
-  'payment_completed_sol': async (interaction) => {
-    try {
-      const { createCryptoTxForm } = require('../../ticketPayments');
-      await createCryptoTxForm(interaction, 'sol');
-    } catch (error) {
-      console.error('[PAYMENT] Error handling SOL payment completion:', error);
-      await interaction.reply({
-        content: 'An error occurred while processing your payment. Please try again.',
-        ephemeral: true
-      });
-    }
-  },
-
-  'payment_completed_btc': async (interaction) => {
-    try {
-      const { createCryptoTxForm } = require('../../ticketPayments');
-      await createCryptoTxForm(interaction, 'btc');
-    } catch (error) {
-      console.error('[PAYMENT] Error handling BTC payment completion:', error);
-      await interaction.reply({
-        content: 'An error occurred while processing your payment. Please try again.',
-        ephemeral: true
-      });
-    }
-  },
+  // These are handled in interactions/buttonHandlers.js to prevent duplicates
+  // payment_completed_ltc: handled in interactions/buttonHandlers.js
+  // payment_completed_sol: handled in interactions/buttonHandlers.js  
+  // payment_completed_btc: handled in interactions/buttonHandlers.js
 
   'payment_completed_crypto_ltc': async (interaction) => {
     await createCryptoTxForm(interaction, 'ltc');
@@ -195,26 +161,10 @@ const cryptoPaymentCompletedHandlers = {
  * Handle crypto copy address buttons
  */
 const cryptoCopyHandlers = {
-  'copy_ltc_address': async (interaction) => {
-    await interaction.reply({
-      content: 'LMEBUghAdAKKdNTtUBExHyN33b6JS75TkH',
-      ephemeral: true
-    });
-  },
-  
-  'copy_sol_address': async (interaction) => {
-    await interaction.reply({
-      content: 'B9z5EhzPnPFf8t5CptAArYRFhzkrQkv1i7URz1pVSNdH',
-      ephemeral: true
-    });
-  },
-  
-  'copy_btc_address': async (interaction) => {
-    await interaction.reply({
-      content: 'bc1qcxrteqq6rgr4u5s6hg9n4d27zar22ssgzx7s8v',
-      ephemeral: true
-    });
-  },
+  // These are handled in interactions/buttonHandlers.js to prevent duplicates
+  // copy_ltc_address: handled in interactions/buttonHandlers.js
+  // copy_sol_address: handled in interactions/buttonHandlers.js
+  // copy_btc_address: handled in interactions/buttonHandlers.js
   
   'copy_ltc_amount': async (interaction) => {
     try {
@@ -302,7 +252,7 @@ const cryptoResendHandlers = {
       }
       
       const { resendLitecoinEmbed } = require('../../ticketPayments');
-      await resendLitecoinEmbed(interaction.message, interaction.user.id, price);
+      await resendLitecoinEmbed(interaction.channel, interaction.user.id);
       await interaction.update({ components: [] });
     } catch (error) {
       console.error('[PAYMENT] Error handling resend LTC payment:', error);
@@ -337,7 +287,7 @@ const cryptoResendHandlers = {
       }
       
       const { resendSolanaEmbed } = require('../../ticketPayments');
-      await resendSolanaEmbed(interaction.message, interaction.user.id, price);
+      await resendSolanaEmbed(interaction.channel, interaction.user.id);
       await interaction.update({ components: [] });
     } catch (error) {
       console.error('[PAYMENT] Error handling resend SOL payment:', error);
@@ -351,7 +301,7 @@ const cryptoResendHandlers = {
   'resend_btc_payment': async (interaction) => {
     try {
       const { resendBitcoinEmbed } = require('../../ticketPayments');
-      await resendBitcoinEmbed(interaction.message, interaction.user.id);
+      await resendBitcoinEmbed(interaction.channel, interaction.user.id);
       await interaction.update({ components: [] });
     } catch (error) {
       console.error('[PAYMENT] Error handling resend BTC payment:', error);
@@ -716,7 +666,12 @@ async function handleCryptoTxForm(interaction, cryptoType) {
       
       // Send staff verification embed
       const { sendStaffPaymentVerificationEmbed } = require('../../ticketPayments');
-      await sendStaffPaymentVerificationEmbed(interaction.channel, 'crypto_btc', { txId });
+      await sendStaffPaymentVerificationEmbed(
+        interaction.channel,
+        interaction.user.id,
+        'btc',
+        { txId }
+      );
       await interaction.reply({
         content: 'Your transaction has been submitted for verification by staff.',
         ephemeral: true

@@ -51,8 +51,24 @@ async function handlePaymentMethodSelection(interaction) {
           userData.paymentMethod = 'IBAN Bank Transfer';
           break;
         case 'paypal_giftcard':
-          userData.paymentMethod = 'PayPal Giftcard';
-          break;
+          // Show PayPal Giftcard form
+          const paypalModal = new ModalBuilder()
+            .setCustomId('modal_paypal_giftcard')
+            .setTitle('PayPal Giftcard Information');
+          
+          paypalModal.addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId('giftcard_info')
+                .setLabel('What coin will you be sending')
+                .setPlaceholder('Enter the Crypto Coin you will be sending')
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+            )
+          );
+          
+          flowState.set(userId, userData);
+          return interaction.showModal(paypalModal);
         case 'dutch':
           userData.paymentMethod = 'Dutch Payment Methods';
           // Redirect to Dutch payment method selection
@@ -141,15 +157,15 @@ async function handleCryptoTypeSelection(interaction) {
         case 'other':
           // Show 'other crypto' form
           const modal = new ModalBuilder()
-            .setCustomId('modal_other_crypto')
+            .setCustomId('modal_crypto_other')
             .setTitle('Other Crypto Currency');
           
           modal.addComponents(
             new ActionRowBuilder().addComponents(
               new TextInputBuilder()
                 .setCustomId('crypto_coin')
-                .setLabel('Crypto Coin')
-                .setPlaceholder('The Crypto you will be sending')
+                .setLabel('What coin will you be sending')
+                .setPlaceholder('Enter the Crypto Coin you will be sending')
                 .setStyle(TextInputStyle.Short)
                 .setRequired(true)
             )
@@ -444,14 +460,15 @@ async function handlePurchaseBoostClick(interaction) {
                   // Handle other crypto or unknown types
                   await channel.send(`Please specify which crypto you'd like to use for payment.`);
                   // Ping staff about specific crypto type requested
-                  await channel.send(`<@658351335967686659> User requested payment with ${userData.cryptoType}.`);
+                  await channel.send(`<@987751357773672538> User requested payment with ${userData.cryptoType}.`);
               }
               break;
             case 'IBAN Bank Transfer':
               await payments.sendIbanEmbed(channel, userId);
               break;
             case 'PayPal Giftcard':
-              await payments.sendPayPalGiftcardEmbed(channel, userId);
+              // Always use the new PayPal Giftcard format
+              await payments.sendPayPalGiftcardOtherPaymentEmbed(channel, userId, userData.giftcardInfo || 'PayPal Giftcard');
               break;
             case 'German Apple Giftcard':
               await payments.sendAppleGiftcardEmbed(channel, userId);
@@ -462,11 +479,11 @@ async function handlePurchaseBoostClick(interaction) {
               } else if (userData.dutchPaymentType === 'Bol.com Giftcard') {
                 await payments.sendBolGiftcardEmbed(channel, userId);
               } else {
-                await channel.send(`<@658351335967686659> User selected Dutch payment method but didn't specify which one.`);
+                await channel.send(`<@987751357773672538> User selected Dutch payment method but didn't specify which one.`);
               }
               break;
             default:
-              await channel.send(`<@658351335967686659> Please help set up payment for ${userData.paymentMethod}.`);
+              await channel.send(`<@987751357773672538> Please help set up payment for ${userData.paymentMethod}.`);
           }
           
           console.log(`[PAYMENT] Successfully sent payment information to ticket ${ticketChannelId}`);
@@ -478,7 +495,7 @@ async function handlePurchaseBoostClick(interaction) {
           try {
             const channel = await interaction.client.channels.fetch(ticketChannelId);
             if (channel) {
-              await channel.send(`<@658351335967686659> There was an error setting up payment information. Please help this user.`);
+              await channel.send(`<@987751357773672538> There was an error setting up payment information. Please help this user.`);
             }
           } catch (notifyError) {
             console.error(`[PAYMENT] Failed to notify about error: ${notifyError.message}`);
@@ -555,52 +572,45 @@ async function handleOtherCryptoModal(interaction) {
       ephemeral: true
     });
     
-    // Automatic price calculation and display
+    // Show the order confirmation price embed
     try {
       // Import showPriceEmbed
       const { showPriceEmbed } = require('./ticketFlow');
       
-      // Create a wrapped interaction object for followUp
-      const wrappedInteraction = {
+      // Use setTimeout to allow the reply to complete first
+      setTimeout(async () => {
+        try {
+          // Create a new interaction-like object that can handle the price embed
+          const priceInteraction = {
         ...interaction,
         deferred: false,
-        replied: true,
+            replied: false,
         update: async (options) => {
-          return await interaction.followUp({
-            ...options,
-            ephemeral: true
-          });
+              return await interaction.followUp({ ...options, ephemeral: false });
+            },
+            reply: async (options) => {
+              return await interaction.followUp({ ...options, ephemeral: false });
         },
         editReply: async (options) => {
-          return await interaction.followUp({
-            ...options,
+              return await interaction.followUp({ ...options, ephemeral: false });
+            }
+          };
+          
+          await showPriceEmbed(priceInteraction);
+        } catch (error) {
+          console.error(`[PAYMENT] Error in delayed showPriceEmbed: ${error.message}`);
+          await interaction.followUp({
+            content: 'Ready to proceed! Please continue with your order.',
             ephemeral: true
           });
         }
-      };
-      
-      // Show price embed automatically
-      await showPriceEmbed(wrappedInteraction);
+      }, 1000);
     } catch (priceError) {
-      console.error(`[PAYMENT] Error showing price after crypto selection: ${priceError.message}`);
-      console.error(priceError.stack);
-      
-      // Send a more informative message if price calculation fails
+      console.error(`[PAYMENT] Error setting up price display: ${priceError.message}`);
       await interaction.followUp({
-        content: 'There was an error calculating the price with your selected cryptocurrency. Please click the "Purchase Boost" button when you\'re ready to proceed, or select a different payment method.',
+        content: 'Ready to proceed! Please continue with your order.',
         ephemeral: true
       });
-      
-      // Ping support in server logs or a dedicated channel
-      try {
-        // This could be a dedicated logging channel
-        const logChannel = await interaction.client.channels.fetch('LOGS_CHANNEL_ID');
-        if (logChannel) {
-          await logChannel.send(`Error calculating price for user ${userId} with crypto ${cryptoCoin}: ${priceError.message}`);
-        }
-      } catch (logError) {
-        console.error(`[PAYMENT] Failed to log price calculation error: ${logError.message}`);
-      }
     }
   } catch (error) {
     console.error(`[PAYMENT] Error handling other crypto form: ${error.message}`);
@@ -614,6 +624,103 @@ async function handleOtherCryptoModal(interaction) {
     } else {
       return interaction.followUp({
         content: 'An error occurred while processing your crypto selection. Please try again.',
+        ephemeral: true
+      });
+    }
+  }
+}
+
+/**
+ * Handles PayPal Giftcard form submission
+ */
+async function handlePayPalGiftcardModal(interaction) {
+  try {
+    const userId = interaction.user.id;
+    const giftcardInfo = interaction.fields.getTextInputValue('giftcard_info').trim();
+    console.log(`[PAYMENT] User ${userId} submitted PayPal Giftcard info: ${giftcardInfo}`);
+    
+    // Store in userData
+    const userData = flowState.get(userId);
+    
+    if (!userData) {
+      console.error(`[PAYMENT] No user data found for ${userId}`);
+      return interaction.reply({
+        content: 'Session data not found. Please try again.',
+        ephemeral: true
+      });
+    }
+    
+    // Validate input
+    if (!giftcardInfo) {
+      return interaction.reply({
+        content: 'Please enter valid PayPal Giftcard information.',
+        ephemeral: true
+      });
+    }
+    
+    // Set the payment method and giftcard info
+    userData.paymentMethod = 'PayPal Giftcard';
+    userData.giftcardInfo = giftcardInfo;
+    flowState.set(userId, userData);
+    
+    // We need to respond to the modal first
+    await interaction.reply({
+      content: `You selected PayPal Giftcard with ${giftcardInfo}.`,
+      ephemeral: true
+    });
+    
+    // Show the order confirmation price embed
+    try {
+      // Import showPriceEmbed
+      const { showPriceEmbed } = require('./ticketFlow');
+      
+      // Use setTimeout to allow the reply to complete first
+      setTimeout(async () => {
+        try {
+          // Create a new interaction-like object that can handle the price embed
+          const priceInteraction = {
+            ...interaction,
+            deferred: false,
+            replied: false,
+            update: async (options) => {
+              return await interaction.followUp({ ...options, ephemeral: false });
+            },
+            reply: async (options) => {
+              return await interaction.followUp({ ...options, ephemeral: false });
+            },
+            editReply: async (options) => {
+              return await interaction.followUp({ ...options, ephemeral: false });
+            }
+          };
+          
+          await showPriceEmbed(priceInteraction);
+        } catch (error) {
+          console.error(`[PAYMENT] Error in delayed showPriceEmbed: ${error.message}`);
+          await interaction.followUp({
+            content: 'Ready to proceed! Please continue with your order.',
+            ephemeral: true
+          });
+        }
+      }, 1000);
+    } catch (priceError) {
+      console.error(`[PAYMENT] Error setting up price display: ${priceError.message}`);
+      await interaction.followUp({
+        content: 'Ready to proceed! Please continue with your order.',
+        ephemeral: true
+      });
+    }
+  } catch (error) {
+    console.error(`[PAYMENT] Error handling PayPal Giftcard form: ${error.message}`);
+    console.error(error.stack);
+    
+    if (!interaction.replied) {
+      return interaction.reply({
+        content: 'An error occurred while processing your PayPal Giftcard selection. Please try again.',
+        ephemeral: true
+      });
+    } else {
+      return interaction.followUp({
+        content: 'An error occurred while processing your PayPal Giftcard selection. Please try again.',
         ephemeral: true
       });
     }
@@ -680,13 +787,13 @@ async function handleSendAgainCrypto(interaction) {
     // Generate new payment info based on crypto type
     switch (coinType) {
       case 'ltc':
-        await payments.resendLitecoinEmbed(interaction, userId, price);
+        await payments.resendLitecoinEmbed(interaction.channel, userId, price);
         break;
       case 'sol':
-        await payments.resendSolanaEmbed(interaction, userId, price);
+        await payments.resendSolanaEmbed(interaction.channel, userId, price);
         break;
       case 'btc':
-        await payments.resendBitcoinEmbed(interaction, userId);
+        await payments.resendBitcoinEmbed(interaction.channel, userId);
         break;
       default:
         await interaction.followUp({
@@ -717,5 +824,6 @@ module.exports = {
   handleDutchPaymentSelection,
   handlePurchaseBoostClick,
   handleOtherCryptoModal,
+  handlePayPalGiftcardModal,
   handleSendAgainCrypto
 }; 

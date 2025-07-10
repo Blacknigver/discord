@@ -732,8 +732,8 @@ const buttonHandlers = {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('crypto_coin')
-          .setLabel('Crypto Coin')
-          .setPlaceholder('The Crypto you will be sending')
+          .setLabel('What coin will you be sending')
+          .setPlaceholder('Enter the Crypto Coin you will be sending')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
       )
@@ -842,8 +842,8 @@ const buttonHandlers = {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId('crypto_coin')
-          .setLabel('Crypto Coin')
-          .setPlaceholder('The Crypto you will be sending')
+          .setLabel('What coin will you be sending')
+          .setPlaceholder('Enter the Crypto Coin you will be sending')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
       )
@@ -882,7 +882,22 @@ const modalHandlers = {
     if (isNaN(current) || isNaN(desired) || current >= desired) {
       return interaction.reply({ content: 'Invalid trophy amounts.', ephemeral: true });
     }
-    const price = calculateTrophyPrice(current, desired);
+    
+    // Get brawler level if provided
+    let brawlerLevel = null;
+    try {
+      const levelText = interaction.fields.getTextInputValue('brawler_level')?.trim();
+      if (levelText) {
+        brawlerLevel = parseInt(levelText);
+        if (isNaN(brawlerLevel) || brawlerLevel < 1) {
+          return interaction.reply({ content: 'Please enter a valid power level (1-11).', ephemeral: true });
+        }
+      }
+    } catch (e) {
+      // Level field not found, continue without it
+    }
+    
+    const price = calculateTrophyPrice(current, desired, brawlerLevel);
     
     // Store the data but show payment method selection first
     flowState.set(interaction.user.id, { 
@@ -891,6 +906,8 @@ const modalHandlers = {
       current, 
       desired, 
       price,
+      brawlerLevel,
+      powerLevel: brawlerLevel,
       step: 'payment_method'
     });
     

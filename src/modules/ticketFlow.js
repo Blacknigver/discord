@@ -10,7 +10,7 @@ const {
   StringSelectMenuOptionBuilder,
   InteractionResponseFlags
 } = require('discord.js');
-const { STAFF_ROLES, TICKET_CATEGORIES } = require('../constants');
+const { STAFF_ROLES, TICKET_CATEGORIES, EMOJIS } = require('../constants');
 const helpers = require('../utils/helpers');
 const { calculateBulkPrice, calculateRankedPrice, calculateMasteryPrice } = helpers;
 const { calculateTrophyPrice } = require('../../utils'); // <-- Import from correct file
@@ -42,7 +42,7 @@ const {
   sendWelcomeEmbed,
   sendPayPalTermsEmbed,
   sendIbanEmbed,
-  sendPayPalGiftcardEmbed,
+  sendPayPalGiftcardOtherPaymentEmbed,
   sendAppleGiftcardEmbed,
   sendOrderDetailsEmbed,
   showCryptoSelection,
@@ -232,7 +232,7 @@ async function handleP11ModalSubmit(interaction) {
         return interaction.reply({ 
         content: 'An error occurred while processing your P11 count. Please try again.',
         flags: 64  // Ephemeral flag
-      });
+        });
     }
     
     return false;
@@ -776,11 +776,11 @@ function getMasteryValue(mastery, number) {
 
 // Get numeric value for a rank to allow comparisons
 function getRankValue(rank, number) {
-  console.log(`[HELPER] Getting rank value for ${rank} ${number}`);
+  console.log(`[HELPER] Getting rank value for ${rank} ${number || ''}`);
   
   // Special case: Pro has no specific number and is the highest rank
   if (rank === 'Pro') {
-    console.log(`[HELPER] Calculated rank value for Pro : 100`);
+    console.log(`[HELPER] Calculated rank value for Pro: 100`);
     return 100; // Make sure Pro is higher than all other ranks
   }
 
@@ -865,29 +865,32 @@ function isDesiredMasteryHigher(currentMastery, currentNumber, desiredMastery, d
 // Helper function to update the existing message
 async function updateUserMessage(interaction, userData, options) {
   try {
-    // If we have a message ID stored, try to edit that message
-    if (userData.lastMessageId) {
-      try {
-        // Try to edit the original message
-        await interaction.editReply(options);
-        return true;
-      } catch (error) {
-        console.error(`[UPDATE_MESSAGE] Failed to edit message: ${error.message}`);
-        // Fall back to sending a new message if editing fails
-      }
+    // Check if the interaction has been deferred or replied to
+    if (interaction.deferred) {
+      // If deferred, use editReply
+      await interaction.editReply(options);
+      return true;
+    } else if (interaction.replied) {
+      // If already replied, use followUp
+      const response = await interaction.followUp({
+        ...options,
+        flags: 64,  // Ephemeral flag
+        fetchReply: true
+      });
+      userData.lastMessageId = response.id;
+      flowState.set(interaction.user.id, userData);
+      return true;
+    } else {
+      // If neither deferred nor replied, use reply
+      const response = await interaction.reply({
+        ...options,
+        flags: 64,  // Ephemeral flag
+        fetchReply: true
+      });
+      userData.lastMessageId = response.id;
+      flowState.set(interaction.user.id, userData);
+      return true;
     }
-    
-    // If we don't have a message ID or editing failed, send a new message
-    const response = await interaction.reply({
-      ...options,
-      flags: 64,  // Ephemeral flag
-      fetchReply: true
-    });
-    
-    // Store the new message ID
-    userData.lastMessageId = response.id;
-    flowState.set(interaction.user.id, userData);
-    return true;
   } catch (error) {
     console.error(`[UPDATE_MESSAGE] Error updating message: ${error.message}`);
     return false;
@@ -1005,12 +1008,12 @@ async function handleRankedRankSelection(interaction, rankInput) {
       userData.desiredRank = baseRankName;
       // If Pro is selected, skip desired_rank_specific and go straight to payment method selection
       if (baseRankName === 'Pro') {
-        userData.desiredRankSpecific = null;
+        userData.desiredRankSpecific = '';
         userData.formattedDesiredRank = 'Pro';
         
         // Explicitly verify that Pro (value 100) is higher than current rank
         const currentRankValue = getRankValue(userData.currentRank, userData.currentRankSpecific);
-        const proRankValue = getRankValue('Pro', '');
+        const proRankValue = getRankValue('Pro', null);
         
         if (proRankValue <= currentRankValue) {
           console.log(`[RANKED_FLOW] Pro rank value ${proRankValue} is not higher than current rank value ${currentRankValue}`);
@@ -1160,8 +1163,14 @@ async function showDutchPaymentMethodSelection(interaction) {
     selectMenu.addOptions(options);
     const row = new ActionRowBuilder().addComponents(selectMenu);
 
-    // Always edit the ephemeral message, not the ticket panel
+    // Try to use the appropriate interaction response method
+    if (interaction.deferred) {
     return interaction.editReply({ embeds: [embed], components: [row] });
+    } else if (interaction.replied) {
+      return interaction.followUp({ embeds: [embed], components: [row], ephemeral: true });
+    } else {
+      return interaction.update({ embeds: [embed], components: [row] });
+    }
   } catch (error) {
     console.error(`[PAYMENT_FLOW] Error in showDutchPaymentMethodSelection: ${error.message}`);
     console.error(error.stack);
@@ -1344,7 +1353,106 @@ async function showPriceEmbed(interaction) {
     let formattedPrice = '';
     let priceMultiplier = 1.0; // Default multiplier (no change)
     
-    // Calculate price based on boost type
+    // Handle 'other' type differently - no price calculation needed
+    if (userData.type === 'other') {
+      console.log(`[OTHER_FLOW] Skipping price calculation for 'other' type request`);
+      
+      // For 'other' requests, proceed directly to ticket creation
+      const userId = interaction.user.id;
+      userData.isProcessingTicket = true;
+      flowState.set(userId, userData);
+      
+      try {
+        // Create the ticket channel
+        const guild = interaction.guild;
+        const channelName = `other-${interaction.user.username}-${Math.floor(Math.random() * 1000)}`;
+        const categoryId = getCategoryIdByType('other');
+        
+        const ticketChannel = await createTicketChannelWithOverflow(
+          guild,
+          interaction.user.id,
+          categoryId,
+          channelName,
+          {
+            type: 'other',
+            request: userData.request || 'Other request',
+            paymentMethod: userData.paymentMethod
+          }
+        );
+        
+        if (!ticketChannel) {
+          console.error(`[OTHER_FLOW] Failed to create ticket channel for ${userId}`);
+          userData.isProcessingTicket = false;
+          flowState.set(userId, userData);
+          
+          if (interaction.deferred) {
+            return interaction.editReply({
+              content: 'Failed to create ticket channel. Please try again or contact staff.',
+              flags: 64
+            });
+          } else {
+            return interaction.reply({
+              content: 'Failed to create ticket channel. Please try again or contact staff.',
+              flags: 64
+            });
+          }
+        }
+        
+                 // Send welcome message
+         await require('../../ticketPayments.js').sendWelcomeEmbed(ticketChannel, userId);
+        
+        // Send other request details
+        const orderDetails = {
+          type: 'other',
+          request: userData.request || 'Other request',
+          paymentMethod: userData.paymentMethod,
+          description: `**Request:** ${userData.request || 'Other request'}\n**Payment Method:** ${userData.paymentMethod}`
+        };
+                 await require('../../ticketPayments.js').sendOrderDetailsEmbed(ticketChannel, orderDetails);
+        
+        // Send confirmation to the user
+        if (interaction.deferred) {
+          await interaction.editReply({
+            content: `Successfully opened ticket, your ticket: <#${ticketChannel.id}>`,
+            flags: 64
+          });
+        } else {
+          await interaction.reply({
+            content: `Successfully opened ticket, your ticket: <#${ticketChannel.id}>`,
+            flags: 64
+          });
+        }
+        
+        // Clear user data after successful ticket creation
+        userData.ticketCreated = true;
+        userData.ticketChannelId = ticketChannel.id;
+        flowState.set(userId, userData);
+        
+        console.log(`[OTHER_FLOW] Successfully created other request ticket for ${userId}`);
+        return true;
+        
+      } catch (error) {
+        console.error(`[OTHER_FLOW] Error creating other request ticket: ${error.message}`);
+        console.error(error.stack);
+        
+        userData.isProcessingTicket = false;
+        flowState.set(userId, userData);
+        
+        if (interaction.deferred) {
+          return interaction.editReply({
+            content: 'An error occurred while creating your ticket. Please try again or contact staff.',
+            flags: 64
+          });
+        } else {
+          return interaction.reply({
+            content: 'An error occurred while creating your ticket. Please try again or contact staff.',
+            flags: 64
+          });
+        }
+      }
+    }
+    
+    // Calculate price based on boost type (for non-other types)
     if (userData.type === 'ranked') {
       price = calculateRankedPrice(userData.currentRank, userData.currentRankSpecific, userData.desiredRank, userData.desiredRankSpecific);
       console.log(`[RANKED_PRICE_DEBUG] Calculated base price from ${userData.currentRank} ${userData.currentRankSpecific} to ${userData.desiredRank} ${userData.desiredRankSpecific}: €${price.toFixed(2)}`);
@@ -1361,26 +1469,26 @@ async function showPriceEmbed(interaction) {
         if (desiredRank === 'Bronze' || desiredRank === 'Silver' || desiredRank === 'Gold') {
           priceMultiplier = 1.0;
         }
-        // Diamond or Mythic: Multiplier if P11 < 15
+        // Diamond or Mythic: Multiplier if P11 < 20
         else if (desiredRank === 'Diamond' || desiredRank === 'Mythic') {
-          if (p11Count < 15) {
-            priceMultiplier = 1.5;
+          if (p11Count < 20) {
+            priceMultiplier = 1.1;
           }
         }
         // Legendary: Different multipliers based on P11 count
         else if (desiredRank === 'Legendary') {
           if (p11Count <= 20) {
-            priceMultiplier = 1.5;
-          } else if (p11Count <= 30) {
+            priceMultiplier = 1.2;
+          } else if (p11Count <= 25) {
             priceMultiplier = 1.1;
           }
         }
         // Masters 1: Different multipliers based on P11 count
         else if (desiredRank === 'Masters' && userData.desiredRankSpecific === '1') {
           if (p11Count <= 20) {
-            priceMultiplier = 2.0;
+            priceMultiplier = 1.35;
           } else if (p11Count <= 30) {
-            priceMultiplier = 1.5;
+            priceMultiplier = 1.2;
           } else if (p11Count <= 35) {
             priceMultiplier = 1.1;
           }
@@ -1388,51 +1496,39 @@ async function showPriceEmbed(interaction) {
         // Masters 2: Different multipliers based on P11 count
         else if (desiredRank === 'Masters' && userData.desiredRankSpecific === '2') {
           if (p11Count <= 20) {
-            priceMultiplier = 3.0;
-          } else if (p11Count <= 30) {
-            priceMultiplier = 2.0;
-          } else if (p11Count <= 35) {
             priceMultiplier = 1.5;
-          } else if (p11Count <= 40) {
+          } else if (p11Count <= 30) {
             priceMultiplier = 1.25;
-          } else if (p11Count <= 45) {
-            priceMultiplier = 1.1;
+          } else if (p11Count <= 35) {
+            priceMultiplier = 1.15;
           }
         }
         // Masters 3: Different multipliers based on P11 count
         else if (desiredRank === 'Masters' && userData.desiredRankSpecific === '3') {
           if (p11Count <= 20) {
-            priceMultiplier = 4.0;
+            priceMultiplier = 1.7;
           } else if (p11Count <= 30) {
-            priceMultiplier = 3.0;
+            priceMultiplier = 1.35;
           } else if (p11Count <= 35) {
-            priceMultiplier = 2.5;
+            priceMultiplier = 1.2;
           } else if (p11Count <= 40) {
-            priceMultiplier = 2.0;
-          } else if (p11Count <= 45) {
-            priceMultiplier = 1.5;
-          } else if (p11Count <= 50) {
-            priceMultiplier = 1.25;
+            priceMultiplier = 1.1;
           }
         }
         // Pro: Different multipliers based on P11 count
         else if (desiredRank === 'Pro') {
           if (p11Count <= 20) {
-            priceMultiplier = 5.0;
+            priceMultiplier = 2.5;
           } else if (p11Count <= 30) {
-            priceMultiplier = 4.0;
+            priceMultiplier = 1.7;
           } else if (p11Count <= 35) {
-            priceMultiplier = 3.0;
-          } else if (p11Count <= 40) {
-            priceMultiplier = 2.75;
-          } else if (p11Count <= 45) {
-            priceMultiplier = 2.25;
-          } else if (p11Count <= 50) {
             priceMultiplier = 1.5;
-          } else if (p11Count <= 55) {
-            priceMultiplier = 1.25;
-          } else if (p11Count <= 60) {
-            priceMultiplier = 1.15;
+          } else if (p11Count <= 40) {
+            priceMultiplier = 1.3;
+          } else if (p11Count <= 45) {
+            priceMultiplier = 1.2;
+          } else if (p11Count <= 50) {
+            priceMultiplier = 1.1;
           }
         }
         
@@ -1448,12 +1544,28 @@ async function showPriceEmbed(interaction) {
     }
     // Handle other boost types (keeping existing code)
     else if (userData.type === 'bulk') {
-      price = calculateBulkPrice(userData.currentBulkTrophies, userData.desiredBulkTrophies);
-      console.log(`[BULK_PRICE_DEBUG] Calculated total price from ${userData.currentBulkTrophies} to ${userData.desiredBulkTrophies}: €${price.toFixed(2)}`);
+      price = calculateBulkPrice(userData.currentTrophies, userData.desiredTrophies);
+      console.log(`[BULK_PRICE_DEBUG] Calculated total price from ${userData.currentTrophies} to ${userData.desiredTrophies}: €${price.toFixed(2)}`);
     } else if (userData.type === 'trophies') {
       console.log('[TROPHY_PRICE_DEBUG] calculateTrophyPrice imported:', typeof calculateTrophyPrice);
-      price = calculateTrophyPrice(userData.currentTrophies, userData.desiredTrophies);
-      console.log(`[TROPHY_PRICE_DEBUG] Calculated total price from ${userData.currentTrophies} to ${userData.desiredTrophies}: €${price.toFixed(2)}`);
+      // Use power level from stored data if available
+      const powerLevel = userData.powerLevel || userData.brawlerLevel;
+      price = calculateTrophyPrice(userData.currentTrophies, userData.desiredTrophies, powerLevel);
+      console.log(`[TROPHY_PRICE_DEBUG] Calculated total price from ${userData.currentTrophies} to ${userData.desiredTrophies} (power ${powerLevel}): €${price.toFixed(2)}`);
+      
+      // Calculate and store multiplier information for trophies
+      if (powerLevel !== null && powerLevel !== undefined && !isNaN(powerLevel)) {
+        const { calculateTrophyPowerLevelMultiplier } = require('../../utils');
+        const trophyMultiplier = calculateTrophyPowerLevelMultiplier(userData.desiredTrophies, powerLevel);
+        const trophyBasePrice = price / trophyMultiplier;
+        
+        // Store trophy multiplier info
+        userData.powerLevelMultiplier = trophyMultiplier;
+        userData.basePrice = `€${trophyBasePrice.toFixed(2)}`;
+        priceMultiplier = trophyMultiplier;
+        
+        console.log(`[TROPHY_PRICE_DEBUG] Trophy power level multiplier: ${trophyMultiplier}x, base: €${trophyBasePrice.toFixed(2)}, final: €${price.toFixed(2)}`);
+      }
     } else if (userData.type === 'mastery') {
       // Use the formattedCurrentMastery and formattedDesiredMastery instead of separate values
       const currentMasteryParts = userData.formattedCurrentMastery ? userData.formattedCurrentMastery.split(' ') : [userData.currentMastery, userData.currentMasterySpecific];
@@ -1504,40 +1616,89 @@ async function showPriceEmbed(interaction) {
         
         // Add multiplier info if a multiplier was applied
         if (priceMultiplier !== 1.0) {
-          description += `\n**Price Multiplier:** \`${priceMultiplier}x\``;
+          description += `\n**Level Price Multiplier:** \`${priceMultiplier}x\``;
         }
       }
       
-      description += `\n**Payment Method:** \`${userData.paymentMethod}\`\n\n**Total Price:** \`${formattedPrice}\``;
+      description += `\n**Payment Method:** \`${userData.paymentMethod}\``;
+      
+      // Add crypto coin if payment method is crypto and cryptoType is specified
+      if (userData.paymentMethod === 'Crypto' && userData.cryptoType && userData.cryptoType !== 'Litecoin' && userData.cryptoType !== 'Solana' && userData.cryptoType !== 'Bitcoin') {
+        description += `\n**Crypto Coin:** \`${userData.cryptoType}\``;
+      }
+      
+      // Add giftcard info if payment method is PayPal Giftcard and giftcardInfo is specified
+      if (userData.paymentMethod === 'PayPal Giftcard' && userData.giftcardInfo) {
+        description += `\n**Giftcard Info:** \`${userData.giftcardInfo}\``;
+      }
+      
+      description += `\n\n**Total Price:** \`${formattedPrice}\``;
       
       embed.setDescription(description);
     }
     // Keeping existing code for other boost types
     else if (userData.type === 'bulk') {
-      embed.setDescription(`Please confirm your order details:\n\n**Current Trophies:** \`${userData.currentBulkTrophies}\`\n**Desired Trophies:** \`${userData.desiredBulkTrophies}\`\n**Payment Method:** \`${userData.paymentMethod}\`\n\n**Total Price:** \`${formattedPrice}\``);
+      let description = `Please confirm your order details:\n\n**Current Trophies:** \`${userData.currentTrophies}\`\n**Desired Trophies:** \`${userData.desiredTrophies}\`\n**Payment Method:** \`${userData.paymentMethod}\``;
+      
+      // Add crypto coin if payment method is crypto and cryptoType is specified
+      if (userData.paymentMethod === 'Crypto' && userData.cryptoType && userData.cryptoType !== 'Litecoin' && userData.cryptoType !== 'Solana' && userData.cryptoType !== 'Bitcoin') {
+        description += `\n**Crypto Coin:** \`${userData.cryptoType}\``;
+      }
+      
+      // Add giftcard info if payment method is PayPal Giftcard and giftcardInfo is specified
+      if (userData.paymentMethod === 'PayPal Giftcard' && userData.giftcardInfo) {
+        description += `\n**Giftcard Info:** \`${userData.giftcardInfo}\``;
+      }
+      
+      description += `\n\n**Total Price:** \`${formattedPrice}\``;
+      
+      embed.setDescription(description);
     } else if (userData.type === 'trophies') {
       let description = `Please confirm your order details:\n\n**Brawler:** \`${userData.brawler}\`\n**Current Trophies:** \`${userData.currentTrophies}\`\n**Desired Trophies:** \`${userData.desiredTrophies}\``;
       
       // Add brawler level if available
-      if (userData.brawlerLevel !== undefined) {
-        description += `\n**Brawler Power Level:** \`${userData.brawlerLevel}\``;
+      if (userData.brawlerLevel !== undefined || userData.powerLevel !== undefined) {
+        const level = userData.powerLevel || userData.brawlerLevel;
+        description += `\n**Brawler Power Level:** \`${level}\``;
       }
       
-      // Add price multiplier if available
-      if (userData.priceMultiplier !== undefined && userData.priceMultiplier !== 1.0) {
-        description += `\n**Price Multiplier:** \`${userData.priceMultiplier}x\``;
-        
-        // Add base price if available
-        if (userData.basePrice) {
-          description += `\n**Base Price:** \`€${userData.basePrice}\``;
-        }
+      // Add power level price multiplier if available and not 1.0
+      const trophyMultiplier = userData.powerLevelMultiplier || priceMultiplier;
+      if (trophyMultiplier !== undefined && trophyMultiplier !== 1.0) {
+        description += `\n**Level Price Multiplier:** \`${trophyMultiplier}x\``;
       }
       
-      description += `\n**Payment Method:** \`${userData.paymentMethod}\`\n\n**Total Price:** \`${formattedPrice}\``;
+      description += `\n**Payment Method:** \`${userData.paymentMethod}\``;
+      
+      // Add crypto coin if payment method is crypto and cryptoType is specified
+      if (userData.paymentMethod === 'Crypto' && userData.cryptoType && userData.cryptoType !== 'Litecoin' && userData.cryptoType !== 'Solana' && userData.cryptoType !== 'Bitcoin') {
+        description += `\n**Crypto Coin:** \`${userData.cryptoType}\``;
+      }
+      
+      // Add giftcard info if payment method is PayPal Giftcard and giftcardInfo is specified
+      if (userData.paymentMethod === 'PayPal Giftcard' && userData.giftcardInfo) {
+        description += `\n**Giftcard Info:** \`${userData.giftcardInfo}\``;
+      }
+      
+      description += `\n\n**Total Price:** \`${formattedPrice}\``;
       
       embed.setDescription(description);
     } else if (userData.type === 'mastery') {
-      embed.setDescription(`Please confirm your order details:\n\n**Brawler:** \`${userData.brawler}\`\n**Current Mastery:** \`${userData.formattedCurrentMastery}\`\n**Desired Mastery:** \`${userData.formattedDesiredMastery}\`\n**Payment Method:** \`${userData.paymentMethod}\`\n\n**Total Price:** \`${formattedPrice}\``);
+      let description = `Please confirm your order details:\n\n**Brawler:** \`${userData.brawler}\`\n**Current Mastery:** \`${userData.formattedCurrentMastery}\`\n**Desired Mastery:** \`${userData.formattedDesiredMastery}\`\n**Payment Method:** \`${userData.paymentMethod}\``;
+      
+      // Add crypto coin if payment method is crypto and cryptoType is specified
+      if (userData.paymentMethod === 'Crypto' && userData.cryptoType && userData.cryptoType !== 'Litecoin' && userData.cryptoType !== 'Solana' && userData.cryptoType !== 'Bitcoin') {
+        description += `\n**Crypto Coin:** \`${userData.cryptoType}\``;
+      }
+      
+      // Add giftcard info if payment method is PayPal Giftcard and giftcardInfo is specified
+      if (userData.paymentMethod === 'PayPal Giftcard' && userData.giftcardInfo) {
+        description += `\n**Giftcard Info:** \`${userData.giftcardInfo}\``;
+      }
+      
+      description += `\n\n**Total Price:** \`${formattedPrice}\``;
+      
+      embed.setDescription(description);
     }
     
     // Add confirmation buttons
@@ -1550,7 +1711,7 @@ async function showPriceEmbed(interaction) {
       new ButtonBuilder()
         .setCustomId('cancel_ticket')
         .setLabel('Cancel')
-        .setEmoji('❌')  // Using a standard Unicode emoji instead of a custom one
+        .setEmoji(EMOJIS.CROSS)
         .setStyle(ButtonStyle.Danger)
     );
     
@@ -1669,13 +1830,13 @@ async function handlePurchaseBoostClick(interaction) {
       } else if (userData.cryptoType === 'Solana') {
         await sendSolanaEmbed(channel, userId, price, interaction);
       } else if (userData.cryptoType === 'Bitcoin') {
-        await sendBitcoinEmbed(channel, userId, price, interaction);
+        await sendBitcoinEmbed(channel, userId, interaction);
       } else {
         // Generic message for 'Other' or unspecified crypto
         await channel.send({content: `Crypto payment selected (${userData.cryptoType || 'unspecified'}). Specific instructions will follow soon or were shown prior.`});
       }
     } else if (paymentMethod === 'PayPal Giftcard') {
-        await sendPayPalGiftcardEmbed(channel, userId, interaction);
+        await sendPayPalGiftcardOtherPaymentEmbed(channel, userId, 'PayPal Giftcard');
     } else if (paymentMethod === 'German Apple Giftcard') {
         await sendAppleGiftcardEmbed(channel, userId, interaction);
     } else if (paymentMethod === 'Dutch Payment Methods') {
@@ -1718,9 +1879,72 @@ async function handlePurchaseBoostClick(interaction) {
 
 // Handle payment method selection from the select menu
 async function handlePaymentMethodSelect(interaction) {
-  // This function is now handled directly in interactions.js
-  console.log(`[PAYMENT_SELECT] This function is deprecated and now handled directly in interactions.js. Interaction ID: ${interaction.id}`);
-  return;
+  try {
+    const selectedValue = interaction.values[0]; // e.g., 'paypal', 'crypto', 'iban', etc.
+    console.log(`[PAYMENT_SELECT] User ${interaction.user.id} selected payment method: ${selectedValue}`);
+    
+    const userData = flowState.get(interaction.user.id);
+    if (!userData) {
+      return interaction.reply({
+        content: 'Session data not found. Please try again.',
+        ephemeral: true
+      });
+    }
+    
+    // Store the raw payment method and set user-friendly display name
+    userData.paymentMethodRaw = selectedValue;
+    
+    // Set user-friendly payment method names
+    switch (selectedValue) {
+      case 'paypal':
+        userData.paymentMethod = 'PayPal';
+        break;
+      case 'crypto':
+        userData.paymentMethod = 'Crypto';
+        break;
+      case 'iban':
+        userData.paymentMethod = 'IBAN Bank Transfer';
+        break;
+      case 'paypal_giftcard':
+        userData.paymentMethod = 'PayPal Giftcard';
+        break;
+      case 'apple_giftcard':
+        userData.paymentMethod = 'German Apple Giftcard';
+        break;
+      case 'dutch':
+        userData.paymentMethod = 'Dutch Payment Methods';
+        break;
+      default:
+        userData.paymentMethod = selectedValue;
+    }
+
+    userData.step = 'payment_method_selected';
+    flowState.set(interaction.user.id, userData);
+    
+    // If it's a crypto payment, show crypto selection
+    if (selectedValue === 'crypto') {
+      return require('../../ticketPayments.js').showCryptoSelection(interaction);
+    }
+    // If it's a Dutch payment, show Dutch payment selection
+    else if (selectedValue === 'dutch') {
+      return showDutchPaymentMethodSelection(interaction);
+    }
+    // For other payment methods, show the price confirmation embed
+    else {
+      return showPriceEmbed(interaction);
+    }
+
+  } catch (error) {
+    console.error(`[PAYMENT_SELECT] Error handling payment method selection: ${error.message}`);
+    console.error(error.stack);
+    
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'An error occurred while processing your payment method selection. Please try again.',
+      ephemeral: true
+    });
+    }
+  }
 }
 
 // Handle Dutch payment method selection from the select menu
@@ -1781,9 +2005,28 @@ async function handleCryptoTypeSelect(interaction) {
     } else if (selectedValue === 'crypto_bitcoin') {
       userData.cryptoType = 'Bitcoin';
     } else if (selectedValue === 'crypto_other') {
-      userData.cryptoType = 'Other';
-      // TODO: In the future, we can add a modal for specifying the 'Other' crypto type
-      console.log('[CRYPTO_FLOW] Crypto "Other" selected, proceeding to price confirmation.');
+      // Show modal for "Other" crypto type
+      const modal = new ModalBuilder()
+        .setCustomId('modal_crypto_other')
+        .setTitle('Other Crypto');
+        
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('crypto_coin')
+            .setLabel('What coin will you be sending')
+            .setPlaceholder('Enter the Crypto Coin you will be sending')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+        )
+      );
+      
+      // Don't set cryptoType yet - wait for modal submission
+      flowState.set(interaction.user.id, userData);
+      console.log('[CRYPTO_FLOW] Crypto "Other" selected, showing modal.');
+      
+      // Show modal directly - can't use followUp before showModal
+      return interaction.showModal(modal);
     } else {
       console.warn(`[CRYPTO_FLOW] Unknown crypto type: ${selectedValue}`);
       userData.cryptoType = selectedValue.replace('crypto_', ''); // Fallback
@@ -1888,6 +2131,11 @@ async function handleTicketConfirm(interaction) {
     
     if (userData.paymentMethod) {
       orderDetails.paymentMethod = userData.paymentMethod;
+      
+      // Add crypto coin if payment method is crypto and cryptoType is specified for "Other" crypto
+      if (userData.paymentMethod === 'Crypto' && userData.cryptoType && userData.cryptoType !== 'Litecoin' && userData.cryptoType !== 'Solana' && userData.cryptoType !== 'Bitcoin') {
+        orderDetails.cryptoCoin = userData.cryptoType;
+      }
     }
     
     // Create the ticket channel
@@ -1932,10 +2180,10 @@ async function handleTicketConfirm(interaction) {
       }
       
       // Send welcome message first
-      await sendWelcomeEmbed(ticketChannel, userId);
+      await require('../../ticketPayments.js').sendWelcomeEmbed(ticketChannel, userId);
       
       // Send order details next
-      await sendOrderDetailsEmbed(ticketChannel, orderDetails);
+      await require('../../ticketPayments.js').sendOrderDetailsEmbed(ticketChannel, orderDetails);
       
       // Now send payment-specific embeds based on payment method
       try {
@@ -1944,26 +2192,34 @@ async function handleTicketConfirm(interaction) {
         
         if (paymentMethodRaw === 'paypal') {
           console.log(`[TICKET_CONFIRM] Sending PayPal Terms of Service for user ${userId}`);
-          await sendPayPalTermsEmbed(ticketChannel, userId);
+          await require('../../ticketPayments.js').sendPayPalTermsEmbed(ticketChannel, userId);
         } else if (paymentMethodRaw === 'iban') {
-          await sendIbanEmbed(ticketChannel, userId);
+          await require('../../ticketPayments.js').sendIbanEmbed(ticketChannel, userId);
         } else if (paymentMethodRaw === 'paypal_giftcard') {
-          await sendPayPalGiftcardEmbed(ticketChannel, userId);
+          await require('../../ticketPayments.js').sendPayPalGiftcardOtherPaymentEmbed(ticketChannel, userId, 'PayPal Giftcard');
         } else if (paymentMethodRaw === 'apple_giftcard') {
-          await sendAppleGiftcardEmbed(ticketChannel, userId);
+          await require('../../ticketPayments.js').sendAppleGiftcardEmbed(ticketChannel, userId);
         } else if (paymentMethodRaw === 'crypto') {
           // Handle crypto payment method based on selected type
-          if (userData.cryptoType) {
-            await showCryptoSelection(ticketChannel, userId, userData.price, userData.cryptoType);
+          if (userData.cryptoType === 'Litecoin') {
+            await require('../../ticketPayments.js').sendLitecoinEmbed(ticketChannel, userId, userData.price);
+          } else if (userData.cryptoType === 'Solana') {
+            await require('../../ticketPayments.js').sendSolanaEmbed(ticketChannel, userId, userData.price);
+          } else if (userData.cryptoType === 'Bitcoin') {
+            await require('../../ticketPayments.js').sendBitcoinEmbed(ticketChannel, userId);
+          } else if (userData.cryptoType && userData.cryptoType !== 'Litecoin' && userData.cryptoType !== 'Solana' && userData.cryptoType !== 'Bitcoin') {
+            // Handle "Other" crypto payment with custom coin
+            await require('../../ticketPayments.js').sendCryptoOtherPaymentEmbed(ticketChannel, userId, userData.cryptoType);
           } else {
-            await showCryptoSelection(ticketChannel, userId, userData.price);
+            // If no specific crypto type selected, show the selection menu
+            await require('../../ticketPayments.js').showCryptoSelection(ticketChannel, userId, userData.price);
           }
         } else if (paymentMethodRaw === 'dutch') {
           // Handle Dutch payment method based on selected type
           if (userData.dutchPaymentType === 'Tikkie') {
-            await sendTikkieEmbed(ticketChannel, userId);
+            await require('../../ticketPayments.js').sendTikkieEmbed(ticketChannel, userId);
           } else if (userData.dutchPaymentType === 'Bol.com Giftcard') {
-            await sendBolGiftcardEmbed(ticketChannel, userId);
+            await require('../../ticketPayments.js').sendBolGiftcardEmbed(ticketChannel, userId);
           } else {
             // Generic Dutch payment message
             await ticketChannel.send({
@@ -1982,48 +2238,19 @@ async function handleTicketConfirm(interaction) {
         await ticketChannel.send(`Error sending payment information. Please contact staff. Error: ${paymentError.message}`);
       }
       
-      // Send confirmation to the user
-      if (interaction.replied || interaction.deferred) {
-        try {
-          await interaction.followUp({
-            content: `Successfully opened ticket, your ticket: <#${ticketChannel.id}>`,
-            flags: 64  // Ephemeral flag
-          }).catch(err => console.error(`[TICKET_CONFIRM] Failed to followUp success: ${err.message}`));
-        } catch (followupErr) {
-          console.error(`[TICKET_CONFIRM] Could not send followup: ${followupErr.message}`);
-        }
-      } else {
-        try {
-          await interaction.reply({
-            content: `Successfully opened ticket, your ticket: <#${ticketChannel.id}>`,
-            flags: 64  // Ephemeral flag
-          });
-        } catch (replyErr) {
-          console.error(`[TICKET_CONFIRM] Could not send reply: ${replyErr.message}`);
-        }
-      }
-      
-      // Try to edit the original message, but handle errors gracefully
-      try {
-        if (interaction.message) {
-          await interaction.message.edit({
-            content: 'Boost request confirmed',
-            embeds: [],
-            components: []
-          }).catch(err => console.error(`[TICKET_CONFIRM] Could not edit message: ${err.message}`));
-        }
-      } catch (editErr) {
-        console.error(`[TICKET_CONFIRM] Could not edit message: ${editErr.message}`);
-      }
+      // Acknowledge ticket creation to the user (handles reply/editReply/followUp)
+      await safeInteractionResponse(interaction, {
+        content: `✅ Ticket created: <#${ticketChannel.id}>`,
+        components: []
+      });
       
       console.log(`[TICKET DEBUG] Ticket setup completed for ${channelName}`);
-      
-      // Clear user data after successful ticket creation
-      // Don't delete the data yet, just mark the ticket as processed
+      // Mark flow state as completed for this ticket
       userData.ticketCreated = true;
       userData.ticketChannelId = ticketChannel.id;
+      userData.isProcessingTicket = false;
       flowState.set(userId, userData);
-      
+
     } catch (error) {
       console.error(`[TICKET_CONFIRM] Error creating ticket: ${error.message}`);
       console.error(error.stack);
@@ -2116,10 +2343,10 @@ async function safeInteractionResponse(interaction, options) {
   
   try {
     // If the interaction is already replied or deferred, use editReply
-    if (interaction.deferred) {
+      if (interaction.deferred) {
       console.log(`[INTERACTION_SAFETY] Using editReply for deferred interaction ${interactionId}`);
       return await interaction.editReply(options);
-    } 
+        }
     // If the interaction has already been replied to, use followUp
     else if (interaction.replied) {
       console.log(`[INTERACTION_SAFETY] Using followUp for replied interaction ${interactionId}`);
@@ -2159,7 +2386,7 @@ async function safeInteractionResponse(interaction, options) {
       }
       
       // Try editReply if possible
-      try {
+        try {
         if (typeof interaction.editReply === 'function') {
           console.log(`[INTERACTION_SAFETY] Attempting editReply for already handled interaction ${interactionId}`);
           return await interaction.editReply(options);
@@ -2177,7 +2404,7 @@ async function safeInteractionResponse(interaction, options) {
           content: 'There was an issue with the interaction. Please try again.',
           ...options
         });
-      }
+    }
     } catch (channelError) {
       console.error(`[INTERACTION_SAFETY] Final fallback failed:`, channelError.message);
     }
@@ -2415,6 +2642,7 @@ function getCategoryIdByType(type) {
   if (type === 'trophies') return '1322947795803574343';
   if (type === 'bulk') return '1322947859561320550';
   if (type === 'mastery') return '1322947859561320550';
+  if (type === 'other') return '1322947859561320550'; // Use the same category as bulk/mastery
   return null;
 }
 // Helper: Get channel name by type and userData

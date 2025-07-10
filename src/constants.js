@@ -9,34 +9,60 @@ const EMBED_COLOR = '#2B2D31';
 // Channel Categories and IDs
 const TICKET_CATEGORIES = {
   order: '1369951222429388810', // Replace with actual category ID for order tickets
-  help: '1234567890123456788',  // Replace with actual category ID for help tickets
-  purchase: '1234567890123456787', // Replace with actual category ID for purchase tickets
+  help: '1369951222429388810',  // Replace with actual category ID for help tickets
+  purchase: '1386011392968232990', // FIXED: Updated to correct purchase category ID
   BOOSTING: '1369951222429388810', // Use the same as order for now
   OTHER: '1369951222429388810' // Use the same as order for now
 };
 
 // Staff role IDs - give these roles access to ticket channels
 const STAFF_ROLES = [
-  '1366109737854304286' // Temporary staff role ID provided by user
-  // Add other staff role IDs here if needed
+  '1292933200389083196', // Owner role
+  '1358101527658627270', // Head Admin role  
+  '1292933924116500532', // Admin role
+  '987751357773672538'   // User JustRuben ID
 ];
+
+// Command permissions
+const LIST_COMMAND_ROLE = '1292933924116500532'; // Admin role
+const TICKET_PANEL_ALLOWED_USERS = [
+  '1292933200389083196', // Owner role
+  '1358101527658627270', // Head Admin role
+  '1292933924116500532', // Admin role
+  '987751357773672538',  // User JustRuben ID
+  '969310522866548746',  // Additional user ID for ticket panel access
+  '1346034712627646524'  // User who needs ticket panel access
+];
+
+// Move categories
+const MOVE_CATEGORIES = {
+  paid: '1369951222429388810',    // Update with actual paid category ID
+  add: '1369951222429388810',     // Update with actual add category ID  
+  sell: '1369951222429388810',    // Update with actual sell category ID
+  finished: '1369951222429388810' // Update with actual finished category ID
+};
+
+// Purchase account category
+const PURCHASE_ACCOUNT_CATEGORY = '1386011392968232990'; // FIXED: Updated to correct category ID
 
 // Staff user IDs for payment verification
 const PAYMENT_STAFF = {
   PAYPAL_VERIFIER: ['986164993080836096', '987751357773672538'], // Updated verifier IDs
-  IBAN_VERIFIER: '658351335967686659',
-  APPLE_GIFTCARD_VERIFIER: '1078003651701915779'
+  IBAN_VERIFIER: '987751357773672538',
+  APPLE_GIFTCARD_VERIFIER: '1078003651701915779',
+  BTC_VERIFIER: '987751357773672538' // Same as IBAN for now
 };
 
 // Role IDs for notifications
 const ROLE_IDS = {
   BOOST_AVAILABLE: '1303702944696504441',
   APPLE_GIFTCARD_STAFF: '1292933200389083196',
-  OWNER: '1292933200389083196', // Owner role ID
-  ADMIN: '1292933924116500532', // Admin role ID
-  HEAD_ADMIN: '1358101527658627270', // Head admin role ID
-  BOOSTER: '1303702944696504441', // Booster role ID updated
-  STAFF_ROLE: '1366109737854304286' // Add staff role ID here
+  OWNER: '1292933200389083196',        // Owner role ID (updated)
+  HEAD_ADMIN: '1358101527658627270',   // Head admin role ID (updated)
+  ADMIN: '1292933924116500532',        // Admin role ID (updated)
+  BOOSTER: '1303702944696504441',      // Booster role ID (updated)
+  CUSTOMER: '1292934863598653742',     // Customer role ID (updated)
+  STAFF_ROLE: '1366109737854304286'    // Staff role ID (unchanged)
 };
 
 // System channels
@@ -88,6 +114,32 @@ const RANKED_ORDER = [
 ];
 
 // Step costs for reference ranked pricing - These are CUMULATIVE costs
+const RANKED_STEP_COSTS = {
+  'Bronze 1': 0,
+  'Bronze 2': 0.25,
+  'Bronze 3': 0.60,
+  'Silver 1': 1.00,
+  'Silver 2': 1.50,
+  'Silver 3': 2.00,
+  'Gold 1': 2.50,
+  'Gold 2': 3.20,
+  'Gold 3': 3.90,
+  'Diamond 1': 4.60,
+  'Diamond 2': 6.10,
+  'Diamond 3': 7.60,
+  'Mythic 1': 9.10,
+  'Mythic 2': 11.60,
+  'Mythic 3': 14.60,
+  'Legendary 1': 18.10,
+  'Legendary 2': 25.10,
+  'Legendary 3': 35.10,
+  'Masters 1': 48.10,
+  'Masters 2': 98.10,
+  'Masters 3': 178.10,
+  'Pro': 298.10
+};
+
+// Step prices for reference ranked pricing - These are per-step costs
 const RANKED_STEP_PRICES = {
   'Bronze 1 to Bronze 2': 0.25,
   'Bronze 2 to Bronze 3': 0.35,
@@ -241,6 +293,7 @@ module.exports = {
   TROPHY_PRICE_TIERS,
   BULK_PRICE_TIERS,
   RANKED_ORDER,
+  RANKED_STEP_COSTS,
   RANKED_STEP_PRICES,
   MASTERY_ORDER,
   MASTERY_STEPS_COST,
@@ -249,5 +302,9 @@ module.exports = {
   EMOJIS,
   CRYPTO_OPTIONS,
   PAYMENT_STAFF,
-  ROLE_IDS
+  ROLE_IDS,
+  LIST_COMMAND_ROLE,
+  TICKET_PANEL_ALLOWED_USERS,
+  MOVE_CATEGORIES,
+  PURCHASE_ACCOUNT_CATEGORY
 }; 

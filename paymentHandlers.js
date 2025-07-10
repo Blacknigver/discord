@@ -23,6 +23,7 @@ const { paymentMethodHandlers } = require('./src/handlers/paymentMethodHandlers'
 const { cryptoPaymentHandlers, cryptoModalHandlers } = require('./src/handlers/cryptoPaymentHandlers');
 const { paypalWorkflowHandlers } = require('./src/handlers/paypalWorkflowHandlers');
 const { boostManagementHandlers } = require('./src/handlers/boostManagementHandlers');
+const { profilePayoutCompletedHandler, handleProfilePurchaseCompletion, profileIsDeliveredHandler, profileConfirmDeliveredHandler, profileNotDeliveredHandler, profileCancelConfirmationHandler } = require('./src/handlers/profileCompletionHandler.js');
 const { staffOperationsHandlers } = require('./src/handlers/staffOperationsHandlers');
 const { reviewFeedbackButtonHandlers, reviewFeedbackModalHandlers } = require('./src/handlers/reviewFeedbackHandlers');
 
@@ -37,10 +38,17 @@ const cryptoTimeouts = new Map();
 const allButtonHandlers = {
   ...paymentMethodHandlers,
   ...cryptoPaymentHandlers,
-  ...paypalWorkflowHandlers,
-  ...boostManagementHandlers,
-  ...staffOperationsHandlers,
-  ...reviewFeedbackButtonHandlers
+      ...paypalWorkflowHandlers,
+    ...boostManagementHandlers,
+    ...staffOperationsHandlers,
+    ...reviewFeedbackButtonHandlers,
+    
+    // Profile completion handlers
+    'profile_payout_completed': profilePayoutCompletedHandler,
+    'profile_is_delivered': profileIsDeliveredHandler,
+    'profile_confirm_delivered': profileConfirmDeliveredHandler,
+    'profile_not_delivered': profileNotDeliveredHandler,
+    'profile_cancel_confirmation': profileCancelConfirmationHandler,
 };
 
 /**

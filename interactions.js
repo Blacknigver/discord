@@ -80,159 +80,23 @@ function setupInteractions(client) {
     handleButtonInteraction: async (interaction) => {
       if (!interaction.isButton()) return false;
 
-    try {
-      const { customId } = interaction;
-      
-      // Skip if the interaction is no longer repliable
-      if (!interaction.isRepliable()) {
-        console.log(`[INTERACTION] Skipping non-repliable interaction: ${interaction.id}, button: ${customId}`);
-          return true;
-      }
-      
-      // Find the correct handler based on button ID
-      let handlerFound = false;
-      
-      // Handle review accept/deny buttons first (from review.js)
-      if (customId.startsWith('review_accept_') || customId.startsWith('review_deny_')) {
-        try {
-          const { handleButton } = require('./review.js');
-          await handleButton(interaction);
-          handlerFound = true;
-            return true;
+      try {
+        // Use the comprehensive button handler from interactions/buttonHandlers.js
+        const { handleButtonInteraction } = require('./interactions/buttonHandlers.js');
+        await handleButtonInteraction(interaction);
+        return true;
         } catch (error) {
-          console.error(`[INTERACTION] Error handling review moderation button ${customId}:`, error);
-          if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({
-              content: 'An error occurred while processing this review action.',
-              ephemeral: true
-            });
-          }
-          handlerFound = true;
-            return true;
-          }
-        }
-
-        // Handle ranked and mastery buttons
-        if (customId.startsWith('ranked_') && !customId.startsWith('ticket_')) {
-        await handleRankedRankSelection(interaction, customId.replace(/^ranked_/, ''));
-        handlerFound = true;
-      } else if (customId.startsWith('mastery_') && !customId.startsWith('ticket_')) {
-        await handleMasterySelection(interaction, customId.replace(/^mastery_/, ''));
-        handlerFound = true;
-      }
-      // Handle review and feedback buttons
-      else if (customId.startsWith('review_button_') || customId.startsWith('feedback_button_')) {
-        try {
-          // Get the base ID (review_button or feedback_button)
-          const baseId = customId.split('_').slice(0, 2).join('_');
-          
-          // Import the review/feedback handlers directly
-          const { reviewFeedbackButtonHandlers } = require('./paymentHandlers.js');
-          
-          if (reviewFeedbackButtonHandlers && reviewFeedbackButtonHandlers[baseId]) {
-            await reviewFeedbackButtonHandlers[baseId](interaction);
-            handlerFound = true;
-          } else {
-            console.error(`[INTERACTION] Review/feedback handler not found for ${baseId}`);
-            await interaction.reply({
-              content: 'This button function is currently unavailable.',
-              ephemeral: true
-            });
-            handlerFound = true;
-          }
-        } catch (error) {
-          console.error(`[INTERACTION] Error handling review/feedback button ${customId}:`, error);
-          if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({
-              content: 'An error occurred while processing your request.',
-              ephemeral: true
-            });
-          }
-          handlerFound = true;
-        }
-      }
-        else {
-      // Find the correct handler based on button ID
-          if (buttonHandlers && buttonHandlers[customId]) {
-        try {
-        await buttonHandlers[customId](interaction, client);
-        handlerFound = true;
-        } catch (handlerError) {
-          console.error(`[INTERACTION] Error in button handler for ${customId}:`, handlerError);
-          // Don't attempt to respond if the error is about the interaction
-          if (!handlerError.message.includes('Unknown interaction') && 
-              !handlerError.message.includes('already been acknowledged')) {
-            try {
-              if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({ 
-                  content: 'An error occurred with this action. Please try again later.', 
-                  ephemeral: true 
-                });
-              }
-            } catch (replyError) {
-              console.error(`[INTERACTION] Failed to send error reply for ${customId}:`, replyError);
-            }
-          }
-          handlerFound = true; // Mark as handled even if there was an error
-        }
-          }
-        // Check for prefix matches (like 'payment_completed_' etc)
-          if (!handlerFound && buttonHandlers) {
-          for (const key of Object.keys(buttonHandlers)) {
-            if (key.endsWith('_') && customId.startsWith(key)) {
-              try {
-              await buttonHandlers[key](interaction, client);
-              handlerFound = true;
-              break;
-              } catch (prefixHandlerError) {
-                console.error(`[INTERACTION] Error in prefix button handler ${key} for ${customId}:`, prefixHandlerError);
-                // Don't attempt to respond if the error is about the interaction
-                if (!prefixHandlerError.message.includes('Unknown interaction') && 
-                    !prefixHandlerError.message.includes('already been acknowledged')) {
-                  try {
-                    if (!interaction.replied && !interaction.deferred) {
-                      await interaction.reply({ 
-                        content: 'An error occurred with this action. Please try again later.', 
-                        ephemeral: true 
-                      });
-                    }
-                  } catch (replyError) {
-                    console.error(`[INTERACTION] Failed to send error reply for ${customId}:`, replyError);
-                  }
-                }
-                handlerFound = true; // Mark as handled even if there was an error
-                break;
-              }
-            }
-          }
-        }
-      }
-      
-      if (!handlerFound) {
-        console.warn(`[INTERACTION] Unhandled button interaction: ${customId}`);
+        console.error(`[INTERACTION] Error in comprehensive button handler:`, error);
         if (!interaction.replied && !interaction.deferred) {
           await interaction.reply({ 
-            content: 'This button does not have a handler.', 
+            content: 'An error occurred while processing your request.', 
             ephemeral: true 
-          }).catch(error => {
-            console.error(`[INTERACTION] Error replying to unhandled button: ${error}`);
+          }).catch(secondError => {
+            console.error(`[INTERACTION] Failed to send error response: ${secondError}`);
           });
         }
-      }
-        
-        return handlerFound;
-    } catch (error) {
-      console.error(`[INTERACTION] Error handling button interaction:`, error);
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ 
-          content: 'An error occurred while processing your request.', 
-          ephemeral: true 
-        }).catch(secondError => {
-          console.error(`[INTERACTION] Failed to send error response: ${secondError}`);
-        });
-      }
         return true; // Return true to indicate we handled the error
-    }
+      }
     },
 
     handleSelectMenuInteraction: async (interaction) => {
@@ -242,7 +106,7 @@ function setupInteractions(client) {
       const { customId } = interaction;
       let handlerFound = false;
       
-        console.log(`[INTERACTION] Select menu used: ${customId} by user ${interaction.user.id}, values: ${interaction.values.join(', ')}`);
+        // Logging only errors: remove verbose select menu usage logs
         
         // Check for exact match first
         if (selectMenuHandlers && selectMenuHandlers[customId]) {
@@ -304,7 +168,7 @@ function setupInteractions(client) {
       if (!interaction.isModalSubmit()) return false;
     
     try {
-        let handlerFound = false;
+      let handlerFound = false;
         const customId = interaction.customId;
         
         // Track processed modal IDs to prevent double handling
@@ -347,7 +211,103 @@ function setupInteractions(client) {
           }
         }
         
-        // Handle other modal types
+        // ===== Profile purchase description modal =====
+        if (customId.startsWith('description_modal_')) {
+          const parts = customId.split('_'); // description modal <listingId> <userId>
+          if (parts.length < 4) return true;
+          const listingId = parts[2];
+          const authorizedUserId = parts[3];
+
+          if (interaction.user.id !== authorizedUserId) {
+            await interaction.reply({ content: 'You are not authorized to submit this description.', ephemeral: true });
+            return true;
+          }
+
+          const description = interaction.fields.getTextInputValue('account_description');
+
+          const announcementChannelId = '1293288739669413928';
+          try {
+            const targetChannel = await interaction.client.channels.fetch(announcementChannelId);
+            if (targetChannel) {
+              const { EmbedBuilder } = require('discord.js');
+              
+              // Get the image from profilePurchaseFlow
+              let imageUrl = null;
+              const { profilePurchaseFlow } = require('./interactions/buttonHandlers.js');
+              if (profilePurchaseFlow && profilePurchaseFlow.has && profilePurchaseFlow.has(interaction.channel.id)) {
+                const flowData = profilePurchaseFlow.get(interaction.channel.id);
+                imageUrl = flowData?.imageUrl;
+              }
+
+              const msgEmbed = new EmbedBuilder()
+                .setDescription(`**# ${description} 𝐏𝐫𝐨𝐟𝐢𝐥𝐞 <:winmatcherino:1298703851934711848>**\n**Get yours now at:**\n> <#1352022023307657359> \n> <#1352956136197984297> \n> <#1364568631194681344>`)
+;
+
+              let messageOptions = { 
+                embeds: [msgEmbed]
+                // files: [] // Removed BrawlShop.png file attachment due to guild restrictions
+              };
+              
+              // If we have an image URL, handle it properly
+              if (imageUrl) {
+                if (imageUrl.includes('media.discordapp.net') || imageUrl.includes('cdn.discordapp.com')) {
+                  // For Discord CDN URLs, we need to download and re-upload as attachment
+                  try {
+                    const axios = require('axios');
+                    const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+                    if (response.status === 200) {
+                      const buffer = Buffer.from(response.data);
+                      const { AttachmentBuilder } = require('discord.js');
+                      const attachment = new AttachmentBuilder(buffer, { name: 'profile_image.png' });
+                      messageOptions.files.push(attachment); // Add the user's image as additional file
+                      msgEmbed.setImage('attachment://profile_image.png'); // Set as main image (bottom)
+                    }
+                  } catch (fetchError) {
+                    console.error('[DESCRIPTION_MODAL] Failed to fetch Discord CDN image:', fetchError);
+                    // Fallback: just set the image URL in embed
+                    msgEmbed.setImage(imageUrl);
+                    messageOptions = { 
+                      embeds: [msgEmbed],
+                      files: [] // Removed BrawlShop.png file attachment due to guild restrictions
+                    };
+                  }
+                } else {
+                  // For other URLs, set directly as image
+                  msgEmbed.setImage(imageUrl);
+                  messageOptions = { 
+                    embeds: [msgEmbed],
+                    files: [] // Removed BrawlShop.png file attachment due to guild restrictions
+                  };
+                }
+              }
+
+              await targetChannel.send(messageOptions);
+            }
+            
+            // Clean up the profilePurchaseFlow entry
+            const { profilePurchaseFlow } = require('./interactions/buttonHandlers.js');
+            if (profilePurchaseFlow && profilePurchaseFlow.delete) {
+              profilePurchaseFlow.delete(interaction.channel.id);
+            }
+            
+            await interaction.reply({ content: '✅ Description uploaded and announcement sent.', ephemeral: true });
+            
+            // ===== START PROFILE COMPLETION FLOW =====
+            console.log('[PROFILE_COMPLETION] Starting completion flow after announcement sent');
+            try {
+              const { handleProfilePurchaseCompletion } = require('./src/handlers/profileCompletionHandler.js');
+              await handleProfilePurchaseCompletion(interaction, listingId, null);
+            } catch (completionError) {
+              console.error('[PROFILE_COMPLETION] Error in completion flow:', completionError);
+            }
+          } catch (err) {
+            console.error('[DESCRIPTION_MODAL] Failed to send description embed:', err);
+            await interaction.reply({ content: 'An error occurred while sending the announcement.', ephemeral: true });
+          }
+          return true;
+        }
+
+        // Handle modal submissions based on other customId
         if (!handlerFound) {
       // Check for exact match
           if (modalHandlers && modalHandlers[customId]) {

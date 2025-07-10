@@ -16,7 +16,7 @@ const LOGO_URL          = 'https://cdn.discordapp.com/attachments/98775315536007
 
 // Users and roles with permission to moderate reviews
 const ALLOWED_ROLES = ['1292933200389083196', '1358101527658627270'];
-const ALLOWED_USERS = ['658351335967686659', '986164993080836096', '987751357773672538'];
+const ALLOWED_USERS = ['987751357773672538', '986164993080836096'];
 
 module.exports = {
   data: new SlashCommandBuilder()

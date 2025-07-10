@@ -5,7 +5,7 @@ const config = {
   // Bot configuration
   TOKEN: process.env.TOKEN || '',
   CLIENT_ID: process.env.CLIENT_ID || '',
-  GUILD_ID: process.env.GUILD_ID || '',
+  GUILD_ID: process.env.GUILD_ID || '1292895164595175444', // Main guild (Brawl Shop)
 
   // Discord settings
   PREFIX: '!',
@@ -32,81 +32,65 @@ const config = {
   ENABLE_AUTO_CLOSE: process.env.ENABLE_AUTO_CLOSE === 'true' || true,
   ENABLE_CRYPTO_PAYMENTS: process.env.ENABLE_CRYPTO_PAYMENTS === 'true' || true,
   
-  // Command permissions
-  // TEST SERVER VALUES - FOR PRODUCTION REPLACE WITH: 
-  // ADMIN_ROLES: ['986164993080836096', '658351335967686659']
+  // Command permissions - Updated to production values
   ADMIN_ROLES: [
-    '1366109737854304286', // Test server role with all permissions
-    '658351335967686659'  // User JustRuben ID
+    '1292933200389083196', // Owner role
+    '1358101527658627270', // Head Admin role  
+    '1292933924116500532', // Admin role
+    '987751357773672538'   // User JustRuben ID
   ],
   
   // Business settings
   DEFAULT_CURRENCY: 'EUR',
   PAYMENT_TIMEOUT_MINUTES: 30,
   
-  // Added required constants for handlers.js
-  // TEST SERVER VALUES - FOR PRODUCTION REPLACE WITH: 
-  // TICKET_PANEL_ALLOWED_USERS: ['986164993080836096', '658351335967686659']
+  // Production values for ticket system
   TICKET_PANEL_ALLOWED_USERS: [
-    '1366109737854304286', // Test server role with all permissions
-    '658351335967686659', // User JustRuben ID
-    '969310522866548746', // Additional user ID for ticket panel access
-    '1346034712627646524',  // User who needs ticket panel access
-    '987751357773672538'  // User who needs ticketpanel access
+    '1292933200389083196', // Owner role
+    '1358101527658627270', // Head Admin role
+    '1292933924116500532', // Admin role
+    '987751357773672538',  // User JustRuben ID
+    '969310522866548746',  // Additional user ID for ticket panel access
+    '1346034712627646524'  // User who needs ticket panel access
   ],
-  // TEST SERVER VALUE - FOR PRODUCTION REPLACE WITH: '1234567890123456780'
-  LIST_COMMAND_ROLE: '1366109737854304286', // Test server role with all permissions
-  // TEST SERVER VALUES - FOR PRODUCTION REPLACE WITH: 
-  // STAFF_ROLES: ['986164993080836096', '658351335967686659', '1234567890123456784']
+  LIST_COMMAND_ROLE: '1292933924116500532', // Admin role
   STAFF_ROLES: [
-    '1366109737854304286', // Test server role with all permissions
-    '658351335967686659', // User JustRuben ID
+    '1292933200389083196', // Owner role
+    '1358101527658627270', // Head Admin role
+    '1292933924116500532', // Admin role
+    '987751357773672538'   // User JustRuben ID
   ],
-  // TEST SERVER VALUES - FOR PRODUCTION REPLACE WITH:
-  // MOVE_CATEGORIES: {
-  //   paid: '1234567890123456778',
-  //   add: '1234567890123456777',
-  //   sell: '1234567890123456776',
-  //   finished: '1234567890123456775'
-  // }
+  // You'll need to provide the actual category IDs for your main server
+  // These are placeholder values - update with your actual category IDs
   MOVE_CATEGORIES: {
-    paid: '1369951222429388810',
-    add: '1369951222429388810',
-    sell: '1369951222429388810',
-    finished: '1369951222429388810'
+    paid: '1369951222429388810',    // Update with actual paid category ID
+    add: '1369951222429388810',     // Update with actual add category ID  
+    sell: '1369951222429388810',    // Update with actual sell category ID
+    finished: '1369951222429388810' // Update with actual finished category ID
   },
-  // TEST SERVER VALUES - FOR PRODUCTION REPLACE WITH:
-  // TICKET_CATEGORIES: {
-  //   order: '1234567890123456789',
-  //   help: '1234567890123456788',
-  //   purchase: '1234567890123456787'
-  // }
   TICKET_CATEGORIES: {
-    order: '1369951222429388810', // Test server category ID
-    help: '1369951222429388810',  // Test server category ID
-    purchase: '1369951222429388810' // Test server category ID
+    order: '1369951222429388810',    // Update with actual order category ID
+    help: '1369951222429388810',     // Update with actual help category ID
+    purchase: '1369951222429388810'  // Update with actual purchase category ID
   },
-  // TEST SERVER VALUE - FOR PRODUCTION REPLACE WITH: '1234567890123456787'
-  PURCHASE_ACCOUNT_CATEGORY: '1369951222429388810', // Test server category ID
-  // TEST SERVER VALUE - FOR PRODUCTION REPLACE WITH: '1351281086134747298'
-  ADD_115K_ROLE: '1366109737854304286', // Test server role with all permissions
-  // TEST SERVER VALUE - FOR PRODUCTION REPLACE WITH: '1351281117445099631'
-  MATCHERINO_WINNER_ROLE: '1366109737854304286', // Test server role with all permissions
-  // TEST SERVER VALUE - FOR PRODUCTION REPLACE WITH: '1354587880382795836'
-  AUTO_CLOSE_LOG_CHANNEL: '1369951226485018714', // Test server channel ID
+  PURCHASE_ACCOUNT_CATEGORY: '1369951222429388810', // Update with actual purchase category ID
+  ADD_115K_ROLE: '1292933924116500532',             // Using Admin role - update if you have specific role
+  MATCHERINO_WINNER_ROLE: '1292933924116500532',    // Using Admin role - update if you have specific role
+  AUTO_CLOSE_LOG_CHANNEL: '1369951226485018714',   // Update with actual log channel ID
   MAX_TICKETS_PER_USER: 5, // Maximum number of tickets per user
   
   // Role IDs
   ROLES: {
     OWNER: '1292933200389083196',
-    OWNER_ROLE: '1381713866018259075',
+    OWNER_ROLE: '1292933200389083196',
     HEAD_ADMIN: '1358101527658627270',
-    HEAD_ADMIN_ROLE: '1381713912566775980',
+    HEAD_ADMIN_ROLE: '1358101527658627270',
     ADMIN: '1292933924116500532',
-    ADMIN_ROLE: '1381713892501356585',
+    ADMIN_ROLE: '1292933924116500532',
     BOOSTER: '1303702944696504441',
     BOOSTER_ROLE: '1303702944696504441',
-    STAFF_ROLE: '1366109737854304286',
+    CUSTOMER_ROLE: '1292934863598653742',
+    STAFF_ROLE: '1292933924116500532', // Updated to use actual Admin role
     CRYPTO_ADMIN_ROLE: '1381713912566775980'
   },
   

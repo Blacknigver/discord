@@ -14,16 +14,12 @@ async function handleCryptoButtons(interaction) {
   try {
     const customId = interaction.customId;
     
-    // Handle crypto payment completed buttons
-    if (customId === 'payment_completed_btc') {
-      return handleCryptoPaymentCompleted(interaction, 'btc');
-    } else if (customId === 'payment_completed_ltc') {
-      return handleCryptoPaymentCompleted(interaction, 'ltc');
-    } else if (customId === 'payment_completed_sol') {
-      return handleCryptoPaymentCompleted(interaction, 'sol');
-    }
+    // Handle crypto payment completed buttons - these are handled in interactions/buttonHandlers.js
+    // payment_completed_btc, payment_completed_ltc, payment_completed_sol are handled there
     
-    // Handle copy address/amount buttons
+    // Handle copy address/amount buttons - these are handled in interactions/buttonHandlers.js
+    // copy_ltc_address, copy_sol_address, copy_btc_address are handled there
+    
     if (customId.startsWith('copy_')) {
       const parts = customId.split('_');
       const coinType = parts[1];

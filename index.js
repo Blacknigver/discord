@@ -10,7 +10,8 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMessageReactions
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildInvites
   ]
 });
 
@@ -19,11 +20,16 @@ client.handlers = new Collection();
 
 // Initialize handlers
 const { PayPalHandler, PayPalVerifierHandler, TicketManager } = require('./src/handlers');
+const InviteHandler = require('./src/handlers/inviteHandler');
 
 // Register handlers
 client.handlers.set('paypal', new PayPalHandler(client));
 client.handlers.set('paypalVerifier', new PayPalVerifierHandler(client));
 client.handlers.set('ticketManager', new TicketManager(client));
+
+// Initialize invite tracking system
+const inviteHandler = new InviteHandler(client);
+client.inviteHandler = inviteHandler;
 
 // Debug logging
 console.log('Environment variables loaded:');
@@ -53,7 +59,7 @@ client.on('interactionCreate', async interaction => {
     setTimeout(() => {
       processedInteractions.delete(interaction.id);
     }, 5000);
-
+    
     let handled = false;
 
     // Use interaction utilities if available
@@ -76,17 +82,17 @@ client.on('interactionCreate', async interaction => {
     
     // If still not handled, try legacy handlers
     if (!handled) {
-      if (interaction.isChatInputCommand()) {
+    if (interaction.isChatInputCommand()) {
         await handleSlashCommand(interaction);
-      } else if (interaction.isButton()) {
-        await processButtonInteraction(interaction);
+    } else if (interaction.isButton()) {
+      await processButtonInteraction(interaction);
       }
     }
   } catch (error) {
     console.error('Error handling interaction:', error);
     const reply = {
       content: 'There was an error processing your request!',
-      ephemeral: true 
+        ephemeral: true 
     };
     
     try {
@@ -119,6 +125,44 @@ async function handleSlashCommand(interaction) {
         content: 'Ticket panel created!',
         ephemeral: true
       });
+    }
+
+    // ===== /addbalance & /removebalance handling =====
+    else if (commandName === 'addbalance' || commandName === 'removebalance') {
+      const ADMIN_IDS = ['987751357773672538', '986164993080836096'];
+      if (!ADMIN_IDS.includes(interaction.user.id)) {
+        return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+      }
+
+      const targetUser = interaction.options.getUser('user', true);
+      const amountRaw = interaction.options.getNumber('amount', true);
+      const amount = parseFloat(amountRaw);
+
+      if (isNaN(amount) || amount <= 0) {
+        return interaction.reply({ content: 'Invalid amount specified.', ephemeral: true });
+      }
+
+      const db = require('./database');
+      try {
+        await db.waitUntilConnected();
+      } catch {
+        return interaction.reply({ content: 'Database not connected.', ephemeral: true });
+      }
+
+      const delta = commandName === 'addbalance' ? amount : -amount;
+
+      try {
+        const res = await db.query('UPDATE affiliate_links SET balance = balance + $2 WHERE user_id = $1 RETURNING balance', [targetUser.id, delta]);
+        if (res.rowCount === 0) {
+          return interaction.reply({ content: 'Target user does not have an affiliate link record.', ephemeral: true });
+        }
+        const newBal = parseFloat(res.rows[0].balance).toFixed(2);
+        await interaction.reply({ content: `Updated balance for <@${targetUser.id}>. New balance: €${newBal}`, ephemeral: true });
+      } catch (err) {
+        console.error('[ADMIN_BALANCE_CMD] Error:', err);
+        await interaction.reply({ content: 'Failed to update balance.', ephemeral: true });
+      }
+      return;
     }
   } catch (error) {
     console.error(`Error handling slash command ${commandName}:`, error);
@@ -180,9 +224,24 @@ const { commands } = require('./commands.js');
 const token = process.env.TOKEN;
 
 // Define slash commands
-const defaultCommands = [
-  // Review command is now handled in commands.js
-];
+// =============================
+// Define extra admin-only commands (/addbalance & /removebalance)
+// =============================
+
+const addBalanceCommand = new SlashCommandBuilder()
+  .setName('addbalance')
+  .setDescription('Add balance to an affiliate user')
+  .addUserOption(opt => opt.setName('user').setDescription('User to add balance to').setRequired(true))
+  .addNumberOption(opt => opt.setName('amount').setDescription('Amount to add (use dot for cents)').setRequired(true));
+
+const removeBalanceCommand = new SlashCommandBuilder()
+  .setName('removebalance')
+  .setDescription('Remove balance from an affiliate user')
+  .addUserOption(opt => opt.setName('user').setDescription('User to remove balance from').setRequired(true))
+  .addNumberOption(opt => opt.setName('amount').setDescription('Amount to remove (use dot for cents)').setRequired(true));
+
+// By keeping these in-code (not in commands.js) we ensure they are registered once and handled locally.
+const defaultCommands = [addBalanceCommand, removeBalanceCommand];
 
 // Combine default commands with imported commands
 const allCommands = [...defaultCommands, ...commands];
@@ -190,6 +249,15 @@ const allCommands = [...defaultCommands, ...commands];
 // When the client is ready, run this code (only once)
 client.once(Events.ClientReady, async readyClient => {
   console.log(`Ready! Logged in as ${readyClient.user.tag}`);
+  
+  // Initialize invite tracking system
+  try {
+    console.log('[BOT] Initializing invite tracking system...');
+    await inviteHandler.initialize();
+    console.log('[BOT] Invite tracking system initialized successfully');
+  } catch (error) {
+    console.error('[BOT] Failed to initialize invite tracking system:', error);
+  }
   
   // Register slash commands
   try {
@@ -203,7 +271,7 @@ client.once(Events.ClientReady, async readyClient => {
     );
     
     console.log('Successfully reloaded application (/) commands.');
-  } catch (error) {
+    } catch (error) {
     console.error('Error refreshing application commands:', error);
   }
   
@@ -214,14 +282,14 @@ client.once(Events.ClientReady, async readyClient => {
     console.log('Successfully loaded handlers.js');
     
     // Setup ticket handlers ONLY ONCE
-    if (typeof setupTicketHandlers === 'function') {
-      setupTicketHandlers(client);
+  if (typeof setupTicketHandlers === 'function') {
+    setupTicketHandlers(client);
       console.log('Ticket handlers have been set up');
-    }
-    
+  }
+  
     // Setup interactions ONLY ONCE 
-    if (typeof setupInteractions === 'function') {
-      setupInteractions(client);
+  if (typeof setupInteractions === 'function') {
+    setupInteractions(client);
       console.log('Interaction handlers have been set up');
     }
   } catch (error) {
@@ -323,7 +391,7 @@ async function processButtonInteraction(interaction) {
       }
       
       // Add permissions for the booster role - VIEW ONLY, no send permissions
-      const boosterRoleId = config.ROLES.BOOSTER_ROLE || '1303702944696504441';
+      const boosterRoleId = config.ROLES.BOOSTER_ROLE;
       await interaction.channel.permissionOverwrites.edit(boosterRoleId, {
         ViewChannel: true,
         SendMessages: false,
@@ -334,6 +402,10 @@ async function processButtonInteraction(interaction) {
       
       // Send boost available embed as a reply to the verification message
       await sendBoostAvailableEmbed(interaction.channel, {}, creatorId, boosterRoleId, message);
+      
+      // Clean up payment method messages AFTER boost available is sent
+      const { cleanupMessages } = require('./src/utils/messageCleanup.js');
+      await cleanupMessages(interaction.channel, null, 'payment_confirmed');
       
       return;
     } catch (err) {

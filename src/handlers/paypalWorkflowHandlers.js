@@ -85,33 +85,17 @@ const paypalTosDenyHandler = async (interaction) => {
 const paypalDenyConfirmedHandler = async (interaction) => {
   try {
     const userId = interaction.user.id;
+    console.log(`PayPal TOS denial confirmed by user ${userId} in channel ${interaction.channel.id}`);
     
-    // Delete the confirmation message
-    await interaction.message.delete().catch(() => {});
+    // Update the interaction to show it's been processed
+    await interaction.update({
+      content: 'Your denial has been confirmed.',
+      embeds: [],
+      components: []
+    });
     
-    // Make the original Accept/Deny buttons unclickable
-    const originalMessage = interaction.message.reference ? 
-      await interaction.channel.messages.fetch(interaction.message.reference.messageId).catch(() => null) : null;
-    
-    if (originalMessage) {
-      const disabledAcceptBtn = new ButtonBuilder()
-        .setCustomId('paypal_tos_accept_disabled')
-        .setLabel('Accept')
-        .setStyle(ButtonStyle.Success)
-        .setDisabled(true);
-        
-      const disabledDenyBtn = new ButtonBuilder()
-        .setCustomId('paypal_tos_deny_disabled')
-        .setLabel('Deny')
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(true);
-        
-      await originalMessage.edit({
-        components: [new ActionRowBuilder().addComponents(disabledAcceptBtn, disabledDenyBtn)]
-      });
-    }
-    
-    // Send the denial confirmed embed
+    // Send the denial confirmed embed to the channel
+    const { sendPayPalTosDenialConfirmedEmbed } = require('../../ticketPayments');
     await sendPayPalTosDenialConfirmedEmbed(interaction.channel, userId);
   } catch (error) {
     console.error('Error handling PayPal TOS denial confirmation:', error);
@@ -129,8 +113,14 @@ const paypalDenyConfirmedHandler = async (interaction) => {
  */
 const paypalDenyCancelledHandler = async (interaction) => {
   try {
-    // Simply delete the confirmation message
-    await interaction.message.delete();
+    console.log(`PayPal TOS denial cancelled by user ${interaction.user.id} in channel ${interaction.channel.id}`);
+    
+    // Update the interaction to dismiss the confirmation dialog
+    await interaction.update({
+      content: 'Denial cancelled. You can use the Accept/Deny buttons again.',
+      embeds: [],
+      components: []
+    });
   } catch (error) {
     console.error('Error handling PayPal TOS denial cancellation:', error);
     if (!interaction.replied && !interaction.deferred) {
@@ -243,7 +233,7 @@ const paypalPaymentReceivedHandler = async (interaction) => {
     }
     
     // Find the booster role in the guild
-    const roleId = '1303702944696504441'; // Hardcoded booster role ID
+    const roleId = config.ROLES.BOOSTER_ROLE; // Booster role from config
     let boosterRole;
     
     try {
@@ -297,6 +287,10 @@ const paypalPaymentReceivedHandler = async (interaction) => {
     // Send boost available embed AFTER adding the role permissions
     const { sendBoostAvailableEmbed } = require('../../ticketPayments');
     await sendBoostAvailableEmbed(interaction.channel, {}, creatorId, roleId, interaction.message);
+    
+    // Clean up payment method messages AFTER boost available is sent
+    const { cleanupMessages } = require('../utils/messageCleanup.js');
+    await cleanupMessages(interaction.channel, null, 'payment_confirmed');
     
     return true;
   } catch (error) {
@@ -401,17 +395,8 @@ async function sendPayPalInfoEmbed(channel, userId) {
   console.log(`Sending PayPal info to user ${userId} in channel ${channel.id}`);
 }
 
-async function sendPayPalTosDeniedEmbed(interaction) {
-  // This function would be implemented in ticketPayments.js
-  // For now, just log the action
-  console.log(`PayPal TOS denied by user ${interaction.user.id}`);
-}
-
-async function sendPayPalTosDenialConfirmedEmbed(channel, userId) {
-  // This function would be implemented in ticketPayments.js
-  // For now, just log the action
-  console.log(`PayPal TOS denial confirmed by user ${userId} in channel ${channel.id}`);
-}
+// Import the actual functions from ticketPayments.js
+const { sendPayPalTosDeniedEmbed, sendPayPalTosDenialConfirmedEmbed } = require('../../ticketPayments');
 
 // Combine all PayPal workflow handlers
 const paypalWorkflowHandlers = {

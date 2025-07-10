@@ -89,6 +89,48 @@ const messageCommands = {
       new ButtonBuilder().setCustomId('friendlist_playerinfo').setLabel('Player Information').setStyle(ButtonStyle.Primary)
     );
     await message.channel.send({ embeds: [embed, new EmbedBuilder().setDescription('# ⬆️ ALL ADDS ARE LIFETIME')], components: [actions] });
+  },
+
+  testpanel: async (message) => {
+    if (!TICKET_PANEL_ALLOWED_USERS || !Array.isArray(TICKET_PANEL_ALLOWED_USERS) || !TICKET_PANEL_ALLOWED_USERS.includes(message.author.id)) {
+      return message.reply("You don't have permission!");
+    }
+
+    const mainEmbed = new EmbedBuilder()
+      .setImage('attachment://bs.png')
+      .setTitle('Welcome to Brawl Shop')
+      .setDescription(
+        'Brawl Shop provides quick delivery Boosts, Account Sales, Carries, and more. We prioritize speed and fair pricing, all of our Boosting & Carry orders are handled by one of the members of our top-tier team. Our team is made up of experienced players who will deliver you with fast and reliable results.\n\n' +
+        'Start out by selecting the type of Boost or Carry you want by using one of the buttons attached.\n\n' +
+        '[⭐ Our Reviews](https://discord.com/channels/1292895164595175444/1293288484487954512)\n\n' +
+        '────────────────────────────────────\n\n' +
+        '• Purchasing an account? Check out the Accounts category instead.\n' +
+        '• Our prices are shown at <#1364565680371929220>, <#1364565488260223057> & <#1364565759698927636>.'
+      )
+      .setColor('#4a90e2');
+
+    const ticketButtons = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('ticket_trophies').setLabel('Trophies').setEmoji('<:trophy:1301901071471345664>').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('ticket_ranked').setLabel('Ranked').setEmoji('<:Masters:1293283897618075728>').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('ticket_bulk').setLabel('Bulk Trophies').setEmoji('<:gold_trophy:1351658932434768025>').setStyle(ButtonStyle.Primary)
+    );
+
+    const ticketButtons2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('ticket_mastery').setLabel('Mastery').setEmoji('<:mastery:1351659726991134832>').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('ticket_other').setLabel('Other').setEmoji('<:winmatcherino:1298703851934711848>').setStyle(ButtonStyle.Success)
+    );
+
+    try {
+      await message.channel.send({ 
+        embeds: [mainEmbed], 
+        components: [ticketButtons, ticketButtons2],
+        files: [{ attachment: 'bs.png', name: 'bs.png' }]
+      });
+      await message.reply('Test panel created!');
+    } catch (error) {
+      console.error('Error creating test panel:', error);
+      await message.reply('Error creating test panel. Make sure bs.png exists in the root directory.');
+    }
   }
 };
 

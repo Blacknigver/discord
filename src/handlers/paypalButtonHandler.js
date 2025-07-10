@@ -219,10 +219,26 @@ async function handlePayPalPaymentCompleted(interaction, client) {
   try {
     console.log(`[PAYPAL_BUTTON] User ${interaction.user.id} clicked Payment Completed`);
     
-    // Check if user is the ticket creator
     const channelName = interaction.channel.name;
     
-    if (!channelName.includes(interaction.user.username.toLowerCase())) {
+    // Sanitize the username exactly the same way we do when constructing the ticket channel name
+    const sanitizeUsername = (name) => name.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase();
+    const sanitizedUsername = sanitizeUsername(interaction.user.username);
+
+    let isCreator = channelName.includes(sanitizedUsername);
+
+    // If the sanitized username check fails, fall back to comparing against the user ID stored in the channel topic (if any)
+    if (!isCreator) {
+      const topic = interaction.channel.topic || '';
+      // Match either a mention (User: <@123456789012345678>) or a plain "User ID: 123456789012345678"
+      const idMatch = topic.match(/<@!?(\d+)>|User ID:\s*(\d+)/);
+      if (idMatch) {
+        const topicUserId = idMatch[1] || idMatch[2];
+        isCreator = topicUserId === interaction.user.id;
+      }
+    }
+
+    if (!isCreator) {
       return interaction.reply({
         content: 'Only the ticket creator can mark the payment as completed.',
         ephemeral: true
@@ -336,12 +352,12 @@ async function handlePayPalPaymentCompleted(interaction, client) {
                         .setCustomId('payment_received')
                         .setLabel('Payment Received')
                         .setStyle(ButtonStyle.Success)
-                        .setEmoji('1357478063616688304'),
+                        .setEmoji('<:checkmark:1357478063616688304>'),
                       new ButtonBuilder()
                         .setCustomId('payment_not_received')
                         .setLabel('Not Received')
                         .setStyle(ButtonStyle.Danger)
-                        .setEmoji('1351689463453061130')
+                        .setEmoji('<:cross:1351689463453061130>')
                     )
                   ]
                 });
@@ -363,12 +379,12 @@ async function handlePayPalPaymentCompleted(interaction, client) {
                         .setCustomId('payment_received')
                         .setLabel('Payment Received')
                         .setStyle(ButtonStyle.Success)
-                        .setEmoji('1357478063616688304'),
+                        .setEmoji('<:checkmark:1357478063616688304>'),
                       new ButtonBuilder()
                         .setCustomId('payment_not_received')
                         .setLabel('Not Received')
                         .setStyle(ButtonStyle.Danger)
-                        .setEmoji('1351689463453061130')
+                        .setEmoji('<:cross:1351689463453061130>')
                     )
                   ]
                 });
@@ -393,12 +409,12 @@ async function handlePayPalPaymentCompleted(interaction, client) {
                       .setCustomId('payment_received')
                       .setLabel('Payment Received')
                       .setStyle(ButtonStyle.Success)
-                      .setEmoji('1357478063616688304'),
+                      .setEmoji('<:checkmark:1357478063616688304>'),
                     new ButtonBuilder()
                       .setCustomId('payment_not_received')
                       .setLabel('Not Received')
                       .setStyle(ButtonStyle.Danger)
-                      .setEmoji('1351689463453061130')
+                      .setEmoji('<:cross:1351689463453061130>')
                   )
                 ]
               });
@@ -484,16 +500,27 @@ async function handlePayPalPaymentReceived(interaction) {
       // Continue even if update fails, we can still proceed with permissions and showing the next embed
     }
     
-    // Get ticket creator from message content
-    const creatorMention = message.embeds[0].description.match(/<@(\d+)>/);
-    const creatorId = creatorMention ? creatorMention[1] : null;
-    
+    // Try to determine the ticket creator (user who opened ticket)
+    let creatorId = null;
+    try {
+      const mentionMatch = message.embeds?.[0]?.description?.match(/<@(\d+)>/);
+      creatorId = mentionMatch ? mentionMatch[1] : null;
+      // Fallback #1: try to parse last segment of channel name (common pattern)
+      if (!creatorId && interaction.channel?.name) {
+        const seg = interaction.channel.name.split('-').pop();
+        if (/^\d{17,19}$/.test(seg)) creatorId = seg; // looks like a snowflake
+      }
+      // Fallback #2: first message author in channel
+      if (!creatorId) {
+        const firstMsg = (await interaction.channel.messages.fetch({ limit: 1, after: '0' })).first();
+        creatorId = firstMsg?.author?.id || null;
+      }
+    } catch(e) {
+      console.warn('[PAYPAL_BUTTON] Error attempting to resolve creatorId:', e.message);
+    }
+
     if (!creatorId) {
-      console.error('[PAYPAL_BUTTON] Could not determine ticket creator from message');
-      return interaction.followUp({
-        content: 'Error: Could not determine ticket creator. Please contact an admin.',
-        ephemeral: true
-      });
+      console.warn('[PAYPAL_BUTTON] Creator not found – continuing without ping');
     }
     
     // Move the channel to the paid category
@@ -508,7 +535,7 @@ async function handlePayPalPaymentReceived(interaction) {
     
     // Add permissions for the booster role - VIEW ONLY, no send permissions
     try {
-      const boosterRoleId = config.ROLES?.BOOSTER_ROLE || '1303702944696504441';
+      const boosterRoleId = config.ROLES?.BOOSTER_ROLE;
       
       // First try to fetch the role from the guild
       try {
@@ -551,20 +578,30 @@ async function handlePayPalPaymentReceived(interaction) {
     // Send boost available embed
     try {
       const { sendBoostAvailableEmbed } = require('../../ticketPayments');
-      await sendBoostAvailableEmbed(interaction.channel, {}, creatorId, '1303702944696504441', message);
+      await sendBoostAvailableEmbed(
+        interaction.channel,
+        {},
+        creatorId || interaction.user.id,
+        config.ROLES.BOOSTER_ROLE,
+        message
+      );
       console.log(`[PAYPAL_BUTTON] Sent boost available embed for user ${creatorId}`);
+      
+      // Clean up payment method messages AFTER boost available is sent
+      const { cleanupMessages } = require('../utils/messageCleanup.js');
+      await cleanupMessages(interaction.channel, null, 'payment_confirmed');
     } catch (embedError) {
       console.error(`[PAYPAL_BUTTON] Error sending boost available embed: ${embedError.message}`);
       
       // Fallback to sending a basic message if the embed fails
       await interaction.channel.send({
-        content: `<@&1303702944696504441> This boost has been paid for and is available. Claim this boost by clicking the 'Claim Boost' button below.`,
+        content: `<@&${config.ROLES.BOOSTER_ROLE}> This boost has been paid for and is available. Claim this boost by clicking the 'Claim Boost' button below.`,
         components: [
           new ActionRowBuilder().addComponents(
             new ButtonBuilder()
               .setCustomId('claim_boost')
               .setLabel('Claim Boost')
-              .setEmoji('1357478063616688304')
+              .setEmoji('<:checkmark:1357478063616688304>')
               .setStyle(ButtonStyle.Success)
           )
         ]
@@ -652,7 +689,7 @@ async function handleClaimBoost(interaction) {
     console.log(`[PAYPAL_BUTTON] User ${interaction.user.id} claiming boost`);
     
     // Hardcode the correct booster role ID
-    const boosterRoleId = '1303702944696504441';
+    const boosterRoleId = config.ROLES.BOOSTER_ROLE;
     
     // Debug log all roles the user has
     const memberRoles = [];
@@ -827,13 +864,13 @@ async function handleClaimBoost(interaction) {
     const completedButton = new ButtonBuilder()
       .setCustomId('boost_completed')
       .setLabel('Boost Completed')
-      .setEmoji('1357478063616688304')
+      .setEmoji('<:checkmark:1357478063616688304>')
       .setStyle(ButtonStyle.Success);
     
     const cancelButton = new ButtonBuilder()
       .setCustomId('boost_cancel')
       .setLabel('Cancel Boost')
-      .setEmoji('1351689463453061130')
+      .setEmoji('<:cross:1351689463453061130>')
       .setStyle(ButtonStyle.Danger);
     
     const row = new ActionRowBuilder()
@@ -845,6 +882,10 @@ async function handleClaimBoost(interaction) {
       embeds: [claimedEmbed],
       components: [row]
     });
+    
+    // Clean up - delete the Boost Available message
+    const { cleanupMessages } = require('../utils/messageCleanup.js');
+    await cleanupMessages(interaction.channel, null, 'boost_claimed');
     
     // Send confirmation message
     await interaction.followUp({

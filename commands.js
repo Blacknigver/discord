@@ -15,25 +15,23 @@ const {
 const { 
   EMBED_COLOR, 
   STAFF_ROLES, 
-  TICKET_CATEGORIES
+  TICKET_CATEGORIES,
+  LIST_COMMAND_ROLE,
+  TICKET_PANEL_ALLOWED_USERS,
+  MOVE_CATEGORIES,
+  PURCHASE_ACCOUNT_CATEGORY
 } = require('./src/constants');
 const { createTicketPanel } = require('./src/modules/ticketFlow');
 const { handleReviewCommand } = require('./review');
+const invitesCommand = require('./src/commands/invites');
+const inviteLeaderboardCommand = require('./src/commands/inviteLeaderboard');
+const inviteAdminCommand = require('./src/commands/inviteAdmin');
 
 // Internal state to store ephemeral data between interactions
 const ephemeralFlowState = new Map();
 const ticketDataMap = new Map();
-
-// Define missing constants
-const LIST_COMMAND_ROLE = '1234567890123456780'; // Replace with actual role ID
-const TICKET_PANEL_ALLOWED_USERS = ['1234567890123456779']; // Replace with actual user IDs
-const MOVE_CATEGORIES = {
-  paid: '1234567890123456778',
-  add: '1234567890123456777',
-  sell: '1234567890123456776',
-  finished: '1234567890123456775'
-};
-const PURCHASE_ACCOUNT_CATEGORY = TICKET_CATEGORIES.purchase;
+// Map to avoid duplicate button processing
+const processedButtonIds = new Set();
 
 /**
  * Check if a member has any of the specified roles
@@ -48,19 +46,28 @@ function hasAnyRole(member, roleIds) {
 /**
  * Create a ticket channel with overflow handling
  * @param {Guild} guild - The guild to create the channel in
- * @param {string} userId - The user ID who created the ticket
+ * @param {string} channelName - The name for the channel
+ * @param {User} user - The user who created the ticket
  * @param {string} categoryId - The category to create the channel in
- * @param {string} baseName - The base name for the channel
+ * @param {string} ticketType - The type of ticket (e.g., 'profile')
  * @returns {TextChannel|null} The created channel or null if failed
  */
-async function createTicketChannelWithOverflow(guild, userId, categoryId, baseName) {
+async function createTicketChannelWithOverflow(guild, channelName, user, categoryId, ticketType = null) {
   try {
-    const user = await guild.members.fetch(userId);
-    const category = await guild.channels.fetch(categoryId);
+    let category = null;
     
-    if (!category) {
-      console.error(`Category ${categoryId} not found`);
-      return null;
+    // Try to fetch the category first
+    try {
+      category = await guild.channels.fetch(categoryId);
+    } catch (error) {
+      console.error(`[TICKET_CREATE] Category ${categoryId} not found, creating without category`);
+      category = null;
+    }
+    
+    // Check if category is full (50 channels max per category)
+    if (category && category.children.cache.size >= 50) {
+      console.log(`[TICKET_CREATE] Category ${categoryId} is full, creating without category`);
+      category = null;
     }
     
     // Create channel permissions
@@ -70,33 +77,73 @@ async function createTicketChannelWithOverflow(guild, userId, categoryId, baseNa
         deny: [PermissionsBitField.Flags.ViewChannel]
       },
       {
-        id: userId,
-        allow: [PermissionsBitField.Flags.ViewChannel]
+        id: user.id,
+        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
       }
     ];
     
-    // Add staff role permissions
+    // For profile purchase tickets, use specific permissions
+    if (ticketType === 'profile' || channelName.startsWith('𝐩𝐫𝐨𝐟𝐢𝐥𝐞-')) {
+      // Specific roles for profile purchase tickets
+      const PROFILE_PURCHASE_ROLES = [
+        '1292933200389083196', // Owner
+        '1358101527658627270', // Head Admin
+        '1292933924116500532'  // Admin
+      ];
+      
+      // Specific users for profile purchase tickets
+      const PROFILE_PURCHASE_USERS = [
+        '987751357773672538', // JustRuben
+        '986164993080836096'  // Additional user
+      ];
+      
+      // Add role permissions
+      for (const roleId of PROFILE_PURCHASE_ROLES) {
+        channelPermissions.push({
+          id: roleId,
+          allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
+        });
+      }
+      
+      // Add user permissions
+      for (const userIdSpecific of PROFILE_PURCHASE_USERS) {
+        channelPermissions.push({
+          id: userIdSpecific,
+          allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
+        });
+      }
+    } else {
+      // Add staff role permissions for other tickets
     for (const roleId of STAFF_ROLES) {
       channelPermissions.push({
         id: roleId,
-        allow: [PermissionsBitField.Flags.ViewChannel]
-      });
+          allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
+        });
+      }
     }
     
-    // Create the channel
-    const channel = await guild.channels.create({
-      name: baseName,
+    // Create the channel - with or without category
+    const channelOptions = {
+      name: channelName,
       type: ChannelType.GuildText,
-      parent: category.id,
       permissionOverwrites: channelPermissions,
-      topic: `User ID: ${userId} | Created: ${new Date().toISOString()}`
-    });
+      topic: `User ID: ${user.id} | Created: ${new Date().toISOString()}`
+    };
+    
+    // Only add parent if category exists and isn't full
+    if (category) {
+      channelOptions.parent = category.id;
+    }
+    
+    const channel = await guild.channels.create(channelOptions);
+    
+    console.log(`[TICKET_CREATE] Created channel ${channel.name} (${channel.id}) ${category ? `in category ${category.name}` : 'without category'}`);
     
     // Store ticket data
     ticketDataMap.set(channel.id, {
-      userId,
+      userId: user.id,
       createdAt: new Date(),
-      type: baseName.split('-')[0]
+      type: ticketType || channelName.split('-')[0]
     });
     
     return channel;
@@ -109,7 +156,7 @@ async function createTicketChannelWithOverflow(guild, userId, categoryId, baseNa
 // /list slash command registration
 const listCommand = new SlashCommandBuilder()
   .setName('list')
-  .setDescription('Add a new account for sale (restricted to sellers).')
+  .setDescription('Add a new 𝐩𝐫𝐨𝐟𝐢𝐥𝐞 for sale (restricted to sellers).')
   .addStringOption(option => option
     .setName('ping')
     .setDescription('Who should be pinged?')
@@ -156,7 +203,7 @@ const reviewCommand = new SlashCommandBuilder()
   .addStringOption(option => option.setName('comment').setDescription('Review comment').setRequired(true))
   .addBooleanOption(option => option.setName('anonymous').setDescription('Submit anonymously').setRequired(false));
 
-const exportedCommands = [listCommand, ticketPanelCommand, reviewCommand];
+const exportedCommands = [listCommand, ticketPanelCommand, reviewCommand, invitesCommand.data, inviteLeaderboardCommand.data, inviteAdminCommand.data];
 
 // Handle slash commands
 async function handleSlashCommands(interaction) {
@@ -164,6 +211,18 @@ async function handleSlashCommands(interaction) {
 
   if (interaction.commandName === 'review') {
     return handleReviewCommand(interaction);
+  }
+
+  if (interaction.commandName === 'invites') {
+    return invitesCommand.execute(interaction);
+  }
+
+  if (interaction.commandName === 'invite-leaderboard') {
+    return inviteLeaderboardCommand.execute(interaction);
+  }
+
+  if (interaction.commandName === 'invite-admin') {
+    return inviteAdminCommand.execute(interaction);
   }
 
   if (interaction.commandName === 'ticket-panel') {
@@ -181,8 +240,8 @@ async function handleSlashCommands(interaction) {
   if (interaction.commandName === 'list') {
     // Check if user has the role OR is the specific user with permission
     const hasPermission = 
-      interaction.member.roles.cache.has(LIST_COMMAND_ROLE) || 
-      interaction.user.id === '658351335967686659' || // User JustRuben ID
+      (interaction.member && interaction.member.roles.cache.has(LIST_COMMAND_ROLE)) || 
+      interaction.user.id === '987751357773672538' || // User JustRuben ID
       interaction.user.id === LIST_COMMAND_ROLE; // In case the ID is directly used
       
     if (!hasPermission) {
@@ -213,19 +272,19 @@ async function handleSlashCommands(interaction) {
 
     console.log('[LIST] All options received successfully');
 
-    let mention = '**New account added!**';
-    if (pingChoice === 'everyone') mention = '**||@everyone|| New account added!**';
-    if (pingChoice === 'here') mention = '**||@here|| New account added!**';
+    let mention = '**New 𝐩𝐫𝐨𝐟𝐢𝐥𝐞 added!**';
+    if (pingChoice === 'everyone') mention = '**||@everyone|| New 𝐩𝐫𝐨𝐟𝐢𝐥𝐞 added!**';
+    if (pingChoice === 'here') mention = '**||@here|| New 𝐩𝐫𝐨𝐟𝐢𝐥𝐞 added!**';
 
     const embed = new EmbedBuilder()
-      .setTitle('New Account Added!')
+      .setTitle('New 𝐩𝐫𝐨𝐟𝐢𝐥𝐞 Added! <:winmatcherino:1298703851934711848>')
       .setColor(EMBED_COLOR)
       .addFields(
-        { name: 'Description', value: text },
-        { name: 'Price', value: price, inline: true },
-        { name: 'Trophies', value: trophies, inline: true },
-        { name: 'P11', value: p11, inline: true },
-        { name: 'Tier Max', value: tierMax, inline: true }
+        { name: '<:Information:1370838179334066217> Description', value: text },
+        { name: '<:Money:1351665747641766022> Price', value: price, inline: true },
+        { name: '<:gold_trophy:1351658932434768025> Trophies', value: trophies, inline: true },
+        { name: '<:P11:1351683038127591529> P11', value: p11, inline: true },
+        { name: '<:tiermax:1392588776957542530> Tier Max', value: tierMax, inline: true }
       );
     if (image) embed.setImage(image);
 
@@ -266,17 +325,44 @@ async function handleSlashCommands(interaction) {
     ephemeralFlowState.set(msg.id, moreInfoData);
     console.log(`[LIST] More info data stored for message ${msg.id}`);
 
+    // Save listing to database
+    try {
+      const db = require('./database');
+      await db.waitUntilConnected().catch(() => {});
+      
+      if (db.isConnected) {
+        await db.query(`
+          INSERT INTO account_listings (
+            message_id, channel_id, seller_id, status, price, description, trophies, p11, tier_max,
+            rare_skins, super_rare_skins, epic_skins, mythic_skins, legendary_skins, titles, 
+            hypercharges, power_10s, power_9s, old_ranked_rank, new_ranked_rank, 
+            main_image, secondary_image, ping_choice
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+        `, [
+          msg.id, interaction.channel.id, interaction.user.id, 'available',
+          price, text, trophies, p11, tierMax,
+          rareSkins, superRareSkins, epicSkins, mythicSkins, legendarySkins, titles,
+          hypercharges, power10s, power9s, oldRankedRank, newRankedRank,
+          image, image2, pingChoice
+        ]);
+        
+        console.log(`[LIST] Saved listing ${msg.id} to database`);
+      }
+    } catch (dbError) {
+      console.error('[LIST] Failed to save listing to database:', dbError);
+    }
+
     // Now create the buttons with the proper IDs
     actionRow.addComponents(
       new ButtonBuilder()
         .setCustomId(`purchase_account_${msg.id}`)
-        .setLabel('Purchase Account')
+        .setLabel('Purchase Profile')
         .setEmoji('<:Shopping_Cart:1351686041559367752>')
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
         .setCustomId(`more_info_${msg.id}`)
         .setLabel('More Information')
-        .setEmoji('<:Information:1370838179334066217>')
+        .setEmoji('<:Info:1391899181488279685>')
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
         .setCustomId(`listing_mark_sold_${msg.id}`)
@@ -288,6 +374,48 @@ async function handleSlashCommands(interaction) {
     // Update the message with the components
     await msg.edit({ components: [actionRow] });
     console.log('[LIST] Message updated with components');
+  }
+
+  // ======== Admin-only balance commands ========
+  if (interaction.commandName === 'addbalance' || interaction.commandName === 'removebalance') {
+    const ADMIN_IDS = ['987751357773672538', '986164993080836096'];
+    if (!ADMIN_IDS.includes(interaction.user.id)) {
+      console.warn(`[BALANCE_CMD] Unauthorized attempt by ${interaction.user.id} to use ${interaction.commandName}`);
+      return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true }).catch(()=>{}); // Ensure we respond within 3s
+
+    const targetUser = interaction.options.getUser('user', true);
+    const amountRaw = interaction.options.getNumber('amount', true);
+    const amount = parseFloat(amountRaw);
+
+    if (isNaN(amount) || amount <= 0) {
+      return interaction.editReply({ content: 'Invalid amount specified.' });
+    }
+
+    const db = require('./database');
+    try {
+      await db.waitUntilConnected();
+    } catch {
+      return interaction.editReply({ content: 'Database not connected.' });
+    }
+
+    const delta = interaction.commandName === 'addbalance' ? amount : -amount;
+    try {
+      const res = await db.query('UPDATE affiliate_links SET balance = balance + $2 WHERE user_id=$1 RETURNING balance', [targetUser.id, delta]);
+      if (res.rowCount === 0) {
+        console.warn(`[BALANCE_CMD] No affiliate record for ${targetUser.id}`);
+        return interaction.editReply({ content: 'Target user does not have an affiliate link record.' });
+      }
+      const newBal = parseFloat(res.rows[0].balance).toFixed(2);
+      console.log(`[BALANCE_CMD] ${interaction.user.id} ${interaction.commandName} €${amount} to ${targetUser.id}. New balance: ${newBal}`);
+      await interaction.editReply({ content: `Updated balance for <@${targetUser.id}>. New balance: €${newBal}` });
+    } catch (err) {
+      console.error('[BALANCE_CMD] DB Error:', err);
+      await interaction.editReply({ content: 'Failed to update balance.' });
+    }
+    return;
   }
 }
 
@@ -366,219 +494,201 @@ async function handleMessageCommands(message) {
 
 // Button handler for list command interactions
 async function handleListButtons(interaction) {
-  if (!interaction.isButton()) return;
+  if (processedButtonIds.has(interaction.id)) return;
+  processedButtonIds.add(interaction.id);
+  setTimeout(()=>processedButtonIds.delete(interaction.id),5000);
 
   const { customId } = interaction;
+  console.log(`[BUTTON_HANDLER] Received button interaction with customId: ${customId} from user ${interaction.user.id}`);
 
-  // Handle Purchase Account button
-  if (customId.startsWith('purchase_account_')) {
-    const messageId = customId.replace('purchase_account_', '');
-    
-    try {
-      // Create a ticket for the purchase
-      const ticketName = `purchase-${interaction.user.username}`;
-      const channel = await createTicketChannelWithOverflow(
-        interaction.guild,
-        interaction.user.id,
-        PURCHASE_ACCOUNT_CATEGORY,
-        ticketName
-      );
-      
-      if (channel) {
-        // Try to fetch the original listing message
-        try {
-          const originalMessage = await interaction.channel.messages.fetch(messageId);
-          const originalEmbed = originalMessage.embeds[0];
-          
-          // Create a welcome message
-          const welcomeEmbed = new EmbedBuilder()
-            .setTitle('Account Purchase Ticket')
-            .setColor(EMBED_COLOR)
-            .setDescription(`Welcome ${interaction.user}! This is your ticket for purchasing an account. Staff will assist you shortly.`);
-          
-          // Create a close button
-          const closeButton = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId('close_ticket')
-              .setLabel('Close Ticket')
-              .setStyle(ButtonStyle.Danger)
-          );
-          
-          // Send welcome message
-          await channel.send({ 
-            content: `${interaction.user}`,
-            embeds: [welcomeEmbed],
-            components: [closeButton]
-          });
-          
-          // Create order recap embed if original embed was found
-          if (originalEmbed) {
-            const recapEmbed = new EmbedBuilder()
-              .setTitle('Order Recap')
-              .setColor(EMBED_COLOR);
-            
-            // Copy fields from original embed
-            if (originalEmbed.fields) {
-              originalEmbed.fields.forEach(field => {
-                recapEmbed.addFields({ 
-                  name: field.name, 
-                  value: field.value, 
-                  inline: field.inline 
-                });
-              });
-            }
-            
-            // Copy image if present
-            if (originalEmbed.image) {
-              recapEmbed.setImage(originalEmbed.image.url);
-            }
-            
-            await channel.send({ embeds: [recapEmbed] });
-          }
-        } catch (error) {
-          console.error('Error fetching original listing:', error);
-          // Still send a basic message if original can't be found
-          await channel.send(`${interaction.user}, your purchase ticket has been created. Staff will assist you shortly.`);
-        }
-        
-        // Reply to the interaction
-        await interaction.reply({ 
-          content: `Your purchase ticket has been created: ${channel}`, 
-          ephemeral: true 
-        });
-      } else {
-        await interaction.reply({ 
-          content: 'Failed to create ticket. Please try again or contact staff.', 
-          ephemeral: true 
-        });
-      }
-    } catch (error) {
-      console.error('Error creating purchase ticket:', error);
-      await interaction.reply({ 
-        content: 'An error occurred. Please try again or contact staff.', 
-        ephemeral: true 
-      });
-    }
-  }
+  // Extract message ID from custom ID
+  const messageId = customId.split('_').pop();
   
-  // Handle More Information button
-  else if (customId.startsWith('more_info_')) {
-    const messageId = customId.replace('more_info_', '');
-    
-    try {
-      // Look up the payload in the ephemeral flow state
-      const payload = ephemeralFlowState.get(messageId);
-      
-      if (payload) {
-        // Create the detailed info embed
+  try {
+    if (customId.startsWith('more_info_')) {
+      // Check if already replied/deferred to prevent double acknowledgment
+      if (interaction.replied || interaction.deferred) {
+        console.log(`[MORE_INFO] Interaction already handled for ${customId}`);
+        return;
+      }
+
+      try {
+        // Try to get listing from database first
+        const db = require('./database');
+        const result = await db.query('SELECT * FROM account_listings WHERE message_id = $1', [messageId]);
+        
+        if (result.rows.length > 0) {
+          const listing = result.rows[0];
+          console.log(`[MORE_INFO] Retrieved listing details from database for ${messageId}`);
+          
+          // Create the detailed info embed using database data - ONLY detailed fields, NOT basic ones
+          const detailedEmbed = new EmbedBuilder()
+            .setTitle('𝐩𝐫𝐨𝐟𝐢𝐥𝐞 Details')
+            .setColor(EMBED_COLOR)
+            .addFields(
+              { name: '<:rare:1351963849322004521> Rare Skins', value: listing.rare_skins || 'N/A', inline: false },
+              { name: '<:super_rare:1351963921967218839> Super Rare Skins', value: listing.super_rare_skins || 'N/A', inline: false },
+              { name: '<:epic:1351963993442353365> Epic Skins', value: listing.epic_skins || 'N/A', inline: false },
+              { name: '<:mythic:1351964047179907235> Mythic Skins', value: listing.mythic_skins || 'N/A', inline: false },
+              { name: '<:legendary:1351964089454428261> Legendary Skins', value: listing.legendary_skins || 'N/A', inline: false },
+              { name: '<:brawler:1351965712582705152> Titles', value: listing.titles || 'N/A', inline: false },
+              { name: '<:hypercharge:1351963655234650143> Hypercharges', value: listing.hypercharges || 'N/A', inline: false },
+              { name: '<:p10:1351981538740404355> Power 10s', value: listing.power_10s || 'N/A', inline: false },
+              { name: '<:power_9:1351963484207841331> Power 9s', value: listing.power_9s || 'N/A', inline: false },
+              { name: '<:Masters:1293283897618075728> Old Ranked Rank', value: listing.old_ranked_rank || 'N/A', inline: false },
+              { name: '<:pro:1351687685328208003> New Ranked Rank', value: listing.new_ranked_rank || 'N/A', inline: false }
+            );
+
+          // Add secondary image if available
+          if (listing.secondary_image) {
+            detailedEmbed.setImage(listing.secondary_image);
+          }
+
+          await interaction.deferReply({ephemeral:true});
+          await interaction.editReply({ embeds: [detailedEmbed], ephemeral: true });
+      } else {
+          // Fallback to ephemeral data if database doesn't have it
+          const moreInfoData = ephemeralFlowState.get(messageId);
+          if (moreInfoData) {
+            console.log(`[MORE_INFO] Using ephemeral data for ${messageId}`);
         const detailedEmbed = new EmbedBuilder()
-          .setTitle('Account Details')
+              .setTitle('𝐩𝐫𝐨𝐟𝐢𝐥𝐞 Details')
           .setColor(EMBED_COLOR)
           .addFields(
-            { name: 'Rare Skins', value: payload.rareSkins, inline: true },
-            { name: 'Super Rare Skins', value: payload.superRareSkins, inline: true },
-            { name: 'Epic Skins', value: payload.epicSkins, inline: true },
-            { name: 'Mythic Skins', value: payload.mythicSkins, inline: true },
-            { name: 'Legendary Skins', value: payload.legendarySkins, inline: true },
-            { name: 'Titles', value: payload.titles, inline: true },
-            { name: 'Hypercharges', value: payload.hypercharges, inline: true },
-            { name: 'Power 10s', value: payload.power10s, inline: true },
-            { name: 'Power 9s', value: payload.power9s, inline: true },
-            { name: 'Old Ranked Rank', value: payload.oldRankedRank, inline: true },
-            { name: 'New Ranked Rank', value: payload.newRankedRank, inline: true }
-          );
-        
-        // Add second image if present
-        if (payload.image2) {
-          detailedEmbed.setImage(payload.image2);
-        }
-        
+                { name: '<:rare:1351963849322004521> Rare Skins', value: moreInfoData.rareSkins || 'N/A', inline: false },
+                { name: '<:super_rare:1351963921967218839> Super Rare Skins', value: moreInfoData.superRareSkins || 'N/A', inline: false },
+                { name: '<:epic:1351963993442353365> Epic Skins', value: moreInfoData.epicSkins || 'N/A', inline: false },
+                { name: '<:mythic:1351964047179907235> Mythic Skins', value: moreInfoData.mythicSkins || 'N/A', inline: false },
+                { name: '<:legendary:1351964089454428261> Legendary Skins', value: moreInfoData.legendarySkins || 'N/A', inline: false },
+                { name: '<:brawler:1351965712582705152> Titles', value: moreInfoData.titles || 'N/A', inline: false },
+                { name: '<:hypercharge:1351963655234650143> Hypercharges', value: moreInfoData.hypercharges || 'N/A', inline: false },
+                { name: '<:p10:1351981538740404355> Power 10s', value: moreInfoData.power10s || 'N/A', inline: false },
+                { name: '<:power_9:1351963484207841331> Power 9s', value: moreInfoData.power9s || 'N/A', inline: false },
+                { name: '<:Masters:1293283897618075728> Old Ranked Rank', value: moreInfoData.oldRankedRank || 'N/A', inline: false },
+                { name: '<:pro:1351687685328208003> New Ranked Rank', value: moreInfoData.newRankedRank || 'N/A', inline: false }
+              );
+
+            // Add secondary image if available
+            if (moreInfoData.image2) {
+              detailedEmbed.setImage(moreInfoData.image2);
+            }
+
+            await interaction.deferReply({ephemeral:true});
+            await interaction.editReply({ embeds: [detailedEmbed], ephemeral: true });
+          } else {
         await interaction.reply({ 
-          embeds: [detailedEmbed], 
+              content: "We couldn't retrieve the 𝐩𝐫𝐨𝐟𝐢𝐥𝐞 details. Please ask staff for more information.", 
           ephemeral: true 
-        });
-      } else {
-        // Fallback in case the bot was restarted and lost the payload
-        try {
-          const originalMessage = await interaction.channel.messages.fetch(messageId);
-          const originalEmbed = originalMessage.embeds[0];
-          
-          const fallbackEmbed = new EmbedBuilder()
-            .setTitle('Limited Information Available')
-            .setColor(EMBED_COLOR)
-            .setDescription("We couldn't retrieve all details due to a bot restart. Please ask staff for complete information.");
-          
-          // Copy available fields from original embed
-          if (originalEmbed && originalEmbed.fields) {
-            originalEmbed.fields.forEach(field => {
-              fallbackEmbed.addFields({ 
-                name: field.name, 
-                value: field.value, 
-                inline: field.inline 
-              });
             });
           }
-          
+        }
+      } catch (dbError) {
+        console.error(`[MORE_INFO] Database error:`, dbError);
+        if (!interaction.replied && !interaction.deferred) {
           await interaction.reply({ 
-            embeds: [fallbackEmbed], 
-            ephemeral: true 
-          });
-        } catch (error) {
-          console.error('Error creating fallback more info embed:', error);
-          await interaction.reply({ 
-            content: "We couldn't retrieve the account details. Please ask staff for more information.", 
+            content: "We couldn't retrieve the 𝐩𝐫𝐨𝐟𝐢𝐥𝐞 details. Please ask staff for more information.", 
             ephemeral: true 
           });
         }
       }
-    } catch (error) {
-      console.error('Error handling more info button:', error);
-      await interaction.reply({ 
-        content: 'An error occurred. Please try again or contact staff.', 
+
+    } else if (customId.startsWith('purchase_account_')) {
+      // Check if already replied/deferred to prevent double acknowledgment
+      if (interaction.replied || interaction.deferred) {
+        console.log(`[PURCHASE_PROFILE] Interaction already handled for ${customId}`);
+        return;
+      }
+
+      await interaction.deferReply({ ephemeral: true });
+      
+      // Get listing data from database
+      const db = require('./database');
+      const result = await db.query('SELECT * FROM account_listings WHERE message_id = $1', [messageId]);
+      
+      if (result.rows.length === 0) {
+        await interaction.followUp({ 
+          content: "This listing is no longer available or cannot be found.", 
         ephemeral: true 
       });
-    }
-  }
-  
-  // Handle Mark as Sold button
-  else if (customId.startsWith('listing_mark_sold_')) {
-    // Permission check - only staff with LIST_COMMAND_ROLE can mark as sold
-    if (!interaction.member.roles.cache.has(LIST_COMMAND_ROLE)) {
-      return interaction.reply({ 
-        content: 'Only authorized users can mark as sold.', 
+        return;
+      }
+
+      const listing = result.rows[0];
+      // Start new payment selection flow before ticket creation
+      const { sendPaymentMethodEmbed } = require('./src/handlers/profilePurchasePayment');
+      await sendPaymentMethodEmbed(interaction, listing);
+      return;
+
+    } else if (customId.startsWith('listing_mark_sold_')) {
+      // Check if already replied/deferred to prevent double acknowledgment
+      if (interaction.replied || interaction.deferred) {
+        console.log(`[MARK_SOLD] Interaction already handled for ${customId}`);
+        return;
+      }
+
+      // FIXED: Authorization check - allow specific user ID 987751357773672538
+      const authorizedUsers = ['987751357773672538']; // Your user ID
+      const authorizedRoles = STAFF_ROLES;
+      
+      const userHasRole = interaction.member.roles.cache.some(role => authorizedRoles.includes(role.id));
+      const userIsAuthorized = authorizedUsers.includes(interaction.user.id);
+      
+      if (!userHasRole && !userIsAuthorized) {
+        await interaction.reply({
+          content: 'Only authorized users can mark listings as sold.',
         ephemeral: true 
       });
-    }
-    
-    const messageId = customId.replace('listing_mark_sold_', '');
-    
-    try {
-      // Create a disabled "sold" button
-      const soldButton = new ActionRowBuilder().addComponents(
+        return;
+      }
+
+      try {
+        // Update database
+        const db = require('./database');
+        await db.query(
+          'UPDATE account_listings SET status = $1 WHERE message_id = $2',
+          ['sold', messageId]
+        );
+        
+        console.log(`[MARK_SOLD] Updated listing ${messageId} status to sold by ${interaction.user.id}`);
+
+        // Update the original message: keep embed the same, replace buttons with a disabled red button
+        const originalMessage = interaction.message;
+        const soldRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId('sold_button')
-          .setLabel('SOLD')
+            .setCustomId('sold_notice')
+            .setLabel('This account has been sold.')
+            .setEmoji('<:moneyy:1391899345208606772>')
           .setStyle(ButtonStyle.Danger)
           .setDisabled(true)
       );
       
-      // Try to fetch and update the original message
-      const originalMessage = await interaction.channel.messages.fetch(messageId);
-      await originalMessage.edit({ components: [soldButton] });
-      
-      // Clear from ephemeral flow state to free memory
-      ephemeralFlowState.delete(messageId);
+        await originalMessage.edit({
+          components: [soldRow]
+        });
       
       await interaction.reply({ 
-        content: 'Listing marked as sold.',
+          content: 'This listing has been marked as sold.',
         ephemeral: true 
       });
-    } catch (error) {
-      console.error('Error marking listing as sold:', error);
+
+      } catch (dbError) {
+        console.error(`[MARK_SOLD] Database error:`, dbError);
+        if (!interaction.replied && !interaction.deferred) {
       await interaction.reply({ 
-        content: 'Failed to mark listing as sold. Please try again or contact staff.',
+            content: 'Failed to mark listing as sold. Please try again.',
         ephemeral: true 
       });
+        }
+      }
+    }
+
+  } catch (error) {
+    console.error(`Error handling more info button:`, error);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'An error occurred while processing this action.',
+        ephemeral: true
+      }).catch(console.error);
     }
   }
 }
@@ -587,7 +697,10 @@ async function handleListButtons(interaction) {
 const commands = [
   listCommand.toJSON(),
   ticketPanelCommand.toJSON(),
-  reviewCommand.toJSON()
+  reviewCommand.toJSON(),
+  invitesCommand.data.toJSON(),
+  inviteLeaderboardCommand.data.toJSON(),
+  inviteAdminCommand.data.toJSON()
 ];
 
 // Initialize the bot
@@ -608,7 +721,7 @@ function initializeBot() {
   // Set up all event handlers
   client.on('interactionCreate', handleSlashCommands);
   client.on('messageCreate', handleMessageCommands);
-  client.on('interactionCreate', handleListButtons);
+  // REMOVED: client.on('interactionCreate', handleListButtons); // This causes double handling!
   
   // Register slash commands with Discord
   client.on('ready', async () => {

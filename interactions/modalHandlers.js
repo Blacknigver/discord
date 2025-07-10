@@ -172,8 +172,27 @@ const existingModalHandlers = {
                 });
             }
             
+            // Get and validate brawler level if provided
+            let brawlerLevel = null;
+            try {
+                const brawlerLevelText = interaction.fields.getTextInputValue('brawler_level')?.trim();
+                if (brawlerLevelText) {
+                    brawlerLevel = parseInt(brawlerLevelText);
+                    if (isNaN(brawlerLevel) || brawlerLevel < 1) {
+                        console.error(`[MODAL_TROPHIES] Invalid brawler level: ${brawlerLevelText}`);
+                        return interaction.reply({
+                            content: 'Please enter a valid power level (1-11).',
+                            ephemeral: true
+                        });
+                    }
+                    console.log(`[MODAL_TROPHIES] Parsed brawler level: ${brawlerLevel}`);
+                }
+            } catch (levelError) {
+                console.log(`[MODAL_TROPHIES] Brawler level field not found or empty, continuing without power level`);
+            }
+            
             // Calculate price with extensive error handling
-            console.log(`[MODAL_TROPHIES] Calculating price for ${currentTrophies} -> ${desiredTrophies}`);
+            console.log(`[MODAL_TROPHIES] Calculating price for ${currentTrophies} -> ${desiredTrophies}, power level: ${brawlerLevel}`);
             let price;
             
             try {
@@ -181,7 +200,7 @@ const existingModalHandlers = {
                 const { calculateTrophyPrice } = require('../utils.js');
                 console.log(`[MODAL_TROPHIES] calculateTrophyPrice function imported:`, typeof calculateTrophyPrice);
                 
-                price = calculateTrophyPrice(currentTrophies, desiredTrophies);
+                price = calculateTrophyPrice(currentTrophies, desiredTrophies, brawlerLevel);
                 console.log(`[MODAL_TROPHIES] Raw price result:`, price);
                 
                 if (price === undefined || price === null) {
@@ -218,13 +237,28 @@ const existingModalHandlers = {
                     throw new Error('showPaymentMethodSelection is undefined');
                 }
                 
+                // Calculate power level multiplier for display purposes
+                let powerLevelMultiplier = 1.0;
+                let basePrice = price;
+                
+                if (brawlerLevel !== null && brawlerLevel !== undefined) {
+                    const { calculateTrophyPowerLevelMultiplier } = require('../utils.js');
+                    powerLevelMultiplier = calculateTrophyPowerLevelMultiplier(desiredTrophies, brawlerLevel);
+                    basePrice = price / powerLevelMultiplier;
+                    console.log(`[MODAL_TROPHIES] Base price: €${basePrice.toFixed(2)}, multiplier: ${powerLevelMultiplier}x, final: €${price.toFixed(2)}`);
+                }
+                
                 // Store the data in flowState
                 const userData = {
                     type: 'trophies',
                     brawler: brawlerName,
+                    brawlerLevel: brawlerLevel,
+                    powerLevel: brawlerLevel,
                     currentTrophies,
                     desiredTrophies,
-                    price,
+                    price: price.toFixed(2),
+                    basePrice: basePrice.toFixed(2),
+                    powerLevelMultiplier: powerLevelMultiplier,
                     step: 'payment_method',
                     timestamp: Date.now()
                 };
@@ -263,6 +297,38 @@ const existingModalHandlers = {
 const allModalHandlers = {
     ...existingModalHandlers,
     ...(ticketFlowModalFunctions.modalHandlers || {}), // Spread the nested modalHandlers object
+    
+    // Add missing crypto withdrawal modal handlers
+    withdraw_paypal_modal: async (interaction) => {
+        const { handleWithdrawalModal } = require('../src/handlers/interactionHandler');
+        return handleWithdrawalModal(interaction);
+    },
+    
+    withdraw_iban_modal: async (interaction) => {
+        const { handleWithdrawalModal } = require('../src/handlers/interactionHandler');
+        return handleWithdrawalModal(interaction);
+    },
+    
+    withdraw_crypto_modal_sol: async (interaction) => {
+        const { handleWithdrawalModal } = require('../src/handlers/interactionHandler');
+        return handleWithdrawalModal(interaction);
+    },
+    
+    withdraw_crypto_modal_btc: async (interaction) => {
+        const { handleWithdrawalModal } = require('../src/handlers/interactionHandler');
+        return handleWithdrawalModal(interaction);
+    },
+    
+    withdraw_crypto_modal_ltc: async (interaction) => {
+        const { handleWithdrawalModal } = require('../src/handlers/interactionHandler');
+        return handleWithdrawalModal(interaction);
+    },
+    
+    withdraw_crypto_modal_usdt: async (interaction) => {
+        const { handleWithdrawalModal } = require('../src/handlers/interactionHandler');
+        return handleWithdrawalModal(interaction);
+    },
+    
     // If specific functions were also exported top-level and needed, add them here:
     // e.g. if handleCryptoTxForm was globally used and not just via custom ID mapping:
     // handleCryptoTxForm: ticketFlowModalFunctions.handleCryptoTxForm (if it exists top-level)

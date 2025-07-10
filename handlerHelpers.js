@@ -3,7 +3,7 @@ const axios = require('axios'); // For convertEuroToCrypto
 const { EMBED_COLOR, STAFF_ROLES } = require('./config.js'); // Add relevant config imports
 const { flowState } = require('./src/modules/ticketFlow.js'); // If flowState is used by helpers directly
 const { getRankValue, getMasteryValue } = require('./src/modules/ticketFlow.js'); // Used by createRankedSelectionRows, etc.
-const { sendPayPalTermsEmbed, sendPayPalInfoEmbed, sendPayPalGiftcardEmbed, sendLitecoinEmbed, sendSolanaEmbed, sendBitcoinEmbed, sendIbanEmbed, sendAppleGiftcardEmbed, sendBolGiftcardEmbed, sendTikkieEmbed, activeCryptoPayments, sendPaymentConfirmationEmbed, sendStaffPaymentVerificationEmbed, sendBoostAvailableEmbed, createCryptoTxForm, verifyCryptoTransaction, sendCryptoWaitingEmbed, sendCryptoStillWaitingEmbed, sendInsufficientAmountEmbed, resendLitecoinEmbed, resendSolanaEmbed } = require('./ticketPayments.js'); // For sendPaymentInfoEmbed and setupCryptoTimeout indirectly
+const { sendPayPalTermsEmbed, sendPayPalInfoEmbed, sendPayPalGiftcardOtherPaymentEmbed, sendLitecoinEmbed, sendSolanaEmbed, sendBitcoinEmbed, sendIbanEmbed, sendAppleGiftcardEmbed, sendBolGiftcardEmbed, sendTikkieEmbed, activeCryptoPayments, sendPaymentConfirmationEmbed, sendStaffPaymentVerificationEmbed, sendBoostAvailableEmbed, createCryptoTxForm, verifyCryptoTransaction, sendCryptoWaitingEmbed, sendCryptoStillWaitingEmbed, sendInsufficientAmountEmbed, resendLitecoinEmbed, resendSolanaEmbed } = require('./ticketPayments.js'); // For sendPaymentInfoEmbed and setupCryptoTimeout indirectly
 
 
 // Helper function to send payment info embed for purchase accounts
@@ -38,7 +38,7 @@ async function sendPaymentInfoEmbed(channel, paymentMethod, subType = null) {
       case 'PayPal':
         return sendPayPalTermsEmbed(channel, userId);
       case 'PayPal Giftcard':
-        return sendPayPalGiftcardEmbed(channel, userId);
+        return sendPayPalGiftcardOtherPaymentEmbed(channel, userId, 'PayPal Giftcard');
       case 'IBAN Bank Transfer':
         return sendIbanEmbed(channel, userId);
       case 'German Apple Giftcard':

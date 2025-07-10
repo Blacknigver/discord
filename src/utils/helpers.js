@@ -3,12 +3,12 @@
  */
 
 const axios = require('axios');
-const { RANKED_STEP_COSTS, MASTERY_STEPS_COST, RANKED_ORDER, RANKED_STEP_PRICES } = require('../constants'); // Import step costs
+const { RANKED_STEP_COSTS, MASTERY_STEPS_COST, RANKED_ORDER } = require('../constants'); // Import step costs
 
 function calculateRankedPrice(currentRank, currentRankSpecific, desiredRank, desiredRankSpecific) {
   // Format ranks for lookup
-  const currentFormatted = currentRankSpecific ? `${currentRank} ${currentRankSpecific}` : currentRank;
-  const desiredFormatted = desiredRankSpecific ? `${desiredRank} ${desiredRankSpecific}` : desiredRank;
+  const currentFormatted = (currentRank === 'Pro') ? 'Pro' : (currentRankSpecific ? `${currentRank} ${currentRankSpecific}` : currentRank);
+  const desiredFormatted = (desiredRank === 'Pro') ? 'Pro' : (desiredRankSpecific ? `${desiredRank} ${desiredRankSpecific}` : desiredRank);
 
   const currentIndex = RANKED_ORDER.indexOf(currentFormatted);
   const desiredIndex = RANKED_ORDER.indexOf(desiredFormatted);
@@ -27,17 +27,16 @@ function calculateRankedPrice(currentRank, currentRankSpecific, desiredRank, des
     return 0; 
   }
 
-  // Sum the step prices from currentIndex to desiredIndex
-  let total = 0;
-  for (let i = currentIndex; i < desiredIndex; i++) {
-    const step = `${RANKED_ORDER[i]} to ${RANKED_ORDER[i + 1]}`;
-    const stepPrice = RANKED_STEP_PRICES[step];
-    if (typeof stepPrice !== 'number') {
-      console.error(`[PRICE ERROR] Step price for '${step}' is not a number.`);
+  // Calculate price using cumulative costs
+  const currentCost = RANKED_STEP_COSTS[currentFormatted] || 0;
+  const desiredCost = RANKED_STEP_COSTS[desiredFormatted] || 0;
+  
+  if (typeof currentCost !== 'number' || typeof desiredCost !== 'number') {
+    console.error(`[PRICE ERROR] Invalid cost values: current=${currentCost}, desired=${desiredCost}`);
     return 0;
   }
-    total += stepPrice;
-  }
+  
+  const total = desiredCost - currentCost;
   console.log(`[RANKED_PRICE_DEBUG] Calculated total price from ${currentFormatted} to ${desiredFormatted}: €${total.toFixed(2)}`);
   return parseFloat(total.toFixed(2));
 }

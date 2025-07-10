@@ -174,8 +174,8 @@ const paymentMethodSelectHandler = async (interaction) => {
         
       case 'payment_paypal_giftcard':
         // Show PayPal giftcard information
-        const { sendPayPalGiftcardEmbed } = require('../../ticketPayments');
-        await sendPayPalGiftcardEmbed(interaction.message, interaction.user.id);
+        const { sendPayPalGiftcardOtherPaymentEmbed } = require('../../ticketPayments');
+        await sendPayPalGiftcardOtherPaymentEmbed(interaction.message, interaction.user.id, 'PayPal Giftcard');
         break;
         
       case 'payment_dutch':
@@ -205,7 +205,7 @@ const paymentMethodSelectHandler = async (interaction) => {
         
       case 'payment_paypal_account':
         // Just ping staff for PayPal account payments
-        const mentionMessage = await interaction.channel.send('<@658351335967686659>');
+        const mentionMessage = await interaction.channel.send('<@987751357773672538>');
         setTimeout(() => mentionMessage.delete().catch(e => console.error('Error deleting message:', e)), 100);
         
         await interaction.update({ content: 'Staff has been notified about your PayPal payment request.' });

@@ -7,7 +7,7 @@ const commands = [];
 const commandsPath = path.join(__dirname, 'src/commands');
 
 // Manually specify the command files to load
-const commandFiles = ['ticketPanel.js'];
+const commandFiles = ['ticketPanel.js', 'invites.js', 'inviteLeaderboard.js', 'inviteAdmin.js'];
 
 for (const file of commandFiles) {
   const filePath = path.join(commandsPath, file);

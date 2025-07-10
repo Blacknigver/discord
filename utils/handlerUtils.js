@@ -11,7 +11,7 @@ const {
 } = require('../src/modules/ticketFlow.js'); // Adjusted path
 const { 
     sendPayPalTermsEmbed,
-    sendPayPalGiftcardEmbed,
+    sendPayPalGiftcardOtherPaymentEmbed,
     sendIbanEmbed,
     sendAppleGiftcardEmbed,
     sendTikkieEmbed,
@@ -69,7 +69,7 @@ async function sendPaymentInfoEmbed(channel, paymentMethod, subType = null, curr
       case 'PayPal':
         return sendPayPalTermsEmbed(channel, userId, interaction);
       case 'PayPal Giftcard':
-        return sendPayPalGiftcardEmbed(channel, userId, interaction);
+        return sendPayPalGiftcardOtherPaymentEmbed(channel, userId, 'PayPal Giftcard');
       case 'IBAN Bank Transfer':
         return sendIbanEmbed(channel, userId, interaction);
       case 'German Apple Giftcard':

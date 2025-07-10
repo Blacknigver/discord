@@ -19,7 +19,22 @@ const paymentCompletedHandlers = {
   },
   
   'payment_completed_iban': async (interaction) => {
-    await handlePaymentCompleted(interaction, 'iban');
+    // For IBAN, skip confirmation and go directly to staff verification
+    try {
+      await sendStaffPaymentVerificationEmbed(interaction.channel, interaction.user.id, 'iban');
+      await interaction.reply({
+        content: 'Payment confirmation sent to staff for verification.',
+        ephemeral: true
+      });
+    } catch (error) {
+      console.error('Error handling IBAN payment completion:', error);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: 'An error occurred. Please try again or contact staff.',
+          ephemeral: true
+        });
+      }
+    }
   },
   
   'payment_completed_tikkie': async (interaction) => {
@@ -137,7 +152,12 @@ const tikkieLinkExpiredHandler = async (interaction) => {
  */
 const paymentConfirmHandlers = {
   'confirm_payment_paypal': async (interaction) => {
-    await sendStaffPaymentVerificationEmbed(interaction.channel, 'paypal');
+    // Pass user ID and payment type correctly to staff verification embed
+    await sendStaffPaymentVerificationEmbed(
+      interaction.channel,
+      interaction.user.id,
+      'paypal'
+    );
     await interaction.update({
       content: 'Payment confirmation sent to staff for verification.',
       embeds: [],
@@ -145,17 +165,14 @@ const paymentConfirmHandlers = {
     });
   },
   
-  'confirm_payment_iban': async (interaction) => {
-    await sendStaffPaymentVerificationEmbed(interaction.channel, 'iban');
-    await interaction.update({
-      content: 'Payment confirmation sent to staff for verification.',
-      embeds: [],
-      components: []
-    });
-  },
+  // IBAN payments skip confirmation and go directly to staff verification
   
   'confirm_payment_tikkie': async (interaction) => {
-    await sendStaffPaymentVerificationEmbed(interaction.channel, 'tikkie');
+    await sendStaffPaymentVerificationEmbed(
+      interaction.channel,
+      interaction.user.id,
+      'tikkie'
+    );
     await interaction.update({
       content: 'Payment confirmation sent to staff for verification.',
       embeds: [],
@@ -172,9 +189,7 @@ const staffConfirmHandlers = {
     await handleStaffConfirmPayment(interaction, 'paypal');
   },
   
-  'confirm_payment_iban': async (interaction) => {
-    await handleStaffConfirmPayment(interaction, 'iban');
-  },
+  // IBAN payments skip confirmation and go directly to staff verification
   
   'confirm_payment_tikkie': async (interaction) => {
     await handleStaffConfirmPayment(interaction, 'tikkie');
@@ -326,7 +341,7 @@ const additionalStaffHandlers = {
       const userId = customIdParts[3];
       
       // Check if the user is authorized to confirm
-      const authorizedStaff = ['658351335967686659', '986164993080836096'];
+      const authorizedStaff = ['987751357773672538', '986164993080836096'];
       if (!authorizedStaff.includes(interaction.user.id)) {
         return await interaction.reply({
           content: 'You are not authorized to confirm payments.',
@@ -353,6 +368,10 @@ const additionalStaffHandlers = {
       };
       
       await sendBoostAvailableEmbed(interaction.message, orderDetails);
+      
+      // Clean up payment method messages AFTER boost available is sent
+      const { cleanupMessages } = require('../utils/messageCleanup.js');
+      await cleanupMessages(interaction.channel, null, 'payment_confirmed');
     } catch (error) {
       console.error('[PAYMENT] Error handling staff payment confirmation:', error);
       await interaction.reply({
@@ -369,7 +388,7 @@ const additionalStaffHandlers = {
       const userId = customIdParts[3];
       
       // Check if the user is authorized to cancel
-      const authorizedStaff = ['658351335967686659', '986164993080836096'];
+      const authorizedStaff = ['987751357773672538', '986164993080836096'];
       if (!authorizedStaff.includes(interaction.user.id)) {
         return await interaction.reply({
           content: 'You are not authorized to cancel payments.',
@@ -420,11 +439,9 @@ const additionalStaffHandlers = {
           }
         }
       }
-      
       // Send staff verification embed
-      const { sendStaffPaymentVerificationEmbedWithUserId } = require('../../ticketPayments');
-      await sendStaffPaymentVerificationEmbedWithUserId(
-        await interaction.channel.send('Verifying payment...'),
+      await sendStaffPaymentVerificationEmbed(
+        interaction.channel,
         interaction.user.id,
         paymentType
       );

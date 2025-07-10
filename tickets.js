@@ -186,13 +186,33 @@ async function createTicketChannelWithOverflow(guild, userId, categoryId, channe
     }
     
     // Create the channel
-    return await guild.channels.create({
+    const channel = await guild.channels.create({
       name: channelOptions.name,
       type: channelOptions.type,
       topic: channelOptions.topic,
       permissionOverwrites: channelOptions.permissionOverwrites,
       parent: channelOptions.parent
     });
+
+    // Register the ticket in memory so we can later identify the opener (e.g. for close permissions)
+    ticketDataMap.set(channel.id, new TicketData(userId, channel.id, formattedName, Date.now()));
+
+    /* ---------------- Persist to DB ---------------- */
+    try {
+      const db = require('./database');
+      if (db.isConnected) {
+        await db.query(
+          `INSERT INTO tickets (channel_id, user_id, status, created_at, metadata)
+           VALUES ($1,$2,'open',NOW(),$3)
+           ON CONFLICT (channel_id) DO NOTHING`,
+          [channel.id, userId, JSON.stringify(orderDetails)]
+        );
+      }
+    } catch (dbErr) {
+      console.error('[TICKET_CREATE] Failed to write ticket to DB:', dbErr.message);
+    }
+
+    return channel;
   } catch (error) {
     console.error(`[TICKET_CREATE] Error creating ticket channel: ${error.message}`);
     console.error(error.stack);
@@ -493,7 +513,7 @@ async function closeTicket(channel, user, reason = '') {
       console.warn(`[TICKET_CLOSE] Archive category not found, ticket not moved`);
     }
     
-    // Update ticket data
+    // Update in-memory ticket data
     if (ticketDataMap.has(channel.id)) {
       const ticketData = ticketDataMap.get(channel.id);
       ticketData.closed = true;
@@ -501,6 +521,19 @@ async function closeTicket(channel, user, reason = '') {
       ticketData.closedAt = Date.now();
       ticketData.closedReason = reason;
       ticketDataMap.set(channel.id, ticketData);
+    }
+    
+    /* ---------------- Persist status to DB ---------------- */
+    try {
+      const db = require('./database');
+      if (db.isConnected) {
+        await db.query(
+          `UPDATE tickets SET status='closed', closed_at=NOW(), last_activity=NOW() WHERE channel_id=$1`,
+          [channel.id]
+        );
+      }
+    } catch (dbErr) {
+      console.error('[TICKET_CLOSE] Failed to update ticket status in DB:', dbErr.message);
     }
     
     return true;
@@ -559,6 +592,19 @@ async function reopenTicket(channel, user) {
     ticketData.reopenedAt = Date.now();
     ticketDataMap.set(channel.id, ticketData);
     
+    /* ---------------- Persist reopen to DB ---------------- */
+    try {
+      const db = require('./database');
+      if (db.isConnected) {
+        await db.query(
+          `UPDATE tickets SET status='open', last_activity=NOW() WHERE channel_id=$1`,
+          [channel.id]
+        );
+      }
+    } catch (dbErr) {
+      console.error('[TICKET_REOPEN] Failed to update ticket status in DB:', dbErr.message);
+    }
+    
     return true;
   } catch (error) {
     console.error(`[TICKET_REOPEN] Error reopening ticket: ${error.message}`);
@@ -589,6 +635,16 @@ async function deleteTicket(channel, user) {
     // Remove from the ticket data map
     if (ticketDataMap.has(channel.id)) {
       ticketDataMap.delete(channel.id);
+    }
+    
+    /* ---------------- Update DB ---------------- */
+    try {
+      const db = require('./database');
+      if (db.isConnected) {
+        await db.query(`DELETE FROM tickets WHERE channel_id=$1`, [channel.id]);
+      }
+    } catch (dbErr) {
+      console.error('[TICKET_DELETE] Failed to delete ticket from DB:', dbErr.message);
     }
     
     // Wait a moment before deleting

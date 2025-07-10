@@ -167,8 +167,8 @@ async function handleCryptoTxForm(interaction, cryptoType = '') {
 async function handleTrophiesStartModal(interaction) {
   try {
     const brawlerName = interaction.fields.getTextInputValue('brawler_name').trim();
-    const currentTrophies = parseInt(interaction.fields.getTextInputValue('current_trophies').trim());
-    const desiredTrophies = parseInt(interaction.fields.getTextInputValue('desired_trophies').trim());
+    const currentTrophies = parseInt(interaction.fields.getTextInputValue('brawler_current').trim());
+    const desiredTrophies = parseInt(interaction.fields.getTextInputValue('brawler_desired').trim());
     const brawlerLevel = interaction.fields.getTextInputValue('brawler_level')?.trim() || '';
     
     // Validate inputs
@@ -186,18 +186,45 @@ async function handleTrophiesStartModal(interaction) {
       });
     }
     
-    // Calculate price directly - Simple trophies are priced at €0.10 per trophy
-    const trophyCount = desiredTrophies - currentTrophies;
-    const price = (trophyCount * 0.1).toFixed(2);
+    // Validate and parse brawler level
+    let powerLevel = null;
+    if (brawlerLevel) {
+      powerLevel = parseInt(brawlerLevel);
+      if (isNaN(powerLevel) || powerLevel < 1) {
+        return interaction.reply({
+          content: 'Please enter a valid power level (1-11).',
+          flags: InteractionResponseFlags_Ephemeral
+        });
+      }
+    }
+    
+    // Calculate price using trophy price calculator with power level multiplier
+    const price = calculateTrophyPrice(currentTrophies, desiredTrophies, powerLevel);
+    
+    console.log(`[TROPHIES_MODAL] Calculated price: €${price} for ${currentTrophies} -> ${desiredTrophies}, power level ${powerLevel}`);
+    
+    // Calculate power level multiplier for display purposes
+    let powerLevelMultiplier = 1.0;
+    let basePrice = price;
+    
+    if (powerLevel !== null && powerLevel !== undefined) {
+      const { calculateTrophyPowerLevelMultiplier } = require('../../utils');
+      powerLevelMultiplier = calculateTrophyPowerLevelMultiplier(desiredTrophies, powerLevel);
+      basePrice = price / powerLevelMultiplier;
+      console.log(`[TROPHIES_MODAL] Base price: €${basePrice.toFixed(2)}, multiplier: ${powerLevelMultiplier}x, final: €${price.toFixed(2)}`);
+    }
     
     // Store the data in flowState
     flowState.set(interaction.user.id, {
       type: 'trophies',
       brawler: brawlerName,
       brawlerLevel: brawlerLevel,
+      powerLevel: powerLevel,
       currentTrophies,
       desiredTrophies,
-      price,
+      price: price.toFixed(2),
+      basePrice: basePrice.toFixed(2),
+      powerLevelMultiplier: powerLevelMultiplier,
       step: 'payment_method',
       timestamp: Date.now()
     });

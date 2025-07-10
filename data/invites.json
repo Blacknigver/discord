@@ -1,0 +1,589 @@
+{
+  "guild_invites": {
+    "test_guild": {
+      "TEST123": {
+        "uses": 1,
+        "inviter_id": "test_inviter_456"
+      }
+    },
+    "1292895164595175444": {
+      "29JzmpdcFE": {
+        "uses": 3,
+        "inviter_id": "1188546904674537492"
+      },
+      "2CS6nwfgZB": {
+        "uses": 2,
+        "inviter_id": "705720780176097301"
+      },
+      "2pt22hdBUc": {
+        "uses": 20,
+        "inviter_id": "1242244440337416336"
+      },
+      "45rwxCSpsz": {
+        "uses": 0,
+        "inviter_id": "1317657760187547782"
+      },
+      "5BcvygEreX": {
+        "uses": 3,
+        "inviter_id": "990979813575651358"
+      },
+      "5cn32hqrgT": {
+        "uses": 5,
+        "inviter_id": "1101148554304696321"
+      },
+      "5vBfzx8ZPz": {
+        "uses": 0,
+        "inviter_id": "1333000765551411221"
+      },
+      "6T2SzeF2XH": {
+        "uses": 0,
+        "inviter_id": "1003823182932873296"
+      },
+      "6VgaGv8maz": {
+        "uses": 0,
+        "inviter_id": "1280610122481008660"
+      },
+      "6eh8VqNrHP": {
+        "uses": 6,
+        "inviter_id": "1340559662776455168"
+      },
+      "6fBXNEZQnR": {
+        "uses": 5,
+        "inviter_id": "1305973254455951392"
+      },
+      "6ucee6fW": {
+        "uses": 0,
+        "inviter_id": "986164993080836096"
+      },
+      "78qgCNgRmQ": {
+        "uses": 1,
+        "inviter_id": "1078035589707857920"
+      },
+      "7NKxVcHs4G": {
+        "uses": 1,
+        "inviter_id": "1249300614874140684"
+      },
+      "7XCF4tYEDy": {
+        "uses": 0,
+        "inviter_id": "1359084866712637451"
+      },
+      "7YKAsugqth": {
+        "uses": 5,
+        "inviter_id": "902939732491788308"
+      },
+      "8WH6pdjk": {
+        "uses": 0,
+        "inviter_id": "1179185155705946164"
+      },
+      "8kaA93s9SF": {
+        "uses": 0,
+        "inviter_id": "987751357773672538"
+      },
+      "8uKnpdNFpY": {
+        "uses": 30,
+        "inviter_id": "1215712918252032011"
+      },
+      "98nTaFzjRn": {
+        "uses": 14,
+        "inviter_id": "984057636561510410"
+      },
+      "9HnBaA8HKS": {
+        "uses": 0,
+        "inviter_id": "1045724361010712707"
+      },
+      "9ffyKNKHnH": {
+        "uses": 1,
+        "inviter_id": "888432788011880528"
+      },
+      "9uhTH4qEqn": {
+        "uses": 1,
+        "inviter_id": "981722957258825790"
+      },
+      "AQYP3CZ9": {
+        "uses": 0,
+        "inviter_id": "987751357773672538"
+      },
+      "AuuNpDb4": {
+        "uses": 0,
+        "inviter_id": "986164993080836096"
+      },
+      "B3YFg8M8HW": {
+        "uses": 0,
+        "inviter_id": "804303492305911808"
+      },
+      "BQyNgDRyaz": {
+        "uses": 3,
+        "inviter_id": "1352975255941156994"
+      },
+      "BV9TjeCVXb": {
+        "uses": 9,
+        "inviter_id": "1312171859944538116"
+      },
+      "Bg9ajfcAYC": {
+        "uses": 12,
+        "inviter_id": "1158710174064840786"
+      },
+      "BpHarza35u": {
+        "uses": 19,
+        "inviter_id": "1197953755237326870"
+      },
+      "BuvuEWvwBY": {
+        "uses": 1,
+        "inviter_id": "1277293027068612639"
+      },
+      "CaS6wAZrHH": {
+        "uses": 0,
+        "inviter_id": "981722957258825790"
+      },
+      "D87FaGxxpN": {
+        "uses": 6,
+        "inviter_id": "624989448433827842"
+      },
+      "DCjuq3WnKf": {
+        "uses": 3,
+        "inviter_id": "1258335193672974456"
+      },
+      "DUKgV8maEe": {
+        "uses": 0,
+        "inviter_id": "725678088025014283"
+      },
+      "DfqdaksEGa": {
+        "uses": 0,
+        "inviter_id": "1307779557142822983"
+      },
+      "DgMHrGgsFg": {
+        "uses": 72,
+        "inviter_id": "658351335967686659"
+      },
+      "EKgCTSba7H": {
+        "uses": 0,
+        "inviter_id": "1057696793028214995"
+      },
+      "FYJJuZeaZC": {
+        "uses": 15,
+        "inviter_id": "1358849083426603122"
+      },
+      "GWxWC69wkk": {
+        "uses": 0,
+        "inviter_id": "725678088025014283"
+      },
+      "GznRKMxHcE": {
+        "uses": 1,
+        "inviter_id": "1344981765235933197"
+      },
+      "HHevSucu": {
+        "uses": 1,
+        "inviter_id": "1375810882281672727"
+      },
+      "HmaN5q8nPP": {
+        "uses": 0,
+        "inviter_id": "1113403208585457686"
+      },
+      "HuDmujvJ6j": {
+        "uses": 0,
+        "inviter_id": "931483028298039337"
+      },
+      "JGXk9V2T": {
+        "uses": 0,
+        "inviter_id": "1172182740934860820"
+      },
+      "KJRu9Pptfc": {
+        "uses": 6,
+        "inviter_id": "987751357773672538"
+      },
+      "KWk5M9EcwN": {
+        "uses": 3,
+        "inviter_id": "1050397519378645003"
+      },
+      "MvVgQyyAtg": {
+        "uses": 0,
+        "inviter_id": "972565394172821605"
+      },
+      "NH38QytbsQ": {
+        "uses": 6,
+        "inviter_id": "1002875674371039303"
+      },
+      "NPNujYC3Rv": {
+        "uses": 0,
+        "inviter_id": "658351335967686659"
+      },
+      "NRwswbmknu": {
+        "uses": 6,
+        "inviter_id": "1261243940154114068"
+      },
+      "PcScgrxQCy": {
+        "uses": 2,
+        "inviter_id": "1370848171231543356"
+      },
+      "RMqjYACA": {
+        "uses": 0,
+        "inviter_id": "705720780176097301"
+      },
+      "SE6SSbXx": {
+        "uses": 0,
+        "inviter_id": "972565394172821605"
+      },
+      "TAGD9QDy7y": {
+        "uses": 0,
+        "inviter_id": "981722957258825790"
+      },
+      "TfrbFFdmmE": {
+        "uses": 14,
+        "inviter_id": "1288637350070587465"
+      },
+      "Tnc5KHA5hZ": {
+        "uses": 0,
+        "inviter_id": "1204182792544591882"
+      },
+      "TtysMsPzFk": {
+        "uses": 0,
+        "inviter_id": "725678088025014283"
+      },
+      "UdhnZMdsHF": {
+        "uses": 1,
+        "inviter_id": "940574853688356865"
+      },
+      "Vyvgq3BBF9": {
+        "uses": 14,
+        "inviter_id": "1088448965017604227"
+      },
+      "WCDgbWpuPV": {
+        "uses": 3,
+        "inviter_id": "1221525253235281940"
+      },
+      "WQmsKtSxCx": {
+        "uses": 0,
+        "inviter_id": "729629893389713418"
+      },
+      "WVvv6rAsb7": {
+        "uses": 2,
+        "inviter_id": "1147827236427280426"
+      },
+      "XGMERMdAaQ": {
+        "uses": 3,
+        "inviter_id": "854002555679801370"
+      },
+      "XHBtH75jcU": {
+        "uses": 11,
+        "inviter_id": "1253804133308436524"
+      },
+      "XHy58JE3h4": {
+        "uses": 3,
+        "inviter_id": "902939732491788308"
+      },
+      "YT3a5gUa2b": {
+        "uses": 16,
+        "inviter_id": "1158710174064840786"
+      },
+      "ZSqZZAA4uC": {
+        "uses": 1,
+        "inviter_id": "902939732491788308"
+      },
+      "ZVEbe6n8FR": {
+        "uses": 1,
+        "inviter_id": "1186060669611679744"
+      },
+      "ZafAZS5VZ9": {
+        "uses": 0,
+        "inviter_id": "1370848171231543356"
+      },
+      "ZgBdST3b3V": {
+        "uses": 11,
+        "inviter_id": "981722957258825790"
+      },
+      "ZsRv9tFRt9": {
+        "uses": 0,
+        "inviter_id": "1158710174064840786"
+      },
+      "ZzGBgQhnEG": {
+        "uses": 1,
+        "inviter_id": "725678088025014283"
+      },
+      "aJXJq22ygc": {
+        "uses": 0,
+        "inviter_id": "1102912994045874239"
+      },
+      "aU5uMkE3KE": {
+        "uses": 668,
+        "inviter_id": "1222548162741538938"
+      },
+      "bbUfq3d8hs": {
+        "uses": 0,
+        "inviter_id": "790618471322353705"
+      },
+      "bevRMN7skk": {
+        "uses": 1,
+        "inviter_id": "902939732491788308"
+      },
+      "bg6j8w5w4b": {
+        "uses": 1,
+        "inviter_id": "585574776094064640"
+      },
+      "cMSZYmRPKB": {
+        "uses": 0,
+        "inviter_id": "793293726927683646"
+      },
+      "etfk3uPJVM": {
+        "uses": 7,
+        "inviter_id": "1213634605463109632"
+      },
+      "evmw5prBjs": {
+        "uses": 0,
+        "inviter_id": "1235429207950098537"
+      },
+      "ezqjpFaB": {
+        "uses": 0,
+        "inviter_id": "1241404752072278089"
+      },
+      "faVd6w28Y5": {
+        "uses": 4,
+        "inviter_id": "1225214930593251390"
+      },
+      "ffdrDzj3GU": {
+        "uses": 5,
+        "inviter_id": "1284942590894145658"
+      },
+      "gdXW49ETuw": {
+        "uses": 2,
+        "inviter_id": "1233466998814408869"
+      },
+      "h4kpJNpRCD": {
+        "uses": 0,
+        "inviter_id": "725678088025014283"
+      },
+      "hFzJ2Wz2HQ": {
+        "uses": 1,
+        "inviter_id": "658351335967686659"
+      },
+      "hfvZXCg7EP": {
+        "uses": 1,
+        "inviter_id": "815248938461691925"
+      },
+      "hjQJpg9H6p": {
+        "uses": 9,
+        "inviter_id": "658351335967686659"
+      },
+      "hwAhJsS3Dj": {
+        "uses": 1,
+        "inviter_id": "1136736040560898121"
+      },
+      "j9qyuvZKfv": {
+        "uses": 2,
+        "inviter_id": "1204182792544591882"
+      },
+      "jF2N2fVxDH": {
+        "uses": 4,
+        "inviter_id": "551697752447385611"
+      },
+      "jN54BDJGJD": {
+        "uses": 0,
+        "inviter_id": "1235429207950098537"
+      },
+      "jjHUhfr2jr": {
+        "uses": 5,
+        "inviter_id": "729629893389713418"
+      },
+      "kEhnG9q3kt": {
+        "uses": 8,
+        "inviter_id": "1181325537541632133"
+      },
+      "kMkrzBHrXN": {
+        "uses": 1,
+        "inviter_id": "1345786519654371378"
+      },
+      "kQNEEpjDvg": {
+        "uses": 0,
+        "inviter_id": "1110882596453355581"
+      },
+      "kmN6CJqp": {
+        "uses": 0,
+        "inviter_id": "1264006534489440268"
+      },
+      "mASu8YWx": {
+        "uses": 0,
+        "inviter_id": "1239939882252636172"
+      },
+      "nTWkkaxXSX": {
+        "uses": 38,
+        "inviter_id": "1168907458098515999"
+      },
+      "p2PmvNAtQ5": {
+        "uses": 0,
+        "inviter_id": "1328468008863268967"
+      },
+      "pugmjgha2b": {
+        "uses": 1,
+        "inviter_id": "1215540814495752215"
+      },
+      "qGmcVg9A7B": {
+        "uses": 0,
+        "inviter_id": "725678088025014283"
+      },
+      "qRX477vz": {
+        "uses": 0,
+        "inviter_id": "923067570439979028"
+      },
+      "qz884Acm3T": {
+        "uses": 1,
+        "inviter_id": "957606719045894164"
+      },
+      "r3v4QXJfe7": {
+        "uses": 0,
+        "inviter_id": "1290446273555726376"
+      },
+      "rrkwGfGmdx": {
+        "uses": 2,
+        "inviter_id": "723436453002084434"
+      },
+      "tADajNTADH": {
+        "uses": 0,
+        "inviter_id": "815248938461691925"
+      },
+      "tU7K6Ysvwz": {
+        "uses": 0,
+        "inviter_id": "1003823182932873296"
+      },
+      "tWNbzFUJ": {
+        "uses": 0,
+        "inviter_id": "1239939882252636172"
+      },
+      "tjQsxRkfNA": {
+        "uses": 0,
+        "inviter_id": "981722957258825790"
+      },
+      "tsNSTmgRdT": {
+        "uses": 2,
+        "inviter_id": "1069717992734199838"
+      },
+      "u5WPTfTBx2": {
+        "uses": 1,
+        "inviter_id": "1344412999217184875"
+      },
+      "vtRu6nYb2u": {
+        "uses": 0,
+        "inviter_id": "802258064870736014"
+      },
+      "vxrR5YY2gf": {
+        "uses": 0,
+        "inviter_id": "1005417595928854559"
+      },
+      "wMmKMpsmPX": {
+        "uses": 13,
+        "inviter_id": "1308038236500791346"
+      },
+      "wzBy4QUqvC": {
+        "uses": 0,
+        "inviter_id": "790618471322353705"
+      },
+      "xj7TgcAmMH": {
+        "uses": 0,
+        "inviter_id": "981722957258825790"
+      },
+      "xqCfzanKKY": {
+        "uses": 10,
+        "inviter_id": "1179486313557278862"
+      },
+      "yGGgPaGJvu": {
+        "uses": 4,
+        "inviter_id": "987751357773672538"
+      },
+      "yexXF8UKus": {
+        "uses": 0,
+        "inviter_id": "931483028298039337"
+      },
+      "zCV8D8r6E2": {
+        "uses": 0,
+        "inviter_id": "1269080334033485824"
+      },
+      "zT8VhVbw": {
+        "uses": 0,
+        "inviter_id": "722873639057489971"
+      },
+      "zUkteJjF": {
+        "uses": 0,
+        "inviter_id": "1302269180263010324"
+      },
+      "zffPZVFK": {
+        "uses": 0,
+        "inviter_id": "987751357773672538"
+      },
+      "DV5KGtha": {
+        "uses": 0,
+        "inviter_id": "1231341425455661107"
+      }
+    },
+    "1364511836631728148": {
+      "DmUaaHhS": {
+        "uses": 0,
+        "inviter_id": "1346034712627646524"
+      },
+      "JkC2Dskm": {
+        "uses": 0,
+        "inviter_id": "987751357773672538"
+      },
+      "UJ9pFWS8": {
+        "uses": 15,
+        "inviter_id": "987751357773672538"
+      },
+      "wymgpvb3Hv": {
+        "uses": 4,
+        "inviter_id": "987751357773672538"
+      }
+    },
+    "1392298345300754463": {}
+  },
+  "inviters": {
+    "test_inviter_456": {
+      "regular": 1,
+      "fake": 0,
+      "bonus": 0,
+      "leaves": 0
+    },
+    "987751357773672538": {
+      "regular": 2,
+      "fake": 1,
+      "bonus": 0,
+      "leaves": 4
+    },
+    "1292895164595175444": {
+      "regular": 0,
+      "fake": 0,
+      "bonus": 0,
+      "leaves": 0
+    },
+    "1392298345300754463": {
+      "regular": 0,
+      "fake": 0,
+      "bonus": 0,
+      "leaves": 0
+    }
+  },
+  "members": {
+    "test_member_123": {
+      "joined_at": "2025-07-07T16:27:38.287Z",
+      "left_at": null,
+      "inviter": "test_inviter_456",
+      "inviter_name": "Tester",
+      "invite_code": "TEST123",
+      "is_alt": false
+    },
+    "1346034712627646524": {
+      "joined_at": "2025-07-07T18:22:59.364Z",
+      "left_at": null,
+      "inviter": "987751357773672538",
+      "inviter_name": "mfruben",
+      "invite_code": "wymgpvb3Hv",
+      "is_alt": true
+    },
+    "658351335967686659": {
+      "joined_at": "2025-07-08T15:05:58.316Z",
+      "left_at": null,
+      "inviter": "987751357773672538",
+      "inviter_name": "mfruben",
+      "invite_code": "KJRu9Pptfc",
+      "is_alt": false
+    },
+    "1292895164595175444": {},
+    "1392298345300754463": {}
+  }
+}

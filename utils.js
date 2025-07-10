@@ -173,12 +173,99 @@ async function fetchCryptoPrice(cryptoName) {
 }
 
 /**
- * Calculate price for trophies boost
- * This function calculates the price per 50 trophies based on the trophy range
+ * Calculate power level price multiplier for trophies
+ * @param {number} desiredTrophies - The desired trophy count
+ * @param {number} powerLevel - The brawler power level (1-11, above 11 treated as 11)
+ * @returns {number} - The price multiplier
  */
-function calculateTrophyPrice(current, desired) {
-  console.log(`[TROPHY PRICE DEBUG] Function called with params: current=${current}, desired=${desired}`);
-  console.log(`[TROPHY PRICE DEBUG] Parameter types: current=${typeof current}, desired=${typeof desired}`);
+function calculateTrophyPowerLevelMultiplier(desiredTrophies, powerLevel) {
+  console.log(`[TROPHY_POWER_MULTIPLIER] Calculating multiplier for ${desiredTrophies} trophies, power level ${powerLevel}`);
+  
+  // Cap power level at 11
+  const cappedPowerLevel = Math.min(powerLevel, 11);
+  console.log(`[TROPHY_POWER_MULTIPLIER] Capped power level: ${cappedPowerLevel}`);
+  
+  let multiplier = 1.0;
+  
+  // Define multipliers based on trophy ranges and power levels
+  if (desiredTrophies <= 500) {
+    // 500 and below
+    if (cappedPowerLevel <= 2) multiplier = 3.0;
+    else if (cappedPowerLevel >= 3 && cappedPowerLevel <= 5) multiplier = 2.0;
+    else if (cappedPowerLevel >= 6 && cappedPowerLevel <= 7) multiplier = 1.5;
+    else if (cappedPowerLevel === 8) multiplier = 1.2;
+    else if (cappedPowerLevel === 11) multiplier = 0.9;
+  } else if (desiredTrophies <= 750) {
+    // 750 and below
+    if (cappedPowerLevel <= 2) multiplier = 3.0;
+    else if (cappedPowerLevel >= 3 && cappedPowerLevel <= 5) multiplier = 2.0;
+    else if (cappedPowerLevel >= 6 && cappedPowerLevel <= 7) multiplier = 1.75;
+    else if (cappedPowerLevel === 8) multiplier = 1.4;
+    else if (cappedPowerLevel === 11) multiplier = 0.9;
+  } else if (desiredTrophies <= 1000) {
+    // 1000 and below
+    if (cappedPowerLevel <= 2) multiplier = 3.0;
+    else if (cappedPowerLevel >= 3 && cappedPowerLevel <= 5) multiplier = 2.5;
+    else if (cappedPowerLevel >= 6 && cappedPowerLevel <= 7) multiplier = 2.0;
+    else if (cappedPowerLevel === 8) multiplier = 1.5;
+    // No multiplier for power 9-11 in this range
+  } else if (desiredTrophies <= 1200) {
+    // 1200 and below
+    if (cappedPowerLevel <= 2) multiplier = 4.0;
+    else if (cappedPowerLevel >= 3 && cappedPowerLevel <= 5) multiplier = 3.0;
+    else if (cappedPowerLevel >= 6 && cappedPowerLevel <= 7) multiplier = 2.5;
+    else if (cappedPowerLevel === 8) multiplier = 1.75;
+    else if (cappedPowerLevel === 9) multiplier = 1.2;
+    // No multiplier for power 10-11 in this range
+  } else if (desiredTrophies <= 1500) {
+    // 1500 and below (1200-1500)
+    if (cappedPowerLevel <= 2) multiplier = 4.0;
+    else if (cappedPowerLevel >= 3 && cappedPowerLevel <= 5) multiplier = 3.0;
+    else if (cappedPowerLevel >= 6 && cappedPowerLevel <= 7) multiplier = 2.5;
+    else if (cappedPowerLevel === 8) multiplier = 1.8;
+    else if (cappedPowerLevel === 9) multiplier = 1.4;
+    else if (cappedPowerLevel === 10) multiplier = 1.05;
+    // No multiplier for power 11 in this range
+  } else if (desiredTrophies <= 1750) {
+    // 1750 and below
+    if (cappedPowerLevel <= 2) multiplier = 5.0;
+    else if (cappedPowerLevel >= 3 && cappedPowerLevel <= 5) multiplier = 4.0;
+    else if (cappedPowerLevel >= 6 && cappedPowerLevel <= 7) multiplier = 3.0;
+    else if (cappedPowerLevel === 8) multiplier = 2.0;
+    else if (cappedPowerLevel === 9) multiplier = 1.5;
+    else if (cappedPowerLevel === 10) multiplier = 1.1;
+    // No multiplier for power 11 in this range
+  } else if (desiredTrophies <= 1900) {
+    // 1900 and below
+    if (cappedPowerLevel <= 2) multiplier = 5.0;
+    else if (cappedPowerLevel >= 3 && cappedPowerLevel <= 5) multiplier = 4.0;
+    else if (cappedPowerLevel >= 6 && cappedPowerLevel <= 7) multiplier = 3.5;
+    else if (cappedPowerLevel === 8) multiplier = 2.25;
+    else if (cappedPowerLevel === 9) multiplier = 1.6;
+    else if (cappedPowerLevel === 10) multiplier = 1.15;
+    // No multiplier for power 11 in this range
+  } else {
+    // 1901 and above
+    if (cappedPowerLevel <= 2) multiplier = 6.0;
+    else if (cappedPowerLevel >= 3 && cappedPowerLevel <= 5) multiplier = 4.5;
+    else if (cappedPowerLevel >= 6 && cappedPowerLevel <= 7) multiplier = 3.75;
+    else if (cappedPowerLevel === 8) multiplier = 2.5;
+    else if (cappedPowerLevel === 9) multiplier = 1.65;
+    else if (cappedPowerLevel === 10) multiplier = 1.25;
+    // No multiplier for power 11 in this range
+  }
+  
+  console.log(`[TROPHY_POWER_MULTIPLIER] Final multiplier for ${desiredTrophies} trophies, power ${cappedPowerLevel}: ${multiplier}x`);
+  return multiplier;
+}
+
+/**
+ * Calculate price for trophies boost with power level multiplier
+ * This function calculates the price per 50 trophies based on the trophy range and applies power level multiplier
+ */
+function calculateTrophyPrice(current, desired, powerLevel = null) {
+  console.log(`[TROPHY PRICE DEBUG] Function called with params: current=${current}, desired=${desired}, powerLevel=${powerLevel}`);
+  console.log(`[TROPHY PRICE DEBUG] Parameter types: current=${typeof current}, desired=${typeof desired}, powerLevel=${typeof powerLevel}`);
   
   // Validate inputs
   if (current === undefined || desired === undefined) {
@@ -204,7 +291,7 @@ function calculateTrophyPrice(current, desired) {
     return 0;
   }
 
-  console.log(`[TROPHY PRICE DEBUG] Validated and converted inputs: current=${current}, desired=${desired}`);
+  console.log(`[TROPHY PRICE DEBUG] Validated and converted inputs: current=${current}, desired=${desired}, powerLevel=${powerLevel}`);
 
   // Trophy price brackets with prices per 50 trophies
   const brackets = [
@@ -226,10 +313,10 @@ function calculateTrophyPrice(current, desired) {
 
   console.log(`[TROPHY PRICE DEBUG] Using ${brackets.length} price brackets`);
   
-  let totalPrice = 0;
+  let basePrice = 0;
   let currentPosition = current;
   
-  console.log(`[TROPHY PRICE] Calculating price for ${current} -> ${desired}`);
+  console.log(`[TROPHY PRICE] Calculating base price for ${current} -> ${desired}`);
 
   // Process trophy increases in 50-trophy increments
   try {
@@ -257,7 +344,7 @@ function calculateTrophyPrice(current, desired) {
       
       console.log(`[TROPHY PRICE] ${currentPosition} to ${currentPosition + trophiesToProcess}: ${blocks} blocks @ €${tier.price} = €${priceForBlocks.toFixed(2)}`);
       
-      totalPrice += priceForBlocks;
+      basePrice += priceForBlocks;
       currentPosition += trophiesToProcess;
     }
   } catch (error) {
@@ -265,17 +352,29 @@ function calculateTrophyPrice(current, desired) {
     return 0;
   }
 
-  // Validate the final price
-  if (isNaN(totalPrice) || totalPrice < 0) {
-    console.error(`[TROPHY PRICE ERROR] Invalid total price: ${totalPrice}`);
+  // Validate the base price
+  if (isNaN(basePrice) || basePrice < 0) {
+    console.error(`[TROPHY PRICE ERROR] Invalid base price: ${basePrice}`);
     return 0;
   }
 
+  console.log(`[TROPHY PRICE] Base price calculated: €${basePrice.toFixed(2)}`);
+
+  // Apply power level multiplier if provided
+  let finalPrice = basePrice;
+  if (powerLevel !== null && powerLevel !== undefined && !isNaN(powerLevel)) {
+    const powerLevelMultiplier = calculateTrophyPowerLevelMultiplier(desired, powerLevel);
+    finalPrice = basePrice * powerLevelMultiplier;
+    console.log(`[TROPHY PRICE] Applied power level ${powerLevel} multiplier ${powerLevelMultiplier}x: €${basePrice.toFixed(2)} -> €${finalPrice.toFixed(2)}`);
+  } else {
+    console.log(`[TROPHY PRICE] No power level provided, using base price: €${finalPrice.toFixed(2)}`);
+  }
+
   // Round to 2 decimal places
-  const finalPrice = Math.round(totalPrice * 100) / 100;
+  const roundedPrice = Math.round(finalPrice * 100) / 100;
   
-  console.log(`[TROPHY PRICE] ${current}-${desired} = €${finalPrice.toFixed(2)}`);
-  return finalPrice;
+  console.log(`[TROPHY PRICE] Final price for ${current}-${desired} (power ${powerLevel}): €${roundedPrice.toFixed(2)}`);
+  return roundedPrice;
 }
 
 /**
@@ -367,7 +466,14 @@ function calculateRankedPrice(currentRank, currentRankSpecific, desiredRank, des
 
   const formatRank = (rank, specific) => {
     const normalizedSpecific = normalizeSpecific(specific); // Normalize here
-    if (!rank || !normalizedSpecific || normalizedSpecific === 'null' || normalizedSpecific === 'undefined') return null;
+    if (!rank) return null;
+    
+    // Special case for Pro rank - it has no specific number
+    if (rank === 'Pro') {
+      return 'Pro';
+    }
+    
+    if (!normalizedSpecific || normalizedSpecific === 'null' || normalizedSpecific === 'undefined' || normalizedSpecific === '') return null;
     return `${rank} ${normalizedSpecific}`; 
   };
   
@@ -545,6 +651,7 @@ module.exports = {
   hasAnyRole,
   fetchCryptoPrice,
   calculateTrophyPrice,
+  calculateTrophyPowerLevelMultiplier,
   calculateBulkPrice,
   calculateRankedPrice,
   calculateMasteryPrice,

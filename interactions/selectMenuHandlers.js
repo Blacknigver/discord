@@ -109,6 +109,13 @@ const selectMenuHandlers = {
     payment_method_select: handlePaymentMethodSelect,
     dutch_method_select: handleDutchMethodSelect,
     crypto_type_select: handleCryptoTypeSelect,
+
+    // Profile purchase payment flow (prefix handlers)
+    'profile_payment_primary_': require('../src/handlers/profilePurchasePayment.js').handlePrimarySelect,
+    'profile_payment_crypto_': require('../src/handlers/profilePurchasePayment.js').handleCryptoSelect,
+    'profile_payment_dutch_': require('../src/handlers/profilePurchasePayment.js').handleDutchSelect,
+
+    // Profile purchase payment handled in interactionHandlers.js to avoid duplicate processing.
 };
 
 module.exports = selectMenuHandlers; 

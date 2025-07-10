@@ -12,6 +12,7 @@ const {
 } = require('discord.js');
 const { EMBED_COLOR } = require('./config');
 const { fetchCryptoPrice, convertEuroToCrypto } = require('./src/utils/helpers');
+const { flowState } = require('./src/modules/ticketFlow'); // Import flowState
 const { 
   CRYPTO_WALLET_ADDRESSES,
   PAYMENT_METHODS,
@@ -65,19 +66,18 @@ async function sendWelcomeEmbed(channel, userId) {
 
 // PayPal Terms of Service embed
 async function sendPayPalTermsEmbed(ticketChannel, userId, options = {}) {
-  const shieldEmoji = EMOJIS.SHIELD ? EMOJIS.SHIELD : '<:shield:1371879600560541756>';
   const checkmarkEmoji = EMOJIS.CHECKMARK ? EMOJIS.CHECKMARK : '<:checkmark:1357478063616688304>';
   const crossEmoji = EMOJIS.CROSS ? EMOJIS.CROSS : '<:cross:1351689463453061130>';
   const supportEmoji = '<:Support:1382066889873686608>';
 
   const termsDescription = 
-    `> ${shieldEmoji}[+] If our PayPal Account gets locked, you will have to wait for us to unlock it, if we fail to unlock it no product or refund will be given.\n` +
-    `> ${shieldEmoji}[+] We will not be covering any transaction fees.\n` +
-    `> ${shieldEmoji}[+] Send **Friends and Family** ONLY - Goods and Services is __Strictly Forbidden__\n` +
-    `> ${shieldEmoji}[+] Send from **PayPal Balance** ONLY - Card/Bank Payments are __Strictly Forbidden__\n` +
-    `> ${shieldEmoji}[+] Send **Euro Currency** Only.\n` +
-    `> ${shieldEmoji}[+] Do **NOT add a note** to the payment.\n` +
-    `> ${shieldEmoji}[+] Must send a Summary Screenshot after sending.\n\n` +
+    `> ${EMOJIS.SHIELD}[+] If our PayPal Account gets locked, you will have to wait for us to unlock it, if we fail to unlock it no product or refund will be given.\n` +
+    `> ${EMOJIS.SHIELD}[+] We will not be covering any transaction fees.\n` +
+    `> ${EMOJIS.SHIELD}[+] Send **Friends and Family** ONLY - Goods and Services is __Strictly Forbidden__\n` +
+    `> ${EMOJIS.SHIELD}[+] Send from **PayPal Balance** ONLY - Card/Bank Payments are __Strictly Forbidden__\n` +
+    `> ${EMOJIS.SHIELD}[+] Send **Euro Currency** Only.\n` +
+    `> ${EMOJIS.SHIELD}[+] Do **NOT add a note** to the payment.\n` +
+    `> ${EMOJIS.SHIELD}[+] Must send a Summary Screenshot after sending.\n\n` +
     '**Breaking any will result in additional fees being added - and may also result in no Product and no Refund.**\n\n' +
     'By clicking \'Confirm\' you **Confirm you have read and agreed to the Terms of Services.**';
 
@@ -262,68 +262,63 @@ async function sendPayPalGiftcardEmbed(ticketChannel, userId, interaction) {
 }
 
 // Litecoin Information
-async function sendLitecoinEmbed(ticketChannel, userId, priceInEuros, interaction) {
-  try {
-    console.log(`[CRYPTO] Creating LTC embed with price: €${priceInEuros}`);
-    if (!priceInEuros || isNaN(parseFloat(priceInEuros)) || parseFloat(priceInEuros) <= 0) {
-      console.error(`[CRYPTO] Invalid price for LTC conversion: ${priceInEuros}`);
-      priceInEuros = 1.00;
-    }
-    priceInEuros = parseFloat(priceInEuros);
+async function sendLitecoinEmbed(ticketChannel, userId, price = null, interaction = null) {
+  const litecoinAddress = 'LMEBUghAdAKKdNTtUBExHyN33b6JS75TkH';
+  const copyEmoji = EMOJIS.COPY ? EMOJIS.COPY : '<:copy:1372240644013035671>';
+  const checkmarkEmoji = EMOJIS.CHECKMARK ? EMOJIS.CHECKMARK : '<:checkmark:1357478063616688304>';
 
-    const ltcAmount = await convertEuroToCrypto('ltc', priceInEuros);
-    console.log(`[CRYPTO] Calculated ${priceInEuros} EUR = ${ltcAmount} LTC`);
+  const litecoinDescription = 
+    `**Litecoin Address:**\n\`${litecoinAddress}\`\n\n` +
+    '**We will not cover any transaction fees.**\n' +
+    'Make sure to check on the fees yourself, we use Exodus wallet to receive your payment.';
 
     const litecoinEmbed = new EmbedBuilder()
       .setTitle('Litecoin Payment Information')
       .setColor(DEFAULT_EMBED_COLOR)
-      .setDescription(
-        `**Litecoin Address:**\\n\`${CRYPTO_WALLET_ADDRESSES.ltc}\`\\n\\n` +
-        `**Amount of Litecoin:**\\n\`${ltcAmount}\`\\n` +
-        '**Must be the __EXACT!__ Amount.**\\n\\n' +
-        '# You have 30 minutes to send the payment and click \'Payment Completed\'.\\n\\n' +
-        'We will not cover any transaction fees.'
-      );
+    .setDescription(litecoinDescription);
 
-    const copyAddressButton = new ButtonBuilder()
+  const copyButton = new ButtonBuilder()
       .setCustomId('copy_ltc_address')
       .setLabel('Copy Address')
-      .setEmoji(EMOJIS.COPY)
-      .setStyle(ButtonStyle.Primary);
-
-    const copyAmountButton = new ButtonBuilder()
-      .setCustomId('copy_ltc_amount')
-      .setLabel('Copy Amount')
-      .setEmoji(EMOJIS.COPY)
+    .setEmoji(copyEmoji)
       .setStyle(ButtonStyle.Primary);
       
     const paymentButton = new ButtonBuilder()
       .setCustomId('payment_completed_ltc')
       .setLabel('Payment Completed')
-      .setEmoji(EMOJIS.CHECKMARK)
+    .setEmoji(checkmarkEmoji)
       .setStyle(ButtonStyle.Success);
 
-    const row = new ActionRowBuilder().addComponents(copyAddressButton, copyAmountButton, paymentButton);
+  const row = new ActionRowBuilder().addComponents(copyButton, paymentButton);
 
-    const sentMessage = await ticketChannel.send({ 
+  // Find the order details message to reply to
+  try {
+    const messages = await ticketChannel.messages.fetch({ limit: 10 });
+    const orderDetailsMsg = messages.find(msg => 
+      msg.embeds.length > 0 && 
+      (msg.embeds[0].title === 'Order Information' || 
+       msg.embeds[0].description?.includes('Current Rank') ||
+       msg.embeds[0].description?.includes('Current Mastery') ||
+       msg.embeds[0].description?.includes('Current Trophies'))
+    );
+    
+    if (orderDetailsMsg) {
+      return await orderDetailsMsg.reply({ 
         content: `<@${userId}>`, 
         embeds: [litecoinEmbed], 
         components: [row] 
     });
-    
-    sentMessage.cryptoAmountToCopy = ltcAmount;
-    setupCryptoTimeout(ticketChannel, 'ltc', sentMessage.id, ltcAmount, priceInEuros, userId);
-    return sentMessage;
-
-  } catch (error) {
-    console.error(`[CRYPTO] Error in sendLitecoinEmbed for user ${userId} with price €${priceInEuros}:`, error);
-    if (ticketChannel && ticketChannel.send) {
-      await ticketChannel.send({ 
-          content: `<@${userId}>, we encountered an error preparing the Litecoin payment information. Staff: ${error.message}`,
-          allowedMentions: { users: [userId, PAYMENT_STAFF.OWNER_ID_FOR_ERRORS] } 
-      }).catch(e => console.error("Fallback message send error:", e));
     }
+  } catch (error) {
+    console.error(`[LITECOIN] Error finding order details message to reply to: ${error.message}`);
   }
+
+  // Fallback: send as regular message
+  return await ticketChannel.send({ 
+    content: `<@${userId}>`, 
+    embeds: [litecoinEmbed], 
+    components: [row] 
+  });
 }
 
 // Show crypto selection options
@@ -451,133 +446,303 @@ async function showCryptoSelection(interaction, userId = null, priceInEuros = nu
 }
 
 // Bitcoin Information
-async function sendBitcoinEmbed(ticketChannel, userId, priceInEuros, interaction) {
-  try {
-    console.log(`[CRYPTO] Creating BTC embed with price: €${priceInEuros}`);
-    if (!priceInEuros || isNaN(parseFloat(priceInEuros)) || parseFloat(priceInEuros) <= 0) {
-      console.error(`[CRYPTO] Invalid price for BTC conversion: ${priceInEuros}`);
-      priceInEuros = 1.00;
-    }
-    priceInEuros = parseFloat(priceInEuros);
+async function sendBitcoinEmbed(ticketChannel, userId, interaction) {
+  const bitcoinAddress = 'bc1qcxrteqq6rgr4u5s6hg9n4d27zar22ssgzx7s8v';
+  const copyEmoji = EMOJIS.COPY ? EMOJIS.COPY : '<:copy:1372240644013035671>';
+  const checkmarkEmoji = EMOJIS.CHECKMARK ? EMOJIS.CHECKMARK : '<:checkmark:1357478063616688304>';
 
-    const btcAmount = await convertEuroToCrypto('btc', priceInEuros);
-    console.log(`[CRYPTO] Calculated ${priceInEuros} EUR = ${btcAmount} BTC`);
+  const bitcoinDescription = 
+    `**Bitcoin Address:**\n\`${bitcoinAddress}\`\n\n` +
+    '**We will not cover any transaction fees.**\n' +
+    'Make sure to check on the fees yourself, we use Exodus wallet to receive your payment.';
 
     const bitcoinEmbed = new EmbedBuilder()
       .setTitle('Bitcoin Payment Information')
       .setColor(DEFAULT_EMBED_COLOR)
-      .setDescription(
-        `**Bitcoin Address:**\n\`${CRYPTO_WALLET_ADDRESSES.btc}\`\n\n` +
-        `**Amount of Bitcoin:**\n\`${btcAmount}\`\n` +
-        '**Must be the __EXACT!__ Amount.**\n\n' +
-        '# You have 30 minutes to send the payment and click \'Payment Completed\'.\n\n' +
-        'We will not cover any transaction fees.'
-      );
+    .setDescription(bitcoinDescription);
 
-    const copyAddressButton = new ButtonBuilder()
+  const copyButton = new ButtonBuilder()
       .setCustomId('copy_btc_address')
       .setLabel('Copy Address')
-      .setEmoji(EMOJIS.COPY)
-      .setStyle(ButtonStyle.Primary);
-
-    const copyAmountButton = new ButtonBuilder()
-      .setCustomId('copy_btc_amount')
-      .setLabel('Copy Amount')
-      .setEmoji(EMOJIS.COPY)
+    .setEmoji(copyEmoji)
       .setStyle(ButtonStyle.Primary);
       
     const paymentButton = new ButtonBuilder()
       .setCustomId('payment_completed_btc')
       .setLabel('Payment Completed')
-      .setEmoji(EMOJIS.CHECKMARK)
+    .setEmoji(checkmarkEmoji)
       .setStyle(ButtonStyle.Success);
 
-    const row = new ActionRowBuilder().addComponents(copyAddressButton, copyAmountButton, paymentButton);
+  const row = new ActionRowBuilder().addComponents(copyButton, paymentButton);
 
-    const sentMessage = await ticketChannel.send({ 
+  // Find the order details message to reply to
+  try {
+    const messages = await ticketChannel.messages.fetch({ limit: 10 });
+    const orderDetailMsg = messages.find(msg => 
+      msg.embeds.length > 0 && 
+      (msg.embeds[0].description?.includes('Current Rank') || 
+       msg.embeds[0].description?.includes('Current Mastery') || 
+       msg.embeds[0].description?.includes('Current Trophies') ||
+       msg.embeds[0].description?.includes('Final Price'))
+    );
+    
+    if (orderDetailMsg) {
+      return await orderDetailMsg.reply({ 
         content: `<@${userId}>`, 
         embeds: [bitcoinEmbed], 
         components: [row] 
     });
-    
-    sentMessage.cryptoAmountToCopy = btcAmount;
-    setupCryptoTimeout(ticketChannel, 'btc', sentMessage.id, btcAmount, priceInEuros, userId);
-    return sentMessage;
-
+    }
   } catch (error) {
-    console.error(`[CRYPTO] Error in sendBitcoinEmbed for user ${userId} with price €${priceInEuros}:`, error);
+    console.error(`[BITCOIN_INFO] Error finding order details message to reply to: ${error.message}`);
+  }
+  
+  // Fallback to sending as normal message
+  return await ticketChannel.send({ 
+    content: `<@${userId}>`,
+    embeds: [bitcoinEmbed],
+    components: [row]
+  });
+}
+
+// Create Bitcoin Transfer ID modal
+async function createBitcoinTxModal(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('bitcoin_tx_modal')
+    .setTitle('Bitcoin Payment Confirmation');
+
+  const txIdInput = new TextInputBuilder()
+    .setCustomId('bitcoin_tx_id')
+    .setLabel('Transfer ID / TXid')
+    .setPlaceholder('The ID of the transaction.')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  const firstActionRow = new ActionRowBuilder().addComponents(txIdInput);
+  modal.addComponents(firstActionRow);
+
+  await interaction.showModal(modal);
+}
+
+// Handle Bitcoin Transfer ID modal submission
+async function handleBitcoinTxModalSubmission(interaction) {
+  try {
+    const txId = interaction.fields.getTextInputValue('bitcoin_tx_id');
+    
+    // Send staff verification embed with Transfer ID
+    await sendStaffPaymentVerificationEmbed(interaction.channel, interaction.user.id, 'btc', { txId });
+    
+    await interaction.reply({
+      content: 'Payment confirmation sent to staff for verification.',
+      ephemeral: true
+    });
+    
+    console.log(`[BITCOIN_TX] User ${interaction.user.id} submitted Bitcoin payment with TX ID: ${txId}`);
+  } catch (error) {
+    console.error(`[BITCOIN_TX] Error handling Bitcoin TX modal submission: ${error.message}`);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'An error occurred. Please try again or contact staff.',
+        ephemeral: true
+      });
+    }
+  }
+}
+
+// Create Litecoin Transfer ID modal
+async function createLitecoinTxModal(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('litecoin_tx_modal')
+    .setTitle('Litecoin Payment Confirmation');
+
+  const txIdInput = new TextInputBuilder()
+    .setCustomId('litecoin_tx_id')
+    .setLabel('Transfer ID / TXid')
+    .setPlaceholder('The ID of the transaction.')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  const firstActionRow = new ActionRowBuilder().addComponents(txIdInput);
+  modal.addComponents(firstActionRow);
+
+  await interaction.showModal(modal);
+}
+
+// Handle Litecoin Transfer ID modal submission
+async function handleLitecoinTxModalSubmission(interaction) {
+  try {
+    const txId = interaction.fields.getTextInputValue('litecoin_tx_id');
+    
+    // Send staff verification embed with Transfer ID
+    await sendStaffPaymentVerificationEmbed(interaction.channel, interaction.user.id, 'ltc', { txId });
+    
+    await interaction.reply({
+      content: 'Payment confirmation sent to staff for verification.',
+      ephemeral: true
+    });
+    
+    console.log(`[LITECOIN_TX] User ${interaction.user.id} submitted Litecoin payment with TX ID: ${txId}`);
+  } catch (error) {
+    console.error(`[LITECOIN_TX] Error handling Litecoin TX modal submission: ${error.message}`);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'An error occurred. Please try again or contact staff.',
+        ephemeral: true
+      });
+    }
+  }
+}
+
+// Create Solana Transfer ID modal
+async function createSolanaTxModal(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId('solana_tx_modal')
+    .setTitle('Solana Payment Confirmation');
+
+  const txIdInput = new TextInputBuilder()
+    .setCustomId('solana_tx_id')
+    .setLabel('Transfer ID / TXid')
+    .setPlaceholder('The ID of the transaction.')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true);
+
+  const firstActionRow = new ActionRowBuilder().addComponents(txIdInput);
+  modal.addComponents(firstActionRow);
+
+  await interaction.showModal(modal);
+}
+
+// Handle Solana Transfer ID modal submission
+async function handleSolanaTxModalSubmission(interaction) {
+  try {
+    const txId = interaction.fields.getTextInputValue('solana_tx_id');
+    
+    // Send staff verification embed with Transfer ID
+    await sendStaffPaymentVerificationEmbed(interaction.channel, interaction.user.id, 'sol', { txId });
+    
+    await interaction.reply({
+      content: 'Payment confirmation sent to staff for verification.',
+      ephemeral: true
+    });
+    
+    console.log(`[SOLANA_TX] User ${interaction.user.id} submitted Solana payment with TX ID: ${txId}`);
+  } catch (error) {
+    console.error(`[SOLANA_TX] Error handling Solana TX modal submission: ${error.message}`);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'An error occurred. Please try again or contact staff.',
+        ephemeral: true
+      });
+    }
+  }
+}
+
+// Resend Bitcoin embed (simplified version without crypto conversion)
+async function resendBitcoinEmbed(ticketChannel, userId, interaction) {
+  try {
+    // Just call the regular sendBitcoinEmbed function
+    return await sendBitcoinEmbed(ticketChannel, userId, interaction);
+  } catch (error) {
+    console.error(`[RESEND_BITCOIN] Error resending Bitcoin embed: ${error.message}`);
     if (ticketChannel && ticketChannel.send) {
       await ticketChannel.send({ 
-          content: `<@${userId}>, we encountered an error preparing the Bitcoin payment information. Staff: ${error.message}`,
-          allowedMentions: { users: [userId, PAYMENT_STAFF.OWNER_ID_FOR_ERRORS] } 
+        content: `<@${userId}>, we encountered an error preparing the Bitcoin payment information. Please try again.`,
+        allowedMentions: { users: [userId] } 
+      }).catch(e => console.error("Fallback message send error:", e));
+    }
+  }
+}
+
+// Resend Litecoin embed (simplified version without crypto conversion)
+async function resendLitecoinEmbed(ticketChannel, userId, price = null, interaction = null) {
+  try {
+    // Just call the regular sendLitecoinEmbed function
+    return await sendLitecoinEmbed(ticketChannel, userId, price, interaction);
+  } catch (error) {
+    console.error(`[RESEND_LITECOIN] Error resending Litecoin embed: ${error.message}`);
+    if (ticketChannel && ticketChannel.send) {
+      await ticketChannel.send({ 
+        content: `<@${userId}>, we encountered an error preparing the Litecoin payment information. Please try again.`,
+        allowedMentions: { users: [userId] } 
+      }).catch(e => console.error("Fallback message send error:", e));
+    }
+  }
+}
+
+// Resend Solana embed (simplified version without crypto conversion)
+async function resendSolanaEmbed(ticketChannel, userId, price = null, interaction = null) {
+  try {
+    // Just call the regular sendSolanaEmbed function
+    return await sendSolanaEmbed(ticketChannel, userId, price, interaction);
+  } catch (error) {
+    console.error(`[RESEND_SOLANA] Error resending Solana embed: ${error.message}`);
+    if (ticketChannel && ticketChannel.send) {
+      await ticketChannel.send({ 
+        content: `<@${userId}>, we encountered an error preparing the Solana payment information. Please try again.`,
+        allowedMentions: { users: [userId] } 
       }).catch(e => console.error("Fallback message send error:", e));
     }
   }
 }
 
 // Solana Information
-async function sendSolanaEmbed(ticketChannel, userId, priceInEuros, interaction) {
-  try {
-    console.log(`[CRYPTO] Creating SOL embed with price: €${priceInEuros}`);
-    if (!priceInEuros || isNaN(parseFloat(priceInEuros)) || parseFloat(priceInEuros) <= 0) {
-      console.error(`[CRYPTO] Invalid price for SOL conversion: ${priceInEuros}`);
-      priceInEuros = 1.00;
-    }
-    priceInEuros = parseFloat(priceInEuros);
+async function sendSolanaEmbed(ticketChannel, userId, price = null, interaction = null) {
+  const solanaAddress = 'B9z5EhzPnPFf8t5CptAArYRFhzkrQkv1i7URz1pVSNdH';
+  const copyEmoji = EMOJIS.COPY ? EMOJIS.COPY : '<:copy:1372240644013035671>';
+  const checkmarkEmoji = EMOJIS.CHECKMARK ? EMOJIS.CHECKMARK : '<:checkmark:1357478063616688304>';
 
-    const solAmount = await convertEuroToCrypto('sol', priceInEuros);
-    console.log(`[CRYPTO] Calculated ${priceInEuros} EUR = ${solAmount} SOL`);
+  const solanaDescription = 
+    `**Solana Address:**\n\`${solanaAddress}\`\n\n` +
+    '**We will not cover any transaction fees.**\n' +
+    'Make sure to check on the fees yourself, we use Exodus wallet to receive your payment.';
 
     const solanaEmbed = new EmbedBuilder()
       .setTitle('Solana Payment Information')
       .setColor(DEFAULT_EMBED_COLOR)
-      .setDescription(
-        `**Solana Address:**\n\`${CRYPTO_WALLET_ADDRESSES.sol}\`\n\n` +
-        `**Amount of Solana:**\n\`${solAmount}\`\n` +
-        '**Must be the __EXACT!__ Amount.**\n\n' +
-        '# You have 30 minutes to send the payment and click \'Payment Completed\'.\n\n' +
-        'We will not cover any transaction fees.'
-      );
+    .setDescription(solanaDescription);
 
-    const copyAddressButton = new ButtonBuilder()
+  const copyButton = new ButtonBuilder()
       .setCustomId('copy_sol_address')
       .setLabel('Copy Address')
-      .setEmoji(EMOJIS.COPY)
-      .setStyle(ButtonStyle.Primary);
-
-    const copyAmountButton = new ButtonBuilder()
-      .setCustomId('copy_sol_amount')
-      .setLabel('Copy Amount')
-      .setEmoji(EMOJIS.COPY)
+    .setEmoji(copyEmoji)
       .setStyle(ButtonStyle.Primary);
       
     const paymentButton = new ButtonBuilder()
       .setCustomId('payment_completed_sol')
       .setLabel('Payment Completed')
-      .setEmoji(EMOJIS.CHECKMARK)
+    .setEmoji(checkmarkEmoji)
       .setStyle(ButtonStyle.Success);
 
-    const row = new ActionRowBuilder().addComponents(copyAddressButton, copyAmountButton, paymentButton);
+  const row = new ActionRowBuilder().addComponents(copyButton, paymentButton);
+
+  // Find the order details message to reply to
+  try {
+    const messages = await ticketChannel.messages.fetch({ limit: 10 });
+    const orderDetailsMsg = messages.find(msg => 
+      msg.embeds.length > 0 && 
+      (msg.embeds[0].title === 'Order Information' || 
+       msg.embeds[0].description?.includes('Current Rank') ||
+       msg.embeds[0].description?.includes('Current Mastery') ||
+       msg.embeds[0].description?.includes('Current Trophies'))
+    );
     
-    const sentMessage = await ticketChannel.send({ 
+    if (orderDetailsMsg) {
+      return await orderDetailsMsg.reply({ 
         content: `<@${userId}>`, 
         embeds: [solanaEmbed], 
         components: [row] 
     });
-
-    sentMessage.cryptoAmountToCopy = solAmount;
-    setupCryptoTimeout(ticketChannel, 'sol', sentMessage.id, solAmount, priceInEuros, userId);
-    return sentMessage;
-
-  } catch (error) {
-    console.error(`[CRYPTO] Error in sendSolanaEmbed for user ${userId} with price €${priceInEuros}:`, error);
-    if (ticketChannel && ticketChannel.send) {
-      await ticketChannel.send({ 
-          content: `<@${userId}>, we encountered an error preparing the Solana payment information. Staff: ${error.message}`,
-          allowedMentions: { users: [userId, PAYMENT_STAFF.OWNER_ID_FOR_ERRORS] } 
-      }).catch(e => console.error("Fallback message send error:", e));
     }
+  } catch (error) {
+    console.error(`[SOLANA] Error finding order details message to reply to: ${error.message}`);
   }
+
+  // Fallback: send as regular message
+  return await ticketChannel.send({ 
+    content: `<@${userId}>`, 
+    embeds: [solanaEmbed], 
+    components: [row] 
+  });
 }
 
 // IBAN Bank Transfer Information
@@ -588,8 +753,7 @@ async function sendIbanEmbed(ticketChannel, userId, interaction) {
   const checkmarkEmoji = EMOJIS.CHECKMARK ? EMOJIS.CHECKMARK : '<:checkmark:1357478063616688304>';
 
   const ibanDescription = 
-    `**IBAN:**\\n\`${ibanAccount}\`\\n\\n` +
-    '**This is fully automatic, you can send the payment already.**\\n\\n' +
+    `**IBAN**: \`${ibanAccount}\` **This is fully automatic, you can send the payment already.**\n\n` +
     'Once you have sent the payment, click on the \'Payment Completed\' button.';
 
   const ibanEmbed = new EmbedBuilder()
@@ -797,18 +961,40 @@ async function sendStaffPaymentVerificationEmbed(ticketChannel, userId, paymentT
 
   // paymentTypeString will be like 'paypal', 'iban', 'tikkie', 'btc'
   if (paymentTypeString.startsWith('paypal')) {
-    staffToPing = PAYMENT_STAFF.PAYPAL_VERIFIER; // e.g., 986164993080836096
+    // Handle PAYPAL_VERIFIER as array or single ID
+    if (Array.isArray(PAYMENT_STAFF.PAYPAL_VERIFIER)) {
+      staffToPing = PAYMENT_STAFF.PAYPAL_VERIFIER[0]; // Use first verifier
+      staffCanClickId = PAYMENT_STAFF.PAYPAL_VERIFIER[0];
+    } else {
+      staffToPing = PAYMENT_STAFF.PAYPAL_VERIFIER;
     staffCanClickId = PAYMENT_STAFF.PAYPAL_VERIFIER;
+    }
   } else if (paymentTypeString.startsWith('iban') || paymentTypeString.startsWith('tikkie')) {
-    staffToPing = PAYMENT_STAFF.IBAN_TIKKIE_VERIFIER; // e.g., 658351335967686659
-    staffCanClickId = PAYMENT_STAFF.IBAN_TIKKIE_VERIFIER;
+    staffToPing = PAYMENT_STAFF.IBAN_VERIFIER; // e.g., 987751357773672538
+    staffCanClickId = PAYMENT_STAFF.IBAN_VERIFIER;
   } else if (paymentTypeString.startsWith('btc')) {
-    staffToPing = PAYMENT_STAFF.BTC_VERIFIER; // e.g., 658351335967686659
+    staffToPing = PAYMENT_STAFF.BTC_VERIFIER; // e.g., 987751357773672538
     staffCanClickId = PAYMENT_STAFF.BTC_VERIFIER;
     title = 'Confirm Transaction';
     description = 'Please confirm you have received the correct amount with all confirms.';
     if (orderDetails.txId) { // orderDetails here is actually verificationData from old spec
-        description += `\\nTransaction ID: \`${orderDetails.txId}\``;
+        description += `\n**Transfer ID:** \`${orderDetails.txId}\``;
+    }
+  } else if (paymentTypeString.startsWith('ltc')) {
+    staffToPing = PAYMENT_STAFF.BTC_VERIFIER; // Use same verifier as Bitcoin
+    staffCanClickId = PAYMENT_STAFF.BTC_VERIFIER;
+    title = 'Confirm Transaction';
+    description = 'Please confirm you have received the correct amount with all confirms.';
+    if (orderDetails.txId) {
+        description += `\n**Transfer ID:** \`${orderDetails.txId}\``;
+    }
+  } else if (paymentTypeString.startsWith('sol')) {
+    staffToPing = PAYMENT_STAFF.BTC_VERIFIER; // Use same verifier as Bitcoin
+    staffCanClickId = PAYMENT_STAFF.BTC_VERIFIER;
+    title = 'Confirm Transaction';
+    description = 'Please confirm you have received the correct amount with all confirms.';
+    if (orderDetails.txId) {
+        description += `\n**Transfer ID:** \`${orderDetails.txId}\``;
     }
   } else {
     console.error(`[STAFF_VERIFY] Unknown payment type for staff verification: ${paymentTypeString}`);
@@ -823,8 +1009,7 @@ async function sendStaffPaymentVerificationEmbed(ticketChannel, userId, paymentT
   const embed = new EmbedBuilder()
     .setTitle(title)
     .setColor(DEFAULT_EMBED_COLOR)
-    .setDescription(description)
-    .setFooter({text: `User ID: ${userId} | Verifier: ${staffCanClickId}`}); // Add user ID and who can click
+    .setDescription(description);
 
   const confirmButton = new ButtonBuilder()
     // Custom ID format: staff_confirm_payment_<type>_<userId>_<verifierId>
@@ -841,11 +1026,15 @@ async function sendStaffPaymentVerificationEmbed(ticketChannel, userId, paymentT
 
   const row = new ActionRowBuilder().addComponents(confirmButton, cancelButton);
   
+  // Avoid duplicate pings if staff and user are the same person
+  const contentPing = staffToPing === userId ? `<@${userId}>` : `<@${staffToPing}> <@${userId}>`;
+  const allowedUsers = staffToPing === userId ? [userId] : [staffToPing, userId];
+  
   return ticketChannel.send({ 
-      content: `<@${staffToPing}> <@${userId}>`, // Ping staff and user who initiated payment
+      content: contentPing, // Ping staff and user who initiated payment (avoid duplicates)
       embeds: [embed], 
       components: [row],
-      allowedMentions: { users: [staffToPing, userId]}
+      allowedMentions: { users: allowedUsers}
   });
 }
 
@@ -867,13 +1056,13 @@ async function sendPayPalPaymentVerificationEmbed(ticketChannel, userId, replyTo
   const confirmButton = new ButtonBuilder()
     .setCustomId('paypal_payment_received')
     .setLabel('Payment Received')
-    .setEmoji('1357478063616688304')
+    .setEmoji('<:checkmark:1357478063616688304>')
     .setStyle(ButtonStyle.Success);
 
   const rejectButton = new ButtonBuilder()
     .setCustomId('paypal_payment_not_received')
     .setLabel('Payment Not Received')
-    .setEmoji('1351689463453061130')
+    .setEmoji('<:cross:1351689463453061130>')
     .setStyle(ButtonStyle.Danger);
 
   const row = new ActionRowBuilder().addComponents(confirmButton, rejectButton);
@@ -897,7 +1086,7 @@ async function sendPayPalPaymentVerificationEmbed(ticketChannel, userId, replyTo
 
 // Send boost available embed after payment verification
 async function sendBoostAvailableEmbed(ticketChannel, orderDetails, userId, boosterRoleId = null, replyToMessage = null) {
-  const roleId = boosterRoleId || (ROLE_IDS && ROLE_IDS.BOOSTER ? ROLE_IDS.BOOSTER : '1303702944696504441');
+  const roleId = boosterRoleId || ROLE_IDS.BOOSTER || ROLE_IDS.BOOST_AVAILABLE || '1303702944696504441';
   const checkmarkEmoji = EMOJIS.CHECKMARK ? EMOJIS.CHECKMARK : '<:checkmark:1357478063616688304>';
 
   // Prepare the description based on order details
@@ -1114,6 +1303,141 @@ async function sendOrderDetailsEmbed(ticketChannel, orderDetails) {
   return await ticketChannel.send({ embeds: [embed] });
 }
 
+// Send crypto other payment requested embed (for "Other" crypto types)
+async function sendCryptoOtherPaymentEmbed(ticketChannel, userId, cryptoCoin) {
+  const checkmarkEmoji = EMOJIS.CHECKMARK ? EMOJIS.CHECKMARK : '<:checkmark:1357478063616688304>';
+  const cryptoVerifier = PAYMENT_STAFF.BTC_VERIFIER; // Use same verifier as other crypto payments
+
+  const cryptoOtherEmbed = new EmbedBuilder()
+    .setTitle('Crypto Payment Requested')
+    .setColor(DEFAULT_EMBED_COLOR)
+    .setDescription(`<@${userId}> Has requested to pay with \`${cryptoCoin}\`.`);
+
+  const paymentReceivedButton = new ButtonBuilder()
+    .setCustomId('payment_received_crypto_other')
+    .setLabel('Payment Received')
+    .setEmoji(checkmarkEmoji)
+    .setStyle(ButtonStyle.Success);
+
+  const row = new ActionRowBuilder().addComponents(paymentReceivedButton);
+
+  // Find the order details message to reply to
+  try {
+    const messages = await ticketChannel.messages.fetch({ limit: 10 });
+    const orderDetailsMsg = messages.find(msg => 
+      msg.embeds.length > 0 && 
+      (msg.embeds[0].title === 'Order Information' || 
+       msg.embeds[0].description?.includes('Current Rank') ||
+       msg.embeds[0].description?.includes('Current Mastery') ||
+       msg.embeds[0].description?.includes('Current Trophies'))
+    );
+    
+    if (orderDetailsMsg) {
+      return await orderDetailsMsg.reply({ 
+        content: `<@${cryptoVerifier}>`, 
+        embeds: [cryptoOtherEmbed], 
+        components: [row] 
+      });
+    }
+  } catch (error) {
+    console.error(`[CRYPTO_OTHER] Error finding order details message to reply to: ${error.message}`);
+  }
+
+  // Fallback if we couldn't find the message to reply to
+  return await ticketChannel.send({ 
+    content: `<@${cryptoVerifier}>`, 
+    embeds: [cryptoOtherEmbed], 
+    components: [row] 
+  });
+}
+
+async function sendPayPalGiftcardOtherPaymentEmbed(ticketChannel, userId, giftcardInfo) {
+  const checkmarkEmoji = EMOJIS.CHECKMARK ? EMOJIS.CHECKMARK : '<:checkmark:1357478063616688304>';
+  
+  const paypalGiftcardEmbed = new EmbedBuilder()
+    .setTitle('PayPal Giftcard Payment Information')
+    .setColor(DEFAULT_EMBED_COLOR)
+    .setDescription(`**Where to purchase:**
+> https://www.g2a.com/paypal-gift-card-5-eur-by-rewarble-global-i10000339995019
+> https://www.eneba.com/rewarble-paypal-rewarble-paypal-20-eur-voucher-global
+
+The giftcard must be from **\`REWARBLE\`**, so it must be a **Rewarble PayPal Giftcard**.
+
+Purchase a **Global** and **Euro Currency** Giftcard only.
+
+Please wait for an owner to assist you, since fees apply, they will tell you what Giftcard amount you need to purchase.`);
+
+  const paymentReceivedButton = new ButtonBuilder()
+    .setCustomId('payment_received_paypal_giftcard')
+    .setLabel('Payment Received')
+    .setEmoji(checkmarkEmoji)
+    .setStyle(ButtonStyle.Success);
+
+  const row = new ActionRowBuilder().addComponents(paymentReceivedButton);
+
+  // Find the order details message to reply to
+  try {
+    const messages = await ticketChannel.messages.fetch({ limit: 10 });
+    const orderDetailsMsg = messages.find(msg => 
+      msg.embeds.length > 0 && 
+      (msg.embeds[0].title === 'Order Information' || 
+       msg.embeds[0].description?.includes('Current Rank') ||
+       msg.embeds[0].description?.includes('Current Mastery') ||
+       msg.embeds[0].description?.includes('Current Trophies'))
+    );
+    
+    if (orderDetailsMsg) {
+      return await orderDetailsMsg.reply({ 
+        content: `<@${userId}> <@&${ROLE_IDS.OWNER}>`, 
+        embeds: [paypalGiftcardEmbed], 
+        components: [row] 
+      });
+    }
+  } catch (error) {
+    console.error(`[PAYPAL_GIFTCARD] Error finding order details message to reply to: ${error.message}`);
+  }
+
+  // Fallback if we couldn't find the message to reply to
+  return await ticketChannel.send({ 
+    content: `<@${userId}> <@&${ROLE_IDS.OWNER}>`, 
+    embeds: [paypalGiftcardEmbed], 
+    components: [row] 
+  });
+}
+
+// === Helper: Notify boosters once payment is confirmed ===
+async function sendPaymentConfirmedNotification(ticketChannel, orderDetails = {}) {
+  try {
+    const boosterRoleId = ROLE_IDS.BOOSTER || ROLE_IDS.BOOST_AVAILABLE || '1303702944696504441';
+
+    // Fallback text for order info
+    const descriptionLines = [];
+    if (orderDetails.current || orderDetails.target) {
+      descriptionLines.push(`**Current:** \`${orderDetails.current || 'N/A'}\``);
+      descriptionLines.push(`**Target:** \`${orderDetails.target || 'N/A'}\``);
+    }
+    if (orderDetails.amount) {
+      descriptionLines.push(`**Price:** \`${orderDetails.amount}\``);
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle('Boost Available')
+      .setColor(DEFAULT_EMBED_COLOR)
+      .setDescription(
+        descriptionLines.length > 0
+          ? descriptionLines.join('\n')
+          : 'A new boost is ready to be claimed.'
+      );
+
+    await ticketChannel.send({
+      content: `<@&${boosterRoleId}>`,
+      embeds: [embed]
+    });
+  } catch (error) {
+    console.error('[PAYMENT_NOTIFY] Error sending payment confirmed notification:', error);
+  }
+}
+
 module.exports = {
   sendWelcomeEmbed,
   sendPayPalTermsEmbed,
@@ -1135,6 +1459,18 @@ module.exports = {
   sendPayPalTosAcceptedEmbed,
   sendOrderDetailsEmbed,
   sendBitcoinEmbed,
+  resendBitcoinEmbed,
   sendSolanaEmbed,
-  sendPayPalScreenshotRequestEmbed
+  resendSolanaEmbed,
+  resendLitecoinEmbed,
+  sendPayPalScreenshotRequestEmbed,
+  createBitcoinTxModal,
+  handleBitcoinTxModalSubmission,
+  createLitecoinTxModal,
+  handleLitecoinTxModalSubmission,
+  createSolanaTxModal,
+  handleSolanaTxModalSubmission,
+  sendCryptoOtherPaymentEmbed,
+  sendPayPalGiftcardOtherPaymentEmbed
+  ,sendPaymentConfirmedNotification
 }; 

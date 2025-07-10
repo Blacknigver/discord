@@ -16,8 +16,8 @@ const claimBoostHandler = async (interaction) => {
     const member = interaction.member;
     const channel = interaction.channel;
     
-    // Hardcode the correct booster role ID
-    const boosterRoleId = '1303702944696504441';
+    // Booster role from config
+    const boosterRoleId = config.ROLES.BOOSTER_ROLE;
     
     // Debug log all roles the user has
     const memberRoles = [];
@@ -62,7 +62,7 @@ const claimBoostHandler = async (interaction) => {
     // For testing, allow admins or verifiers to claim as well
     if (!hasBoosterRole) {
       // Admin check
-      const adminRoleId = '1381713892501356585';
+      const adminRoleId = config.ROLES.ADMIN_ROLE || config.ROLES.ADMIN;
       if (memberRoles.includes(adminRoleId)) {
         console.log(`[BOOST] User is an admin, allowing claim`);
         hasBoosterRole = true;
@@ -172,13 +172,13 @@ const claimBoostHandler = async (interaction) => {
     const completedButton = new ButtonBuilder()
       .setCustomId('boost_completed')
       .setLabel('Boost Completed')
-      .setEmoji('1357478063616688304')
+      .setEmoji('<:checkmark:1357478063616688304>')
       .setStyle(ButtonStyle.Success);
     
     const cancelButton = new ButtonBuilder()
       .setCustomId('boost_cancel')
       .setLabel('Cancel Boost')
-      .setEmoji('1351689463453061130')
+      .setEmoji('<:cross:1351689463453061130>')
       .setStyle(ButtonStyle.Danger);
     
     const row = new ActionRowBuilder()
@@ -190,6 +190,10 @@ const claimBoostHandler = async (interaction) => {
       embeds: [claimedEmbed],
       components: [row]
     });
+    
+    // Clean up - delete the Boost Available message
+    const { cleanupMessages } = require('../utils/messageCleanup.js');
+    await cleanupMessages(channel, null, 'boost_claimed');
     
     console.log(`[BOOST] Sent Boost Claimed message with ID: ${claimedMessage.id}`);
     console.log(`[BOOST] Message mentions booster: ${userId} and ticket creator: ${ticketCreatorId}`);
@@ -324,13 +328,13 @@ const boostCompletedHandler = async (interaction) => {
     const isCompletedButton = new ButtonBuilder()
       .setCustomId('boost_is_completed')
       .setLabel('Boost is Completed')
-      .setEmoji('1357478063616688304')
+      .setEmoji('<:checkmark:1357478063616688304>')
       .setStyle(ButtonStyle.Success);
     
     const notCompletedButton = new ButtonBuilder()
       .setCustomId('boost_not_completed')
       .setLabel('Boost is not Completed')
-      .setEmoji('1351689463453061130')
+      .setEmoji('<:cross:1351689463453061130>')
       .setStyle(ButtonStyle.Danger);
     
     const row = new ActionRowBuilder()
@@ -409,8 +413,8 @@ const boostCancelHandler = async (interaction) => {
     
     // Restore access to all boosters
     try {
-      // Hardcode the correct booster role ID
-      const boosterRoleId = '1303702944696504441';
+      // Booster role from config
+      const boosterRoleId = config.ROLES.BOOSTER_ROLE;
       
       await interaction.channel.permissionOverwrites.edit(boosterRoleId, {
         ViewChannel: true
@@ -434,7 +438,7 @@ const boostCancelHandler = async (interaction) => {
     await interaction.update({ components: [disabledRow] });
     
     // Send a new Boost Available embed
-    const roleId = '1303702944696504441'; // Booster role ID
+    const roleId = config.ROLES.BOOSTER_ROLE; // Booster role ID
     
     const boostAvailableEmbed = new EmbedBuilder()
       .setTitle('Boost Available')
@@ -444,7 +448,7 @@ const boostCancelHandler = async (interaction) => {
     const claimButton = new ButtonBuilder()
       .setCustomId('claim_boost')
       .setLabel('Claim Boost')
-      .setEmoji('1357478063616688304')
+      .setEmoji('<:checkmark:1357478063616688304>')
       .setStyle(ButtonStyle.Success);
     
     const row = new ActionRowBuilder().addComponents(claimButton);
@@ -454,6 +458,11 @@ const boostCancelHandler = async (interaction) => {
       embeds: [boostAvailableEmbed],
       components: [row]
     });
+    
+    // Clean up payment method messages AFTER boost available is sent
+    const { cleanupMessages } = require('../utils/messageCleanup.js');
+    await cleanupMessages(interaction.channel, null, 'payment_confirmed');
+    
   } catch (error) {
     console.error(`[BOOST] Error in boostCancelHandler: ${error.message}`);
     if (!interaction.replied && !interaction.deferred) {
@@ -504,13 +513,13 @@ const boostIsCompletedHandler = async (interaction) => {
     const confirmButton = new ButtonBuilder()
       .setCustomId('boost_confirm_completed')
       .setLabel('Confirm')
-      .setEmoji('1357478063616688304')
+      .setEmoji('<:checkmark:1357478063616688304>')
       .setStyle(ButtonStyle.Success);
     
     const cancelButton = new ButtonBuilder()
       .setCustomId('boost_cancel_confirmation')
       .setLabel('Cancel')
-      .setEmoji('1351689463453061130')
+      .setEmoji('<:cross:1351689463453061130>')
       .setStyle(ButtonStyle.Danger);
     
     const row = new ActionRowBuilder()
@@ -574,13 +583,13 @@ const boostNotCompletedHandler = async (interaction) => {
     const confirmButton = new ButtonBuilder()
       .setCustomId('boost_confirm_not_completed')
       .setLabel('Confirm')
-      .setEmoji('1351689463453061130')
+      .setEmoji('<:cross:1351689463453061130>')
       .setStyle(ButtonStyle.Danger);
     
     const cancelButton = new ButtonBuilder()
       .setCustomId('boost_cancel_confirmation')
       .setLabel('Cancel')
-      .setEmoji('1357478063616688304')
+      .setEmoji('<:checkmark:1357478063616688304>')
       .setStyle(ButtonStyle.Success);
     
     const row = new ActionRowBuilder()
@@ -621,7 +630,17 @@ const boostNotCompletedHandler = async (interaction) => {
  */
 const boostConfirmCompletedHandler = async (interaction) => {
   try {
+    // Defer immediately so we don't hit the 3-second interaction timeout
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate();
+    }
     console.log(`[BOOST] Boost Confirm Completed button clicked by user ${interaction.user.id}`);
+    
+    // Check if this interaction has already been processed
+    if (interaction.deferred && interaction.replied) {
+      console.log(`[BOOST] Interaction already processed, skipping`);
+      return;
+    }
     
     // Get the original message with the "Boost is Completed" button
     // The original message would be 2 messages back from the interaction
@@ -664,7 +683,7 @@ const boostConfirmCompletedHandler = async (interaction) => {
       // Continue with the rest of the function even if moving fails
     }
     
-    // Get the channel for completion logging
+    // Get the channel for completion logging (Booster payout log)
     const logChannel = interaction.guild.channels.cache.get('1382022752474501352');
     
     // Try to extract information from the ticket
@@ -673,39 +692,20 @@ const boostConfirmCompletedHandler = async (interaction) => {
     let paymentMethod = 'PayPal'; // Default to PayPal
     let price = '';
     
+    console.log(`[BOOST] Starting information extraction from ticket`);
+    
     // Look for payment information in the channel
     try {
-      // First check if there's a ticket creator from the channel name
-      const channelName = interaction.channel.name;
-      const guildMembers = await interaction.guild.members.fetch();
-      
-      // Find member whose username is in the channel name
-      for (const [memberId, guildMember] of guildMembers) {
-        if (channelName.includes(guildMember.user.username.toLowerCase())) {
-          ticketCreatorId = memberId;
-          console.log(`[BOOST] Found ticket creator from channel name: ${ticketCreatorId}`);
-          break;
-        }
-      }
-      
-      const messages = await interaction.channel.messages.fetch({ limit: 100 });
+      const messages = await interaction.channel.messages.fetch({ limit: 20 });
       console.log(`[BOOST] Fetched ${messages.size} messages to look for boost information`);
       
-      // Look for the Boost Claimed message to get the booster ID
+      // Look for "Boost Claimed" message to find the booster and ticket creator
       for (const [_, message] of messages) {
         if (message.embeds.length > 0 && message.embeds[0].title === 'Boost Claimed') {
-          // Extract the mentioned users from the content, not from the mentions collection
-          const contentMentions = message.content.match(/<@(\d+)>/g) || [];
-          const mentionIds = contentMentions.map(mention => mention.match(/<@(\d+)>/)[1]);
-          
-          if (mentionIds.length >= 2) {
-            boosterId = mentionIds[0]; // First mention is the booster
-            
-            // If we didn't find the ticket creator earlier, use the second mention
-            if (!ticketCreatorId) {
-              ticketCreatorId = mentionIds[1]; // Second mention is the ticket creator
-            }
-            
+          const mentions = message.content.match(/<@(\d+)>/g);
+          if (mentions && mentions.length >= 2) {
+            boosterId = mentions[0].replace(/<@|>/g, '');
+            ticketCreatorId = mentions[1].replace(/<@|>/g, '');
             console.log(`[BOOST] Found booster ID: ${boosterId} and ticket creator ID: ${ticketCreatorId} from Boost Claimed message`);
             break;
           }
@@ -721,6 +721,7 @@ const boostConfirmCompletedHandler = async (interaction) => {
             if (priceMatch && priceMatch[1]) {
               price = priceMatch[1].trim();
               console.log(`[BOOST] Found price information: ${price}`);
+              break;
             }
           }
         }
@@ -740,6 +741,46 @@ const boostConfirmCompletedHandler = async (interaction) => {
           }
         }
       }
+
+      // ----- Affiliate earnings -----
+      try {
+        const db = require('../../database');
+        await db.waitUntilConnected().catch(()=>{});
+        // Ensure we have numeric amount
+        let numericPrice = 0;
+        if(price){
+          const match = price.replace(/[, ]/g,'').match(/([0-9]+(?:\.[0-9]+)?)/);
+          if(match) numericPrice = parseFloat(match[1]);
+        }
+        console.log(`[AFFILIATE_EARNINGS] Price parsed for commission: €${numericPrice.toFixed(2)}`);
+
+        if (numericPrice <= 0) {
+          console.warn(`[AFFILIATE_EARNINGS] Commission skipped – unable to determine numeric price for channel ${interaction.channel.id}`);
+        } else if (!ticketCreatorId) {
+          console.warn('[AFFILIATE_EARNINGS] Commission skipped – ticketCreatorId could not be determined.');
+        } else {
+          // Look up possible referrer
+          const res = await db.query('SELECT referrer_id FROM affiliate_referrals WHERE referred_id=$1', [ticketCreatorId]);
+
+          if (res.rowCount === 0) {
+            console.log(`[AFFILIATE_EARNINGS] User ${ticketCreatorId} has no referrer – no commission generated.`);
+          } else {
+            const referrer = res.rows[0].referrer_id;
+            const commission = parseFloat((numericPrice * 0.05).toFixed(2));
+
+            try {
+              await db.query('UPDATE affiliate_links SET balance = balance + $1 WHERE user_id=$2', [commission, referrer]);
+              await db.query('INSERT INTO affiliate_earnings(referrer_id, referred_id, earning_type, amount, order_id) VALUES($1,$2,$3,$4,$5)', [referrer, ticketCreatorId, 'Boost', commission, interaction.channel.id]);
+              console.log(`[AFFILIATE_EARNINGS] Success – €${commission} added to ${referrer} (referrer) for boost by ${ticketCreatorId}`);
+            } catch (dbWriteErr) {
+              console.error('[AFFILIATE_EARNINGS] DB write error:', dbWriteErr.message);
+            }
+          }
+        }
+      } catch(err){
+        console.error('[AFFILIATE_EARNINGS] Unexpected error while processing earnings:', err);
+      }
+
       console.log(`[BOOST] Found payment method: ${paymentMethod}`);
       
       // If we still don't have a ticket creator ID, use the topic or a default
@@ -763,27 +804,35 @@ const boostConfirmCompletedHandler = async (interaction) => {
       console.error(`[BOOST] Error gathering ticket information: ${error.message}`);
     }
     
-    // Add the completed boost role to the ticket creator
+    console.log(`[BOOST] Final values - ticketCreatorId: ${ticketCreatorId}, boosterId: ${boosterId}, price: ${price}, paymentMethod: ${paymentMethod}`);
+    
+    // Add the customer role to the ticket creator
     try {
       if (ticketCreatorId) {
         const member = await interaction.guild.members.fetch(ticketCreatorId);
         if (member) {
-          await member.roles.add('1370848171231543356');
-          console.log(`[BOOST] Added completed boost role to ${ticketCreatorId}`);
+          await member.roles.add(config.ROLES.CUSTOMER_ROLE); // Customer role
+          console.log(`[BOOST] Added customer role to ${ticketCreatorId}`);
         }
       }
     } catch (error) {
-      console.error(`[BOOST] Error adding role: ${error.message}`);
+      console.error(`[BOOST] Error adding customer role: ${error.message}`);
     }
     
-    // Disable buttons on the original message
-    await interaction.update({
-      components: [],
-      content: 'Confirmation received.',
-      embeds: []
-    });
+    // Disable buttons on the original message (edit the deferred reply)
+    try {
+      await interaction.editReply({
+        components: [],
+        content: 'Confirmation received.',
+        embeds: []
+      });
+      console.log(`[BOOST] Successfully disabled confirmation buttons`);
+    } catch (error) {
+      console.error(`[BOOST] Error disabling confirmation buttons: ${error.message}`);
+    }
     
     // Send completion message in the channel with embed
+    console.log(`[BOOST] Creating Order Completed embed`);
     const completionEmbed = new EmbedBuilder()
       .setTitle('Order Completed')
       .setDescription(
@@ -811,23 +860,45 @@ const boostConfirmCompletedHandler = async (interaction) => {
       
     const reviewFeedbackRow = new ActionRowBuilder()
       .addComponents(reviewButton, feedbackButton);
-      
-    const completionMessage = await interaction.channel.send({
-      content: `<@${ticketCreatorId}>`,
-      embeds: [completionEmbed],
-      components: [reviewFeedbackRow]
-    });
     
-    console.log(`[BOOST] Sent completion message with ID: ${completionMessage.id}`);
+    // Clean up all messages before Order Completed (except first 2)
+    console.log(`[BOOST] Starting message cleanup before sending Order Completed embed`);
+    try {
+      const { cleanupMessages } = require('../utils/messageCleanup.js');
+      await cleanupMessages(interaction.channel, null, 'order_completed');
+      console.log(`[BOOST] Successfully completed message cleanup`);
+    } catch (error) {
+      console.error(`[BOOST] Error during message cleanup: ${error.message}`);
+    }
+      
+    try {
+      console.log(`[BOOST] Sending Order Completed embed to channel ${interaction.channel.id}`);
+      const completionMessage = await interaction.channel.send({
+        content: `<@${ticketCreatorId}>`,
+        embeds: [completionEmbed],
+        components: [reviewFeedbackRow]
+      });
+      
+      console.log(`[BOOST] Successfully sent Order Completed embed with ID: ${completionMessage.id}`);
+    } catch (error) {
+      console.error(`[BOOST] Error sending Order Completed embed: ${error.message}`);
+      console.error(error.stack);
+    }
     
     // Schedule ticket auto-close after 30 minutes
+    console.log(`[BOOST] Setting up auto-close timer`);
     const closeTimeMs = 30 * 60 * 1000; // 30 minutes in milliseconds
     const closeTimestamp = Math.floor((Date.now() + closeTimeMs) / 1000);
     
     // Send message about auto-close - use the proper ticket creator ID
-    await interaction.channel.send({
-      content: `<@${ticketCreatorId}> This ticket will automatically be closed in <t:${closeTimestamp}:R>`,
-    });
+    try {
+      await interaction.channel.send({
+        content: `<@${ticketCreatorId}> This ticket will automatically be closed in <t:${closeTimestamp}:R>`,
+      });
+      console.log(`[BOOST] Successfully sent auto-close notification`);
+    } catch (error) {
+      console.error(`[BOOST] Error sending auto-close notification: ${error.message}`);
+    }
     
     // Set up delayed close
     setTimeout(async () => {
@@ -885,6 +956,7 @@ const boostConfirmCompletedHandler = async (interaction) => {
     }
     
     // Create the completion log embed - use the proper ticket creator ID in the log embed
+    console.log(`[BOOST] Creating completion log embed for channel ${logChannel ? logChannel.id : 'NOT_FOUND'}`);
     const logEmbed = new EmbedBuilder()
       .setTitle('New Boost Completed!')
       .setDescription(
@@ -901,7 +973,7 @@ const boostConfirmCompletedHandler = async (interaction) => {
     const payoutButton = new ButtonBuilder()
       .setCustomId('payout_completed')
       .setLabel('Payout Completed')
-      .setEmoji('1357478063616688304')
+      .setEmoji('<:checkmark:1357478063616688304>')
       .setStyle(ButtonStyle.Success);
     
     const row = new ActionRowBuilder()
@@ -909,14 +981,20 @@ const boostConfirmCompletedHandler = async (interaction) => {
     
     // Send the log message if log channel exists
     if (logChannel) {
-      const logMessage = await logChannel.send({
-        embeds: [logEmbed],
-        components: [row]
-      });
-      console.log(`[BOOST] Sent log message with ID: ${logMessage.id}`);
+      try {
+        const logMessage = await logChannel.send({
+          embeds: [logEmbed],
+          components: [row]
+        });
+        console.log(`[BOOST] Successfully sent log message with ID: ${logMessage.id} to channel ${logChannel.id}`);
+      } catch (error) {
+        console.error(`[BOOST] Error sending log message to channel ${logChannel.id}: ${error.message}`);
+      }
     } else {
       console.error(`[BOOST] Log channel not found: 1382022752474501352`);
     }
+    
+    console.log(`[BOOST] boostConfirmCompletedHandler completed successfully`);
   } catch (error) {
     console.error(`[BOOST] Error in boostConfirmCompletedHandler: ${error.message}`);
     console.error(error.stack);

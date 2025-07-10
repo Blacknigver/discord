@@ -1,5 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } = require('discord.js');
 const config = require('../../config');
+const { EMOJIS } = require('../constants');
 
 class PayPalHandler {
   constructor(client) {
@@ -18,26 +19,26 @@ class PayPalHandler {
       .setColor(0xe68df2)
       .setTitle('PayPal Terms of Services')
       .setDescription([
-        '> <:shield:1371879600560541756>[+] If our PayPal Account gets locked, you will have to wait for us to unlock it, if we fail to unlock it no product or refund will be given.',
-        '> <:shield:1371879600560541756>[+] We will not be covering any transaction fees.',
-        '> <:shield:1371879600560541756>[+] Send **Friends and Family** ONLY - Goods and Services is __Strictly Forbidden__',
-        '> <:shield:1371879600560541756>[+] Send from **PayPal Balance** ONLY - Card/Bank Payments are __Strictly Forbidden__',
-        '> <:shield:1371879600560541756>[+] Send **Euro Currency** Only.',
-        '> <:shield:1371879600560541756>[+] Do **NOT add a note** to the payment.',
-        '> <:shield:1371879600560541756>[+] Must send a Summary Screenshot after sending.'
+        `> ${EMOJIS.SHIELD}[+] If our PayPal Account gets locked, you will have to wait for us to unlock it, if we fail to unlock it no product or refund will be given.`,
+        `> ${EMOJIS.SHIELD}[+] We will not be covering any transaction fees.`,
+        `> ${EMOJIS.SHIELD}[+] Send **Friends and Family** ONLY - Goods and Services is __Strictly Forbidden__`,
+        `> ${EMOJIS.SHIELD}[+] Send from **PayPal Balance** ONLY - Card/Bank Payments are __Strictly Forbidden__`,
+        `> ${EMOJIS.SHIELD}[+] Send **Euro Currency** Only.`,
+        `> ${EMOJIS.SHIELD}[+] Do **NOT add a note** to the payment.`,
+        `> ${EMOJIS.SHIELD}[+] Must send a Summary Screenshot after sending.`
       ].join('\n'));
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('paypal_accept')
-        .setLabel('I Accept')
+        .setLabel('Accept')
         .setStyle(ButtonStyle.Success)
-        .setEmoji('1357478063616688304'),
+        .setEmoji('<:checkmark:1357478063616688304>'),
       new ButtonBuilder()
         .setCustomId('paypal_deny')
-        .setLabel('I Deny')
+        .setLabel('Deny')
         .setStyle(ButtonStyle.Danger)
-        .setEmoji('1351689463453061130')
+        .setEmoji('<:cross:1351689463453061130>')
     );
 
     return channel.send({ 
@@ -78,12 +79,12 @@ class PayPalHandler {
         .setCustomId('copy_email')
         .setLabel('Copy E-Mail')
         .setStyle(ButtonStyle.Primary)
-        .setEmoji('1372240644013035671'),
+        .setEmoji('<:copy:1372240644013035671>'),
       new ButtonBuilder()
         .setCustomId('payment_completed')
         .setLabel('Payment Completed')
         .setStyle(ButtonStyle.Success)
-        .setEmoji('1357478063616688304')
+        .setEmoji('<:checkmark:1357478063616688304>')
     );
 
     await interaction.channel.send({ 
@@ -118,12 +119,12 @@ class PayPalHandler {
         .setCustomId('confirm_deny')
         .setLabel('Continue')
         .setStyle(ButtonStyle.Danger)
-        .setEmoji('1351689463453061130'),
+        .setEmoji('<:cross:1351689463453061130>'),
       new ButtonBuilder()
         .setCustomId('cancel_deny')
         .setLabel('Cancel')
         .setStyle(ButtonStyle.Success)
-        .setEmoji('1357478063616688304')
+        .setEmoji('<:checkmark:1357478063616688304>')
     );
 
     await interaction.reply({ 
@@ -181,12 +182,12 @@ class PayPalHandler {
         .setCustomId('payment_received')
         .setLabel('Payment Received')
         .setStyle(ButtonStyle.Success)
-        .setEmoji('1357478063616688304'),
+        .setEmoji('<:checkmark:1357478063616688304>'),
       new ButtonBuilder()
         .setCustomId('payment_not_received')
         .setLabel('Not Received')
         .setStyle(ButtonStyle.Danger)
-        .setEmoji('1351689463453061130')
+        .setEmoji('<:cross:1351689463453061130>')
     );
 
     await interaction.channel.send({ 
@@ -246,10 +247,14 @@ class PayPalHandler {
         .setCustomId('claim_boost')
         .setLabel('Claim Boost')
         .setStyle(ButtonStyle.Success)
-        .setEmoji('1357478063616688304')
+        .setEmoji('<:checkmark:1357478063616688304>')
     );
 
     await interaction.channel.send({ embeds: [embed], components: [row] });
+    
+    // Clean up payment method messages AFTER boost available is sent
+    const { cleanupMessages } = require('../utils/messageCleanup.js');
+    await cleanupMessages(interaction.channel, null, 'payment_confirmed');
   }
 
   /**
