@@ -8,12 +8,22 @@ const {
   TextInputStyle,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
-  InteractionResponseFlags
+  InteractionResponseFlags,
+  MessageFlags
 } = require('discord.js');
 const { STAFF_ROLES, TICKET_CATEGORIES, EMOJIS } = require('../constants');
 const helpers = require('../utils/helpers');
-const { calculateBulkPrice, calculateRankedPrice, calculateMasteryPrice } = helpers;
+const { calculateBulkPrice, calculateRankedPrice } = helpers;
 const { calculateTrophyPrice } = require('../../utils'); // <-- Import from correct file
+
+// Polyfill for InteractionResponseFlags.Ephemeral for discord.js versions that do not expose it
+if (typeof InteractionResponseFlags !== 'object' || InteractionResponseFlags === null) {
+  // If InteractionResponseFlags is undefined, create a fallback object
+  global.InteractionResponseFlags = { Ephemeral: MessageFlags?.Ephemeral ?? (1 << 6) };
+} else if (!('Ephemeral' in InteractionResponseFlags)) {
+  // Ensure the Ephemeral flag exists on provided enumeration
+  InteractionResponseFlags.Ephemeral = MessageFlags?.Ephemeral ?? (1 << 6);
+}
 
 // Define the pink color for all embeds
 const PINK_COLOR = '#e68df2';
@@ -30,12 +40,8 @@ const RANK_COLORS = {
   'Bronze': '#4E5058'     // Gray
 };
 
-// Define mastery-specific colors
-const MASTERY_COLORS = {
-  'Gold': '#57F287',    // Green
-  'Silver': '#5865F2',  // Blue
-  'Bronze': '#ED4245'   // Red
-};
+// Mastery-specific colors - REMOVED (feature disabled)
+// The mastery feature has been removed from Brawl Stars
 
 const { 
   sendOrderRecapEmbed, 
@@ -61,12 +67,32 @@ async function handleRankedFlow(interaction) {
   try {
     console.log(`[RANKED_FLOW] Starting ranked flow for user ${interaction.user.id}`);
     
-    // Initialize user state
-    flowState.set(interaction.user.id, { 
+    // CHECK TICKET RATE LIMITS FIRST
+    const { checkTicketRateLimit } = require('../utils/rateLimitSystem');
+    const rateLimitCheck = await checkTicketRateLimit(interaction.user.id, 'ranked');
+    
+    if (!rateLimitCheck.allowed) {
+      console.log(`[RANKED_FLOW] User ${interaction.user.id} blocked by ticket rate limit`);
+      return await interaction.reply({
+        content: rateLimitCheck.reason,
+        ephemeral: true
+      });
+    }
+    
+    // Get existing user state or create new one, preserving discount flags
+    let userData = flowState.get(interaction.user.id) || {};
+    
+    // Update with ranked flow specific data while preserving existing flags
+    userData = {
+      ...userData, // Preserve existing data including hasDiscount, discountClaimed
       type: 'ranked', 
       step: 'p11_modal',  // Start with P11 modal
       timestamp: Date.now()
-    });
+    };
+    
+    flowState.set(interaction.user.id, userData);
+    
+    console.log(`[RANKED_FLOW] Flow state for user ${interaction.user.id}:`, userData);
     
     // Show P11 modal instead of proceeding directly to rank selection
     return showP11Modal(interaction);
@@ -243,6 +269,18 @@ async function handleP11ModalSubmit(interaction) {
 async function handleBulkFlow(interaction) {
   try {
     console.log(`[BULK_FLOW] Starting bulk trophies flow for user ${interaction.user.id}`);
+    
+    // CHECK TICKET RATE LIMITS FIRST
+    const { checkTicketRateLimit } = require('../utils/rateLimitSystem');
+    const rateLimitCheck = await checkTicketRateLimit(interaction.user.id, 'bulk');
+    
+    if (!rateLimitCheck.allowed) {
+      console.log(`[BULK_FLOW] User ${interaction.user.id} blocked by ticket rate limit`);
+      return await interaction.reply({
+        content: rateLimitCheck.reason,
+        ephemeral: true
+      });
+    }
   
     const modal = new ModalBuilder()
       .setCustomId('modal_bulk_trophies')
@@ -265,13 +303,19 @@ async function handleBulkFlow(interaction) {
       )
     );
 
-    // Initialize user state
-    flowState.set(interaction.user.id, { 
+    // Get existing user state or create new one, preserving discount flags
+    let userData = flowState.get(interaction.user.id) || {};
+    
+    // Update with bulk flow specific data while preserving existing flags
+    userData = {
+      ...userData, // Preserve existing data including hasDiscount, discountClaimed
       type: 'bulk', 
       step: 'trophies_input',
       timestamp: Date.now()
-    });
-    console.log(`[BULK_FLOW] Set initial flow state for user ${interaction.user.id}`);
+    };
+    
+    flowState.set(interaction.user.id, userData);
+    console.log(`[BULK_FLOW] Set flow state for user ${interaction.user.id}:`, userData);
     
     // Show the modal directly without deferred replies
     console.log(`[BULK_FLOW] Showing modal to user ${interaction.user.id}`);
@@ -298,293 +342,14 @@ async function handleBulkFlow(interaction) {
   }
 }
 
-// Mastery flow
-async function handleMasteryFlow(interaction) {
-  try {
-    console.log(`[MASTERY_FLOW] Starting mastery flow for user ${interaction.user.id}`);
-  
-    const modal = new ModalBuilder()
-      .setCustomId('modal_mastery_brawler')
-      .setTitle('Mastery Boost');
+// Mastery flow - REMOVED (feature disabled)
+// The mastery feature has been removed from Brawl Stars
 
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('brawler_name')
-          .setLabel('Which Brawler?')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-      )
-    );
+// Handle mastery selection - REMOVED (feature disabled)
+// The mastery feature has been removed from Brawl Stars
 
-    // Initialize user state
-    flowState.set(interaction.user.id, { 
-      type: 'mastery', 
-      step: 'brawler_input',
-      timestamp: Date.now()
-    });
-    console.log(`[MASTERY_FLOW] Set initial flow state for user ${interaction.user.id}`);
-    
-    // Show the modal directly without deferred replies
-    console.log(`[MASTERY_FLOW] Showing modal to user ${interaction.user.id}`);
-    return interaction.showModal(modal)
-      .then(() => console.log(`[MASTERY_FLOW] Successfully showed modal to user ${interaction.user.id}`))
-      .catch(err => {
-        console.error(`[MASTERY_FLOW] Error showing modal: ${err.message}`);
-        console.error(err.stack);
-      });
-  } catch (error) {
-    console.error(`[MASTERY_FLOW] Critical error in handleMasteryFlow for user ${interaction.user?.id || 'unknown'}: ${error.message}`);
-    console.error(error.stack);
-    
-    if (!interaction.replied && !interaction.deferred) {
-      try {
-        return interaction.reply({ 
-          content: 'There was an error loading the mastery form. Please try again later.',
-          flags: InteractionResponseFlags.Ephemeral
-        });
-      } catch (responseError) {
-        console.error(`[MASTERY_FLOW] Failed to send error message: ${responseError.message}`);
-      }
-    }
-  }
-}
-
-// Handle mastery selection
-async function handleMasterySelection(interaction, masteryInput) {
-  const userData = flowState.get(interaction.user.id);
-  if (!userData) {
-    console.error(`[MASTERY_FLOW] No user data found for ${interaction.user.id}`);
-    return safeInteractionReply(interaction, { 
-      content: 'Session data not found. Please try again.',
-      ephemeral: true
-    });
-  }
-
-  try {
-    console.log(`[DEBUG] handleMasterySelection: masteryInput=${masteryInput}, step=${userData.step}`);
-
-    // No need to defer update here, it will be handled by safeInteractionResponse
-
-    let baseMasteryName = masteryInput;
-    let specificMasteryNumber = null;
-
-    if (masteryInput.includes('_')) {
-      const parts = masteryInput.split('_');
-      baseMasteryName = parts[0];
-      specificMasteryNumber = parts[1];
-    }
-
-    if (userData.step === 'current_mastery') {
-      // Ensure baseMasteryName is TitleCased for display and consistency
-      let displayMasteryName = baseMasteryName;
-      if (displayMasteryName && typeof displayMasteryName === 'string') {
-        displayMasteryName = displayMasteryName.charAt(0).toUpperCase() + displayMasteryName.slice(1).toLowerCase();
-      } else {
-        console.error(`[MASTERY_FLOW_ERROR] Invalid baseMasteryName: ${baseMasteryName} for current_mastery step`);
-        displayMasteryName = 'Mastery'; // A generic fallback, should not happen with valid customIDs
-      }
-      userData.currentMastery = displayMasteryName; // Store TitleCased version
-      userData.step = 'current_mastery_specific';
-      
-      const masteryUIDetails = getMasteryUIDetails(displayMasteryName);
-      
-      // Use mastery-specific color for the embed
-      const embedColor = MASTERY_COLORS[displayMasteryName] || PINK_COLOR;
-
-      const embed = new EmbedBuilder()
-        .setTitle('Specify Mastery')
-        .setDescription(`Specify your exact ${displayMasteryName} Mastery.`)
-        .setColor(embedColor);
-        
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`mastery_${displayMasteryName}_1`).setLabel(`${displayMasteryName} 1`).setEmoji(masteryUIDetails.emoji).setStyle(masteryUIDetails.style),
-        new ButtonBuilder().setCustomId(`mastery_${displayMasteryName}_2`).setLabel(`${displayMasteryName} 2`).setEmoji(masteryUIDetails.emoji).setStyle(masteryUIDetails.style),
-        new ButtonBuilder().setCustomId(`mastery_${displayMasteryName}_3`).setLabel(`${displayMasteryName} 3`).setEmoji(masteryUIDetails.emoji).setStyle(masteryUIDetails.style)
-      );
-      flowState.set(interaction.user.id, userData);
-      return safeInteractionResponse(interaction, { embeds: [embed], components: [row] });
-
-    } else if (userData.step === 'current_mastery_specific') {
-      if (!specificMasteryNumber) {
-        console.error(`[MASTERY_FLOW_ERROR] Expected specific mastery number for ${baseMasteryName}`);
-        return safeInteractionResponse(interaction, { content: 'An error occurred. Please try again.', ephemeral: true });
-      }
-      // Ensure baseMasteryName (which is currentMastery here) is TitleCased
-      let currentDisplayMastery = userData.currentMastery;
-      if (currentDisplayMastery && typeof currentDisplayMastery === 'string') {
-        currentDisplayMastery = currentDisplayMastery.charAt(0).toUpperCase() + currentDisplayMastery.slice(1).toLowerCase();
-      }
-
-      userData.currentMasterySpecific = specificMasteryNumber;
-      userData.formattedCurrentMastery = `${currentDisplayMastery} ${specificMasteryNumber}`; // Use TitleCased
-      userData.step = 'desired_mastery';
-      
-      const currentMasteryValue = getMasteryValue(userData.currentMastery, specificMasteryNumber);
-      const embed = new EmbedBuilder()
-        .setTitle('Desired Mastery')
-        .setDescription('Please select your desired mastery.')
-        .setColor(PINK_COLOR);
-        
-      const masteryButtons = generateMasteryButtons(currentMasteryValue, 'mastery_');
-
-      if (masteryButtons.rows.length === 0) {
-         return safeInteractionResponse(interaction, { content: 'You have selected the highest mastery or an invalid mastery. There are no higher masteries to boost to.', embeds:[], components:[], ephemeral: true });
-      }
-      flowState.set(interaction.user.id, userData);
-      return safeInteractionResponse(interaction, { embeds: [embed], components: masteryButtons.rows });
-
-    } else if (userData.step === 'desired_mastery') {
-      // Ensure baseMasteryName (which is desiredMastery here) is TitleCased
-      let displayDesiredMasteryName = baseMasteryName;
-      if (displayDesiredMasteryName && typeof displayDesiredMasteryName === 'string') {
-        displayDesiredMasteryName = displayDesiredMasteryName.charAt(0).toUpperCase() + displayDesiredMasteryName.slice(1).toLowerCase();
-      } else {
-        console.error(`[MASTERY_FLOW_ERROR] Invalid baseMasteryName: ${baseMasteryName} for desired_mastery step`);
-        displayDesiredMasteryName = 'Mastery'; 
-      }
-      userData.desiredMastery = displayDesiredMasteryName; // Store TitleCased
-      userData.step = 'desired_mastery_specific';
-      
-      const masteryUIDetails = getMasteryUIDetails(displayDesiredMasteryName);
-      const currentMasteryValue = getMasteryValue(userData.currentMastery, userData.currentMasterySpecific);
-
-      // Use mastery-specific color for the embed
-      const embedColor = MASTERY_COLORS[displayDesiredMasteryName] || PINK_COLOR;
-
-      const embed = new EmbedBuilder()
-        .setTitle('Specify Desired Mastery')
-        .setDescription(`Specify your exact desired ${displayDesiredMasteryName} Mastery.`)
-        .setColor(embedColor);
-        
-      const specificButtons = [];
-      for (let i = 1; i <= 3; i++) {
-        if (getMasteryValue(displayDesiredMasteryName, i.toString()) > currentMasteryValue) {
-          specificButtons.push(
-            new ButtonBuilder().setCustomId(`mastery_${displayDesiredMasteryName}_${i}`).setLabel(`${displayDesiredMasteryName} ${i}`).setEmoji(masteryUIDetails.emoji).setStyle(masteryUIDetails.style)
-          );
-        }
-      }
-      if (specificButtons.length === 0) {
-        return safeInteractionResponse(interaction, { content: 'There are no valid mastery options higher than your current mastery for this category.', embeds:[], components:[], ephemeral: true });
-      }
-      const row = new ActionRowBuilder().addComponents(...specificButtons);
-      flowState.set(interaction.user.id, userData);
-      return safeInteractionResponse(interaction, { embeds: [embed], components: [row] });
-
-    } else if (userData.step === 'desired_mastery_specific') {
-      if (!specificMasteryNumber) {
-        console.error(`[MASTERY_FLOW_ERROR] Expected specific mastery number for ${baseMasteryName}`); // baseMasteryName here is desiredMastery
-        return safeInteractionResponse(interaction, { content: 'An error occurred. Please try again.', ephemeral: true });
-      }
-      // Ensure userData.desiredMastery is TitleCased before formatting
-      let finalDesiredMastery = userData.desiredMastery;
-       if (finalDesiredMastery && typeof finalDesiredMastery === 'string') {
-        finalDesiredMastery = finalDesiredMastery.charAt(0).toUpperCase() + finalDesiredMastery.slice(1).toLowerCase();
-      }
-
-      userData.desiredMasterySpecific = specificMasteryNumber;
-      userData.formattedDesiredMastery = `${finalDesiredMastery} ${specificMasteryNumber}`;
-      
-      if (!isDesiredMasteryHigher(userData.currentMastery, userData.currentMasterySpecific, userData.desiredMastery, specificMasteryNumber)) {
-        return safeInteractionResponse(interaction, { content: 'The desired mastery must be higher than your current mastery.', embeds:[], components:[], ephemeral: true });
-      }
-      flowState.set(interaction.user.id, userData);
-      return showPaymentMethodSelection(interaction);
-    }
-  } catch (error) {
-    console.error('Error in handleMasterySelection:', error);
-    const errMessage = 'An error occurred while processing your mastery selection. Please try again.';
-    return safeInteractionResponse(interaction, { content: errMessage, ephemeral: true });
-  }
-}
-
-// Handle mastery modal submission
-async function handleMasteryBrawlerModal(interaction) {
-  try {
-    console.log(`[MASTERY_FLOW] Processing mastery brawler modal for user ${interaction.user.id}`);
-    
-    const userData = flowState.get(interaction.user.id);
-    if (!userData) {
-      console.error(`[MASTERY_FLOW] No user data found for ${interaction.user.id}`);
-      return interaction.reply({
-        content: 'Session data not found. Please try again.',
-        ephemeral: true
-      });
-    }
-    
-    // Get brawler name from modal
-    const brawlerName = interaction.fields.getTextInputValue('brawler_name').trim();
-    console.log(`[MASTERY_FLOW] User ${interaction.user.id} selected brawler: ${brawlerName}`);
-    
-    if (!brawlerName) {
-      console.error(`[MASTERY_FLOW] Empty brawler name provided by user ${interaction.user.id}`);
-      return interaction.reply({
-        content: 'Please provide a valid brawler name.',
-        ephemeral: true
-      });
-    }
-    
-    // Store the brawler name
-    userData.brawler = brawlerName;
-    userData.step = 'current_mastery';
-    flowState.set(interaction.user.id, userData);
-    console.log(`[MASTERY_FLOW] Updated flow state for user ${interaction.user.id} with brawler ${brawlerName}`);
-    
-    // Create embed for current mastery selection
-    const embed = new EmbedBuilder()
-      .setTitle('Current Mastery')
-      .setDescription(`Select the current mastery level for ${brawlerName}.`)
-      .setColor(PINK_COLOR);
-    
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('mastery_Bronze')
-        .setLabel('Bronze')
-        .setEmoji('<:mastery_bronze:1357487786394914847>')
-        .setStyle(ButtonStyle.Danger),
-      new ButtonBuilder()
-        .setCustomId('mastery_Silver')
-        .setLabel('Silver')
-        .setEmoji('<:mastery_silver:1357487832481923153>')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId('mastery_Gold')
-        .setLabel('Gold')
-        .setEmoji('<:mastery_gold:1357487865029722254>')
-        .setStyle(ButtonStyle.Success)
-    );
-    
-    console.log(`[MASTERY_FLOW] Sending mastery selection for user ${interaction.user.id}`);
-    // Use proper ephemeral flag without InteractionResponseFlags
-    return interaction.reply({ 
-      embeds: [embed], 
-      components: [row], 
-      ephemeral: true 
-    })
-      .then(() => console.log(`[MASTERY_FLOW] Successfully sent mastery selection to user ${interaction.user.id}`))
-      .catch(error => {
-        console.error(`[MASTERY_FLOW] Error replying with mastery selection: ${error.message}`);
-        console.error(error.stack);
-      });
-  } catch (error) {
-    console.error(`[MASTERY_FLOW] Error handling mastery brawler modal for user ${interaction.user?.id || 'unknown'}: ${error.message}`);
-    console.error(error.stack);
-    
-    if (!interaction.replied && !interaction.deferred) {
-      try {
-        // Use proper ephemeral flag without InteractionResponseFlags
-        return interaction.reply({
-          content: 'An error occurred while processing your brawler selection. Please try again.',
-          ephemeral: true
-        });
-      } catch (err) {
-        console.error(`[MASTERY_FLOW] Failed to send error message: ${err.message}`);
-        console.log('[MODAL_HANDLERS_DEBUG] djs.InteractionResponseFlags is UNDEFINED before reply in handleMasteryBrawlerModal');
-      }
-    }
-  }
-}
+// Handle mastery brawler modal - REMOVED (feature disabled)
+// The mastery feature has been removed from Brawl Stars
 
 // Handle bulk trophies modal
 async function handleBulkTrophiesModal(interaction) {
@@ -709,70 +474,11 @@ function getRankStyle(rank) {
   return styles[rank] || ButtonStyle.Primary;
 }
 
-function getMasteryEmoji(mastery) {
-  const emojis = {
-    'Bronze': '<:mastery_bronze:1357487786394914847>',
-    'Silver': '<:mastery_silver:1357487832481923153>',
-    'Gold': '<:mastery_gold:1357487865029722254>'
-  };
-  return emojis[mastery] || '⭐'; // Return a star emoji as default
-}
+// Mastery emoji and style functions - REMOVED (feature disabled)
+// The mastery feature has been removed from Brawl Stars
 
-function getMasteryStyle(mastery) {
-  const styles = {
-    'Bronze': ButtonStyle.Danger,
-    'Silver': ButtonStyle.Primary,
-    'Gold': ButtonStyle.Success
-  };
-  return styles[mastery] || ButtonStyle.Primary;
-}
-
-// Function to get numerical value of a mastery for comparisons
-function getMasteryValue(mastery, number) {
-  try {
-    console.log(`[HELPER] Getting mastery value for ${mastery} ${number}`);
-    
-    const masteryValues = {
-      'Bronze': 1,
-      'Silver': 2,
-      'Gold': 3
-    };
-
-    // Handle undefined or lowercase mastery input
-    let normalizedMastery = mastery;
-    if (mastery && typeof mastery === 'string') {
-      normalizedMastery = mastery.charAt(0).toUpperCase() + mastery.slice(1).toLowerCase();
-    } else if (mastery === undefined) {
-      console.warn('[HELPER] Mastery type is undefined');
-      return 0;
-    }
-    
-    // If mastery is not in the map, return 0
-    if (!masteryValues[normalizedMastery]) {
-      console.warn(`[HELPER] Invalid mastery type: ${mastery} (normalized to ${normalizedMastery})`);
-      return 0;
-    }
-    
-    // Parse the number safely
-    let parsedNumber = 0;
-    try {
-      parsedNumber = parseInt(number || 0, 10);
-      if (isNaN(parsedNumber)) parsedNumber = 0;
-    } catch (parseError) {
-      console.warn(`[HELPER] Error parsing mastery number '${number}': ${parseError.message}`);
-      parsedNumber = 0;
-    }
-    
-    // Calculate total value: base mastery value * 10 + specific number (1-3)
-    const result = (masteryValues[normalizedMastery] * 10) + parsedNumber;
-    console.log(`[HELPER] Calculated mastery value for ${mastery} ${number}: ${result}`);
-    return result;
-  } catch (error) {
-    console.error(`[HELPER] Critical error in getMasteryValue: ${error.message}`);
-    console.error(error.stack);
-    return 0;
-  }
-}
+// Function to get numerical value of a mastery for comparisons - REMOVED (feature disabled)
+// The mastery feature has been removed from Brawl Stars
 
 // Get numeric value for a rank to allow comparisons
 function getRankValue(rank, number) {
@@ -843,24 +549,8 @@ function isDesiredRankHigher(currentRank, currentNumber, desiredRank, desiredNum
   }
 }
 
-// Check if a desired mastery is higher than current mastery
-function isDesiredMasteryHigher(currentMastery, currentNumber, desiredMastery, desiredNumber) {
-  try {
-    console.log(`[HELPER] Comparing masteries: ${currentMastery} ${currentNumber} vs ${desiredMastery} ${desiredNumber}`);
-    
-    const currentValue = getMasteryValue(currentMastery, currentNumber);
-    const desiredValue = getMasteryValue(desiredMastery, desiredNumber);
-    
-    const result = desiredValue > currentValue;
-    console.log(`[HELPER] Mastery comparison result: ${currentValue} < ${desiredValue} = ${result}`);
-    return result;
-  } catch (error) {
-    console.error(`[HELPER] Error comparing masteries: ${error.message}`);
-    console.error(error.stack);
-    // Default to false on error to prevent invalid boosts
-    return false;
-  }
-}
+// Check if a desired mastery is higher than current mastery - REMOVED (feature disabled)
+// The mastery feature has been removed from Brawl Stars
 
 // Helper function to update the existing message
 async function updateUserMessage(interaction, userData, options) {
@@ -1355,101 +1045,37 @@ async function showPriceEmbed(interaction) {
     
     // Handle 'other' type differently - no price calculation needed
     if (userData.type === 'other') {
-      console.log(`[OTHER_FLOW] Skipping price calculation for 'other' type request`);
+      console.log(`[PRICE_EMBED] Handling 'other' type for user ${interaction.user.id} - no price calculation`);
+      const embed = new EmbedBuilder()
+        .setTitle('Order Confirmation')
+        .setDescription(`Please confirm your request details:\n\n**Request:** \`${userData.otherRequest}\`\n**Payment Method:** \`${userData.paymentMethod}\`\n\n**Note:** Price will be discussed with staff based on your specific request.`)
+        .setColor(PINK_COLOR);
+        
+      // Create buttons
+      const confirmButton = new ButtonBuilder()
+        .setCustomId('confirm_ticket')
+        .setLabel('Confirm Order')
+        .setEmoji('<:checkmark:1357478063616688304>')
+        .setStyle(ButtonStyle.Success);
+        
+      const cancelButton = new ButtonBuilder()
+        .setCustomId('cancel_ticket')
+        .setLabel('Cancel')
+        .setEmoji('<:cross:1351689463453061130>')
+        .setStyle(ButtonStyle.Danger);
+        
+      const row = new ActionRowBuilder()
+        .addComponents(confirmButton, cancelButton);
       
-      // For 'other' requests, proceed directly to ticket creation
-      const userId = interaction.user.id;
-      userData.isProcessingTicket = true;
-      flowState.set(userId, userData);
+      // Store special price for other requests (will be handled by staff)
+      userData.price = 'Custom';
+      flowState.set(interaction.user.id, userData);
       
-      try {
-        // Create the ticket channel
-        const guild = interaction.guild;
-        const channelName = `other-${interaction.user.username}-${Math.floor(Math.random() * 1000)}`;
-        const categoryId = getCategoryIdByType('other');
-        
-        const ticketChannel = await createTicketChannelWithOverflow(
-          guild,
-          interaction.user.id,
-          categoryId,
-          channelName,
-          {
-            type: 'other',
-            request: userData.request || 'Other request',
-            paymentMethod: userData.paymentMethod
-          }
-        );
-        
-        if (!ticketChannel) {
-          console.error(`[OTHER_FLOW] Failed to create ticket channel for ${userId}`);
-          userData.isProcessingTicket = false;
-          flowState.set(userId, userData);
-          
-          if (interaction.deferred) {
-            return interaction.editReply({
-              content: 'Failed to create ticket channel. Please try again or contact staff.',
-              flags: 64
-            });
-          } else {
-            return interaction.reply({
-              content: 'Failed to create ticket channel. Please try again or contact staff.',
-              flags: 64
-            });
-          }
-        }
-        
-                 // Send welcome message
-         await require('../../ticketPayments.js').sendWelcomeEmbed(ticketChannel, userId);
-        
-        // Send other request details
-        const orderDetails = {
-          type: 'other',
-          request: userData.request || 'Other request',
-          paymentMethod: userData.paymentMethod,
-          description: `**Request:** ${userData.request || 'Other request'}\n**Payment Method:** ${userData.paymentMethod}`
-        };
-                 await require('../../ticketPayments.js').sendOrderDetailsEmbed(ticketChannel, orderDetails);
-        
-        // Send confirmation to the user
-        if (interaction.deferred) {
-          await interaction.editReply({
-            content: `Successfully opened ticket, your ticket: <#${ticketChannel.id}>`,
-            flags: 64
-          });
-        } else {
-          await interaction.reply({
-            content: `Successfully opened ticket, your ticket: <#${ticketChannel.id}>`,
-            flags: 64
-          });
-        }
-        
-        // Clear user data after successful ticket creation
-        userData.ticketCreated = true;
-        userData.ticketChannelId = ticketChannel.id;
-        flowState.set(userId, userData);
-        
-        console.log(`[OTHER_FLOW] Successfully created other request ticket for ${userId}`);
-        return true;
-        
-      } catch (error) {
-        console.error(`[OTHER_FLOW] Error creating other request ticket: ${error.message}`);
-        console.error(error.stack);
-        
-        userData.isProcessingTicket = false;
-        flowState.set(userId, userData);
-        
-        if (interaction.deferred) {
-          return interaction.editReply({
-            content: 'An error occurred while creating your ticket. Please try again or contact staff.',
-            flags: 64
-          });
-        } else {
-          return interaction.reply({
-            content: 'An error occurred while creating your ticket. Please try again or contact staff.',
-            flags: 64
-          });
-        }
-      }
+      return interaction.followUp({
+        embeds: [embed],
+        components: [row],
+        flags: 64
+      });
     }
     
     // Calculate price based on boost type (for non-other types)
@@ -1566,20 +1192,8 @@ async function showPriceEmbed(interaction) {
         
         console.log(`[TROPHY_PRICE_DEBUG] Trophy power level multiplier: ${trophyMultiplier}x, base: €${trophyBasePrice.toFixed(2)}, final: €${price.toFixed(2)}`);
       }
-    } else if (userData.type === 'mastery') {
-      // Use the formattedCurrentMastery and formattedDesiredMastery instead of separate values
-      const currentMasteryParts = userData.formattedCurrentMastery ? userData.formattedCurrentMastery.split(' ') : [userData.currentMastery, userData.currentMasterySpecific];
-      const desiredMasteryParts = userData.formattedDesiredMastery ? userData.formattedDesiredMastery.split(' ') : [userData.desiredMastery, userData.desiredMasterySpecific];
-      
-      // Ensure we have proper values
-      const currentMastery = currentMasteryParts[0] || userData.currentMastery;
-      const currentMasterySpecific = currentMasteryParts[1] || userData.currentMasterySpecific;
-      const desiredMastery = desiredMasteryParts[0] || userData.desiredMastery;
-      const desiredMasterySpecific = desiredMasteryParts[1] || userData.desiredMasterySpecific;
-      
-      price = calculateMasteryPrice(userData.brawler, currentMastery, currentMasterySpecific, desiredMastery, desiredMasterySpecific);
-      console.log(`[MASTERY_PRICE_DEBUG] Calculated total price from ${currentMastery} ${currentMasterySpecific} to ${desiredMastery} ${desiredMasterySpecific}: €${price.toFixed(2)}`);
     }
+    // Mastery price calculation removed - feature disabled
     
     if (price <= 0) {
       console.error(`[PRICE_EMBED] Invalid price calculated for type: ${userData.type}, current: ${userData.currentTrophies}, desired: ${userData.desiredTrophies}`);
@@ -1589,11 +1203,61 @@ async function showPriceEmbed(interaction) {
       });
     }
     
+    // === DISCOUNT LOGIC - CHECK FOR ACTIVE DISCOUNT ===
+    const { getActiveDiscountOffer, qualifiesForDiscount, calculateDiscountedPrice } = require('../utils/discountSystem.js');
+    let discountApplied = false;
+    let originalPrice = price;
+    let discountInfo = null;
+    
+    try {
+      // Only check for discount if user came from discount flow (has hasDiscount flag)
+      if (userData.hasDiscount || userData.discountClaimed) {
+        console.log(`[DISCOUNT] User ${interaction.user.id} came from discount flow, checking discount eligibility`);
+        
+        // Check if user has an active discount offer that they can use (NOT YET CLAIMED)
+        const db = require('../../database');
+        await db.waitUntilConnected();
+        
+        const discountQuery = `
+          SELECT * FROM tickets 
+          WHERE user_id = $1 
+            AND discount_offer_sent = TRUE 
+            AND discount_claimed = FALSE 
+            AND discount_expires_at > NOW()
+          ORDER BY created_at DESC 
+          LIMIT 1
+        `;
+        
+        const discountResult = await db.query(discountQuery, [userData.userId || interaction.user.id]);
+        discountInfo = discountResult.rows.length > 0 ? discountResult.rows[0] : null;
+        
+        if (discountInfo) {
+          // Check if the original price qualifies for discount (≤€100)
+          if (qualifiesForDiscount(`€${originalPrice.toFixed(2)}`)) {
+            // Apply 10% discount
+            price = originalPrice * 0.9;
+            discountApplied = true;
+            console.log(`[DISCOUNT] Applied 10% discount: €${originalPrice.toFixed(2)} → €${price.toFixed(2)}`);
+          } else {
+            console.log(`[DISCOUNT] Order over €100 (€${originalPrice.toFixed(2)}), discount not applicable`);
+          }
+        } else {
+          console.log(`[DISCOUNT] No active unclaimed discount found in database for user ${interaction.user.id}`);
+        }
+      } else {
+        console.log(`[DISCOUNT] User ${interaction.user.id} came from regular flow, no discount check`);
+      }
+    } catch (error) {
+      console.error(`[DISCOUNT] Error checking discount status: ${error.message}`);
+    }
+    
     // Format price for display
     formattedPrice = `€${price.toFixed(2)}`;
     
     // Save price to user data
     userData.price = formattedPrice;
+    userData.originalPrice = `€${originalPrice.toFixed(2)}`; // Store original price before discount
+    userData.discountApplied = discountApplied;
     userData.basePrice = formattedPrice; // Store the original price before any multipliers
     userData.priceMultiplier = priceMultiplier; // Store the applied multiplier
     
@@ -1632,11 +1296,18 @@ async function showPriceEmbed(interaction) {
         description += `\n**Giftcard Info:** \`${userData.giftcardInfo}\``;
       }
       
-      description += `\n\n**Total Price:** \`${formattedPrice}\``;
+      // Add discount information if applied
+      if (discountApplied) {
+        description += `\n\n**Original Price:** \`€${originalPrice.toFixed(2)}\``;
+        description += `\n**Discount (10%):** \`-€${(originalPrice - price).toFixed(2)}\``;
+        description += `\n**Final Price:** \`${formattedPrice}\` 🎉`;
+      } else {
+        description += `\n\n**Total Price:** \`${formattedPrice}\``;
+      }
       
       embed.setDescription(description);
     }
-    // Keeping existing code for other boost types
+    // Keeping existing code for other boost types but adding discount logic
     else if (userData.type === 'bulk') {
       let description = `Please confirm your order details:\n\n**Current Trophies:** \`${userData.currentTrophies}\`\n**Desired Trophies:** \`${userData.desiredTrophies}\`\n**Payment Method:** \`${userData.paymentMethod}\``;
       
@@ -1650,25 +1321,28 @@ async function showPriceEmbed(interaction) {
         description += `\n**Giftcard Info:** \`${userData.giftcardInfo}\``;
       }
       
-      description += `\n\n**Total Price:** \`${formattedPrice}\``;
+      // Add discount information if applied
+      if (discountApplied) {
+        description += `\n\n**Original Price:** \`€${originalPrice.toFixed(2)}\``;
+        description += `\n**Discount (10%):** \`-€${(originalPrice - price).toFixed(2)}\``;
+        description += `\n**Final Price:** \`${formattedPrice}\` 🎉`;
+      } else {
+        description += `\n\n**Total Price:** \`${formattedPrice}\``;
+      }
       
       embed.setDescription(description);
     } else if (userData.type === 'trophies') {
-      let description = `Please confirm your order details:\n\n**Brawler:** \`${userData.brawler}\`\n**Current Trophies:** \`${userData.currentTrophies}\`\n**Desired Trophies:** \`${userData.desiredTrophies}\``;
+      let description = `Please confirm your order details:\n\n**Brawler:** \`${userData.brawler}\`\n**Current Trophies:** \`${userData.currentTrophies}\`\n**Desired Trophies:** \`${userData.desiredTrophies}\`\n**Payment Method:** \`${userData.paymentMethod}\``;
       
-      // Add brawler level if available
-      if (userData.brawlerLevel !== undefined || userData.powerLevel !== undefined) {
-        const level = userData.powerLevel || userData.brawlerLevel;
-        description += `\n**Brawler Power Level:** \`${level}\``;
+      // Add power level information if available
+      if (userData.powerLevel !== null && userData.powerLevel !== undefined) {
+        description += `\n**Power Level:** \`${userData.powerLevel}\``;
+        
+        // Add multiplier info if a multiplier was applied
+        if (priceMultiplier !== 1.0) {
+          description += `\n**Power Level Multiplier:** \`${priceMultiplier}x\``;
+        }
       }
-      
-      // Add power level price multiplier if available and not 1.0
-      const trophyMultiplier = userData.powerLevelMultiplier || priceMultiplier;
-      if (trophyMultiplier !== undefined && trophyMultiplier !== 1.0) {
-        description += `\n**Level Price Multiplier:** \`${trophyMultiplier}x\``;
-      }
-      
-      description += `\n**Payment Method:** \`${userData.paymentMethod}\``;
       
       // Add crypto coin if payment method is crypto and cryptoType is specified
       if (userData.paymentMethod === 'Crypto' && userData.cryptoType && userData.cryptoType !== 'Litecoin' && userData.cryptoType !== 'Solana' && userData.cryptoType !== 'Bitcoin') {
@@ -1680,87 +1354,49 @@ async function showPriceEmbed(interaction) {
         description += `\n**Giftcard Info:** \`${userData.giftcardInfo}\``;
       }
       
-      description += `\n\n**Total Price:** \`${formattedPrice}\``;
-      
-      embed.setDescription(description);
-    } else if (userData.type === 'mastery') {
-      let description = `Please confirm your order details:\n\n**Brawler:** \`${userData.brawler}\`\n**Current Mastery:** \`${userData.formattedCurrentMastery}\`\n**Desired Mastery:** \`${userData.formattedDesiredMastery}\`\n**Payment Method:** \`${userData.paymentMethod}\``;
-      
-      // Add crypto coin if payment method is crypto and cryptoType is specified
-      if (userData.paymentMethod === 'Crypto' && userData.cryptoType && userData.cryptoType !== 'Litecoin' && userData.cryptoType !== 'Solana' && userData.cryptoType !== 'Bitcoin') {
-        description += `\n**Crypto Coin:** \`${userData.cryptoType}\``;
-      }
-      
-      // Add giftcard info if payment method is PayPal Giftcard and giftcardInfo is specified
-      if (userData.paymentMethod === 'PayPal Giftcard' && userData.giftcardInfo) {
-        description += `\n**Giftcard Info:** \`${userData.giftcardInfo}\``;
-      }
-      
-      description += `\n\n**Total Price:** \`${formattedPrice}\``;
-      
-      embed.setDescription(description);
-    }
-    
-    // Add confirmation buttons
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('confirm_ticket')
-        .setLabel('Confirm')
-        .setEmoji('<:checkmark:1357478063616688304>')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('cancel_ticket')
-        .setLabel('Cancel')
-        .setEmoji(EMOJIS.CROSS)
-        .setStyle(ButtonStyle.Danger)
-    );
-    
-    // Use editReply if the interaction is deferred, otherwise use reply
-    if (interaction.deferred) {
-      await interaction.editReply({
-      embeds: [embed], 
-      components: [row], 
-        flags: 64
-      });
-    } else if (interaction.replied) {
-      await interaction.followUp({
-        embeds: [embed],
-        components: [row],
-        flags: 64
-      });
-    } else {
-      await interaction.reply({
-        embeds: [embed],
-        components: [row],
-        flags: 64
-      });
-    }
-    
-    return true;
-  } catch (error) {
-    console.error(`[PRICE_EMBED] Error in showPriceEmbed: ${error.message}`);
-    console.error(error.stack);
-    
-    try {
-      if (interaction.deferred) {
-        return interaction.editReply({
-          content: 'An error occurred while showing the price confirmation. Please try again.',
-          flags: 64
-        });
-      } else if (interaction.replied) {
-        return interaction.followUp({
-          content: 'An error occurred while showing the price confirmation. Please try again.',
-          flags: 64
-        });
+      // Add discount information if applied
+      if (discountApplied) {
+        description += `\n\n**Original Price:** \`€${originalPrice.toFixed(2)}\``;
+        description += `\n**Discount (10%):** \`-€${(originalPrice - price).toFixed(2)}\``;
+        description += `\n**Final Price:** \`${formattedPrice}\` 🎉`;
       } else {
-        return interaction.reply({
-          content: 'An error occurred while showing the price confirmation. Please try again.',
-          flags: 64
-        });
+        description += `\n\n**Total Price:** \`${formattedPrice}\``;
       }
-    } catch (responseError) {
-      console.error(`[PRICE_EMBED] Error sending error response: ${responseError.message}`);
+      
+      embed.setDescription(description);
     }
+    // Mastery order description removed - feature disabled
+    
+    // Create buttons
+    const purchaseButton = new ButtonBuilder()
+      .setCustomId('purchase_boost')
+      .setLabel('Purchase Boost')
+      .setEmoji('<:checkmark:1357478063616688304>')
+      .setStyle(ButtonStyle.Success);
+      
+    const cancelButton = new ButtonBuilder()
+      .setCustomId('cancel_boost')
+      .setLabel('Cancel')
+      .setEmoji('<:cross:1351689463453061130>')
+      .setStyle(ButtonStyle.Danger);
+      
+    const row = new ActionRowBuilder()
+      .addComponents(purchaseButton, cancelButton);
+    
+    // Send the embed
+    return interaction.followUp({
+      embeds: [embed],
+      components: [row],
+      flags: 64
+    });
+    
+  } catch (error) {
+    console.error(`[PRICE_EMBED] Error showing price embed for user ${interaction.user.id}: ${error.message}`);
+    console.error(error.stack);
+    return interaction.followUp({ 
+      content: 'An error occurred while calculating the price. Please try again.',
+      flags: 64
+    });
   }
 }
 
@@ -1777,12 +1413,17 @@ async function handlePurchaseBoostClick(interaction) {
       });
     }
     
-    if (!userData.price || isNaN(parseFloat(userData.price))) {
-      console.error(`[PURCHASE_BOOST] Invalid price for user ${interaction.user.id}: ${userData.price}`);
-      userData.price = 0; 
-    } else {
-      userData.price = parseFloat(userData.price);
+    // Extract numeric value from price string (remove € symbol and parse)
+    let numericPrice = 0;
+    if (userData.price) {
+      const priceStr = userData.price.toString().replace('€', '').trim();
+      numericPrice = parseFloat(priceStr);
+      if (isNaN(numericPrice)) {
+        console.error(`[PURCHASE_BOOST] Invalid price for user ${interaction.user.id}: ${userData.price}`);
+        numericPrice = 0;
+      }
     }
+    userData.price = numericPrice;
     
     console.log(`[PURCHASE_BOOST] User ${interaction.user.id} clicked purchase. Payment Method: ${userData.paymentMethod}, Price: €${userData.price}`);
 
@@ -1790,12 +1431,50 @@ async function handlePurchaseBoostClick(interaction) {
     const username = interaction.user.username;
     const channelName = getChannelNameByType(type, userData, username);
     const categoryId = getCategoryIdByType(type);
+    // Prepare proper orderDetails object for database storage
+    const orderDetails = {
+      type: userData.type,
+      price: `€${userData.price}`,
+      paymentMethod: userData.paymentMethod,
+      current: '',
+      desired: ''
+    };
+    
+    // Add type-specific details  
+    if (userData.type === 'ranked') {
+      orderDetails.current = `${userData.currentRank} ${userData.currentRankSpecific || ''}`.trim();
+      orderDetails.desired = `${userData.desiredRank} ${userData.desiredRankSpecific || ''}`.trim();
+    } else if (userData.type === 'bulk' || userData.type === 'trophies') {
+      orderDetails.current = userData.currentTrophies || '';
+      orderDetails.desired = userData.desiredTrophies || '';
+    }
+    // Mastery order details removed - feature disabled
+    
+    console.log(`[PURCHASE_BOOST] Creating ticket with orderDetails:`, orderDetails);
+    
+    // Handle DM context for discount flow
+    let guild = interaction.guild;
+    if (!guild) {
+      // If in DMs (discount flow), get the guild from the client
+      const GUILD_ID = '1292895164595175444'; // Brawl Shop server ID
+      guild = interaction.client.guilds.cache.get(GUILD_ID);
+      
+      if (!guild) {
+        console.error(`[PURCHASE_BOOST] Could not find guild ${GUILD_ID} for user ${interaction.user.id}`);
+        return interaction.editReply({
+          content: 'Error: Could not access the server. Please try again or contact staff.',
+        });
+      }
+      
+      console.log(`[PURCHASE_BOOST] Using guild ${guild.name} (${guild.id}) for DM interaction`);
+    }
+    
     const channel = await createTicketChannelWithOverflow(
-      interaction.guild,
+      guild,
       interaction.user.id,
       categoryId,
       channelName,
-      `User ID: ${interaction.user.id} | Price: €${userData.price} | Method: ${userData.paymentMethod}`
+      orderDetails
     );
     
     if (!channel) {
@@ -1808,8 +1487,54 @@ async function handlePurchaseBoostClick(interaction) {
       content: `Your ticket has been created: <#${channel.id}>`,
     });
     
-    await sendWelcomeEmbed(channel, interaction.user.id);
-    await sendOrderRecapEmbed(channel, userData);
+    await require('../../ticketPayments.js').sendWelcomeEmbed(channel, interaction.user.id);
+    await require('../../handlerHelpers.js').sendOrderRecapEmbed(channel, userData);
+    
+    // === DISCOUNT CLAIMING AND DM BUTTON UPDATE LOGIC ===
+    // Check if user has a discount flow and order qualifies for it
+    try {
+      if (userData.hasDiscount || userData.discountClaimed) {
+        const priceValue = parseFloat(userData.price || 0);
+        console.log(`[DISCOUNT_UPDATE] Checking discount claiming for user ${interaction.user.id}, price: €${priceValue}`);
+        
+        if (priceValue <= 100) {
+          // NOW mark discount as claimed since ticket is being created with qualifying price
+          const { markDiscountAsClaimed } = require('../utils/discountSystem.js');
+          const claimSuccess = await markDiscountAsClaimed(interaction.user.id);
+          
+          if (claimSuccess) {
+            console.log(`[DISCOUNT_UPDATE] Successfully marked discount as claimed for user ${interaction.user.id}`);
+            
+          // Get the discount message ID from database
+          const db = require('../../database');
+          await db.waitUntilConnected();
+          
+          const discountResult = await db.query(
+            'SELECT discount_message_id FROM tickets WHERE user_id = $1 AND discount_claimed = TRUE AND discount_message_id IS NOT NULL ORDER BY created_at DESC LIMIT 1',
+            [interaction.user.id]
+          );
+          
+          if (discountResult.rows.length > 0) {
+            const discountMessageId = discountResult.rows[0].discount_message_id;
+            console.log(`[DISCOUNT_UPDATE] Found discount message ID: ${discountMessageId}, updating DM buttons`);
+            
+            // Update the DM buttons to show discount was successfully used
+            const { updateDiscountDMButtons } = require('../handlers/discountHandlers.js');
+            await updateDiscountDMButtons(interaction.client, interaction.user.id, discountMessageId);
+          } else {
+            console.log(`[DISCOUNT_UPDATE] No discount message ID found for user ${interaction.user.id}`);
+          }
+        } else {
+            console.log(`[DISCOUNT_UPDATE] Failed to mark discount as claimed for user ${interaction.user.id}`);
+          }
+        } else {
+          console.log(`[DISCOUNT_UPDATE] Order price €${priceValue} exceeds €100 limit, not claiming discount`);
+        }
+      }
+    } catch (discountError) {
+      console.error(`[DISCOUNT_UPDATE] Error processing discount claiming: ${discountError.message}`);
+      // Don't fail the ticket creation if discount update fails
+    }
     
     // Send payment information based on selected method
     const paymentMethod = userData.paymentMethod;
@@ -1819,32 +1544,31 @@ async function handlePurchaseBoostClick(interaction) {
     console.log(`[PURCHASE_BOOST] Routing to payment embed for method: ${paymentMethod} in channel ${channel.id}`);
 
     if (paymentMethod === 'PayPal') {
-      await sendPayPalTermsEmbed(channel, userId, interaction);
+      await require('../../ticketPayments.js').sendPayPalTermsEmbed(channel, userId, interaction);
     } else if (paymentMethod === 'IBAN Bank Transfer') {
-      await sendIbanEmbed(channel, userId, interaction);
+      await require('../../ticketPayments.js').sendIbanEmbed(channel, userId, interaction);
     } else if (paymentMethod === 'Crypto') {
       // Send crypto payment information based on the selected crypto type
       console.log(`[PURCHASE_BOOST] Crypto selected. Type: ${userData.cryptoType}. Sending specific crypto embed...`);
       if (userData.cryptoType === 'Litecoin') {
-        await sendLitecoinEmbed(channel, userId, price, interaction);
+        await require('../../ticketPayments.js').sendLitecoinEmbed(channel, userId, price, interaction);
       } else if (userData.cryptoType === 'Solana') {
-        await sendSolanaEmbed(channel, userId, price, interaction);
+        await require('../../ticketPayments.js').sendSolanaEmbed(channel, userId, price, interaction);
       } else if (userData.cryptoType === 'Bitcoin') {
-        await sendBitcoinEmbed(channel, userId, interaction);
+        await require('../../ticketPayments.js').sendBitcoinEmbed(channel, userId, interaction);
       } else {
         // Generic message for 'Other' or unspecified crypto
         await channel.send({content: `Crypto payment selected (${userData.cryptoType || 'unspecified'}). Specific instructions will follow soon or were shown prior.`});
       }
     } else if (paymentMethod === 'PayPal Giftcard') {
-        await sendPayPalGiftcardOtherPaymentEmbed(channel, userId, 'PayPal Giftcard');
-    } else if (paymentMethod === 'German Apple Giftcard') {
-        await sendAppleGiftcardEmbed(channel, userId, interaction);
+        await require('../../ticketPayments.js').sendPayPalGiftcardOtherPaymentEmbed(channel, userId, 'PayPal Giftcard');
+
     } else if (paymentMethod === 'Dutch Payment Methods') {
         // This would have a sub-type like Tikkie or Bol.com
         if (userData.dutchPaymentType === 'Tikkie') {
-          await sendTikkieEmbed(channel, userId, interaction);
+          await require('../../ticketPayments.js').sendTikkieEmbed(channel, userId, interaction);
         } else if (userData.dutchPaymentType === 'Bol.com Giftcard') {
-          await sendBolGiftcardEmbed(channel, userId, interaction);
+          await require('../../ticketPayments.js').sendBolGiftcardEmbed(channel, userId, interaction);
         } else {
           await channel.send({content: `Dutch Payment Method (${userData.dutchPaymentType || 'unspecified'}) instructions will be shown here.`});
         }
@@ -1909,7 +1633,7 @@ async function handlePaymentMethodSelect(interaction) {
         userData.paymentMethod = 'PayPal Giftcard';
         break;
       case 'apple_giftcard':
-        userData.paymentMethod = 'German Apple Giftcard';
+
         break;
       case 'dutch':
         userData.paymentMethod = 'Dutch Payment Methods';
@@ -2052,10 +1776,15 @@ async function handleCryptoTypeSelect(interaction) {
 // Handle ticket confirmation button
 async function handleTicketConfirm(interaction) {
   try {
+    // IMMEDIATELY defer the reply to show "Thinking..." and prevent timeout
+    await interaction.deferReply({ ephemeral: true });
+    
     const userId = interaction.user.id;
     if (!flowState.has(userId)) {
       console.warn(`[TICKET_CONFIRM] No flow state for user ${userId}`);
-      return;
+      return await interaction.editReply({
+        content: 'Session data not found. Please try again.'
+      });
     }
     
     const userData = flowState.get(userId);
@@ -2064,22 +1793,21 @@ async function handleTicketConfirm(interaction) {
     if (userData.isProcessingTicket) {
       console.log(`[TICKET_CONFIRM] Already processing ticket for ${userId}, ignoring duplicate confirm`);
       
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({
-          content: 'Your ticket is already being created. Please wait a moment.',
-          flags: 64
-        }).catch(err => console.error(`[TICKET_CONFIRM] Failed to followUp: ${err.message}`));
-      } else {
-        try {
-          await interaction.reply({
-            content: 'Your ticket is already being created. Please wait a moment.',
-            flags: 64
-          });
-        } catch (replyErr) {
-          console.error(`[TICKET_CONFIRM] Could not reply with error: ${replyErr.message}`);
-        }
-      }
-      return;
+      return await interaction.editReply({
+        content: 'Your ticket is already being created. Please wait a moment.'
+      });
+    }
+    
+    // CHECK TICKET RATE LIMITS BEFORE PROCESSING
+    const { checkTicketRateLimit } = require('../utils/rateLimitSystem');
+    const rateLimitCheck = await checkTicketRateLimit(userId, userData.type);
+    
+    if (!rateLimitCheck.allowed) {
+      console.log(`[TICKET_CONFIRM] User ${userId} blocked by ticket rate limit: ${userData.type}`);
+      return await interaction.editReply({
+        content: rateLimitCheck.reason,
+        ephemeral: true
+      });
     }
     
     // Set a flag to prevent duplicate ticket creation
@@ -2108,6 +1836,13 @@ async function handleTicketConfirm(interaction) {
     }
     
     // Prepare order details for the ticket
+    console.log(`[TICKET_CONFIRM] === BUILDING ORDER DETAILS ===`);
+    console.log(`[TICKET_CONFIRM] userData.type:`, userData.type);
+    console.log(`[TICKET_CONFIRM] userData.currentRank:`, userData.currentRank);
+    console.log(`[TICKET_CONFIRM] userData.currentRankSpecific:`, userData.currentRankSpecific);
+    console.log(`[TICKET_CONFIRM] userData.desiredRank:`, userData.desiredRank);
+    console.log(`[TICKET_CONFIRM] userData.desiredRankSpecific:`, userData.desiredRankSpecific);
+    
     const orderDetails = {
       type: userData.type,
       current: '',
@@ -2117,16 +1852,16 @@ async function handleTicketConfirm(interaction) {
     
     // Add specific details based on type
     if (userData.type === 'ranked') {
-      orderDetails.current = `${userData.currentRank} ${userData.currentRankSpecific}`;
-      orderDetails.desired = `${userData.desiredRank} ${userData.desiredRankSpecific}`;
+      orderDetails.current = `${userData.currentRank || ''} ${userData.currentRankSpecific || ''}`.trim();
+      orderDetails.desired = `${userData.desiredRank || ''} ${userData.desiredRankSpecific || ''}`.trim();
+      console.log(`[TICKET_CONFIRM] ✅ Built ranked current: "${orderDetails.current}"`);
+      console.log(`[TICKET_CONFIRM] ✅ Built ranked desired: "${orderDetails.desired}"`);
     }
     else if (userData.type === 'bulk' || userData.type === 'trophies') {
       orderDetails.current = userData.currentTrophies;
       orderDetails.desired = userData.desiredTrophies;
-    }
-    else if (userData.type === 'mastery') {
-      orderDetails.current = `${userData.currentMastery} ${userData.currentMasterySpecific}`;
-      orderDetails.desired = `${userData.desiredMastery} ${userData.desiredMasterySpecific}`;
+      console.log(`[TICKET_CONFIRM] ✅ Built trophies current: "${orderDetails.current}"`);
+      console.log(`[TICKET_CONFIRM] ✅ Built trophies desired: "${orderDetails.desired}"`);
     }
     
     if (userData.paymentMethod) {
@@ -2140,18 +1875,36 @@ async function handleTicketConfirm(interaction) {
     
     // Create the ticket channel
     try {
-      const guild = interaction.guild;
+      // Handle DM context for discount flow
+      let guild = interaction.guild;
+      if (!guild) {
+        // If in DMs (discount flow), get the guild from the client
+        const GUILD_ID = '1292895164595175444'; // Brawl Shop server ID
+        guild = interaction.client.guilds.cache.get(GUILD_ID);
+        
+        if (!guild) {
+          console.error(`[TICKET_CONFIRM] Could not find guild ${GUILD_ID} for user ${userId}`);
+          // Reset the processing flag so they can try again
+          userData.isProcessingTicket = false;
+          flowState.set(userId, userData);
+          
+          return await interaction.editReply({
+            content: 'Error: Could not access the server. Please try again or contact staff.'
+          });
+        }
+        
+        console.log(`[TICKET_CONFIRM] Using guild ${guild.name} (${guild.id}) for DM interaction`);
+      }
+      
+      console.log(`[TICKET_CONFIRM] === PASSING ORDER DETAILS TO DATABASE ===`);
+      console.log(`[TICKET_CONFIRM] orderDetails:`, orderDetails);
+      
       const ticketChannel = await createTicketChannelWithOverflow(
         guild,
         interaction.user.id,
         categoryId,
         channelName,
-        {
-          type: userData.type,
-          current: '',
-          desired: '',
-          price: userData.price
-        }
+        orderDetails  // ✅ USE THE FILLED OBJECT!
       );
       
       // Check if ticket channel creation was successful
@@ -2161,22 +1914,9 @@ async function handleTicketConfirm(interaction) {
         userData.isProcessingTicket = false;
         flowState.set(userId, userData);
         
-        if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({
-            content: 'Failed to create ticket channel. Please try again or contact staff.',
-            flags: 64
-          }).catch(err => console.error(`[TICKET_CONFIRM] Failed to followUp: ${err.message}`));
-        } else {
-          try {
-            await interaction.reply({
-              content: 'Failed to create ticket channel. Please try again or contact staff.',
-              flags: 64
-            });
-          } catch (replyErr) {
-            console.error(`[TICKET_CONFIRM] Could not reply with error: ${replyErr.message}`);
-          }
-        }
-        return;
+        return await interaction.editReply({
+          content: 'Failed to create ticket channel. Please try again or contact staff.'
+        });
       }
       
       // Send welcome message first
@@ -2238,25 +1978,28 @@ async function handleTicketConfirm(interaction) {
         await ticketChannel.send(`Error sending payment information. Please contact staff. Error: ${paymentError.message}`);
       }
       
-      // Acknowledge ticket creation to the user (handles reply/editReply/followUp)
-      await safeInteractionResponse(interaction, {
-        content: `✅ Ticket created: <#${ticketChannel.id}>`,
-        components: []
-      });
+      // Send confirmation to the user - use editReply since we deferred
+      try {
+        await interaction.editReply({
+          content: `Successfully opened ticket, your ticket: <#${ticketChannel.id}>`
+        });
+        console.log(`[TICKET_CONFIRM] Sent success message to user ${userId} for ticket ${ticketChannel.id}`);
+      } catch (successErr) {
+        console.error(`[TICKET_CONFIRM] Could not send success message: ${successErr.message}`);
+        // Even if the success message fails, the ticket was still created successfully
+      }
       
-      console.log(`[TICKET DEBUG] Ticket setup completed for ${channelName}`);
-      // Mark flow state as completed for this ticket
-      userData.ticketCreated = true;
-      userData.ticketChannelId = ticketChannel.id;
-      userData.isProcessingTicket = false;
-      flowState.set(userId, userData);
-
     } catch (error) {
       console.error(`[TICKET_CONFIRM] Error creating ticket: ${error.message}`);
       console.error(error.stack);
       // Reset the processing flag so they can try again
       userData.isProcessingTicket = false;
       flowState.set(userId, userData);
+      
+      // Use editReply since we deferred
+      return await interaction.editReply({
+        content: 'An error occurred while creating your ticket. Please try again or contact staff.'
+      });
     }
   } catch (error) {
     console.error(`[TICKET_CONFIRM] Error creating ticket: ${error.message}`);
@@ -2270,19 +2013,10 @@ async function handleTicketConfirm(interaction) {
         flowState.set(interaction.user.id, userData);
       }
       
-      // If we haven't responded yet, try to reply
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({
-          content: 'An error occurred while creating your ticket. Please try again or contact staff.',
-          flags: 64  // Ephemeral flag
-        });
-      } else {
-        // If we've already responded, try to followUp
-        await interaction.followUp({
-          content: 'An error occurred while creating your ticket. Please try again or contact staff.',
-          flags: 64  // Ephemeral flag
-        }).catch(err => console.error(`[TICKET_CONFIRM] Failed to followUp error: ${err.message}`));
-      }
+      // Use editReply since we deferred at the start
+      await interaction.editReply({
+        content: 'An error occurred while creating your ticket. Please try again or contact staff.'
+      });
     } catch (responseErr) {
       console.error(`[TICKET_CONFIRM] Could not respond with error: ${responseErr.message}`);
     }
@@ -2487,41 +2221,8 @@ function generateRankButtons(currentValue, prefix) {
   return { rows };
 }
 
-// Helper function to get Mastery UI details
-function getMasteryUIDetails(masteryNameInput) {
-  let masteryName = masteryNameInput;
-  if (masteryName && typeof masteryName === 'string') {
-    masteryName = masteryName.charAt(0).toUpperCase() + masteryName.slice(1).toLowerCase();
-  } else if (!masteryName) { 
-    console.warn('[MASTERY_UI_DETAILS] masteryNameInput is null or undefined');
-    return { emoji: '⭐', style: ButtonStyle.Secondary };
-  }
-
-  const details = {
-    'Gold': { emoji: '<:mastery_gold:1357487865029722254>', style: ButtonStyle.Success },
-    'Silver': { emoji: '<:mastery_silver:1357487832481923153>', style: ButtonStyle.Primary },
-    'Bronze': { emoji: '<:mastery_bronze:1357487786394914847>', style: ButtonStyle.Danger },
-  };
-  return details[masteryName] || { emoji: '⭐', style: ButtonStyle.Secondary };
-}
-
-// Helper function to generate mastery selection buttons
-function generateMasteryButtons(currentValue, prefix) {
-  const masteries = ['Gold', 'Silver', 'Bronze'];
-  const allButtons = [];
-  masteries.forEach(mastery => {
-    // Check if the lowest sub-tier of this mastery (e.g., Gold 1) is higher than current
-    if (getMasteryValue(mastery, '1') > currentValue || getMasteryValue(mastery, '2') > currentValue || getMasteryValue(mastery, '3') > currentValue) {
-      const details = getMasteryUIDetails(mastery);
-      allButtons.push(new ButtonBuilder().setCustomId(`${prefix}${mastery}`).setLabel(mastery).setEmoji(details.emoji).setStyle(details.style));
-    }
-  });
-  const rows = [];
-  for (let i = 0; i < allButtons.length; i += 3) { // Max 3 mastery buttons per row
-    rows.push(new ActionRowBuilder().addComponents(...allButtons.slice(i, i + 3)));
-  }
-  return { rows };
-}
+// Helper functions for mastery UI and button generation - REMOVED (feature disabled)
+// The mastery feature has been removed from Brawl Stars
 
 // Show payment method selection
 async function showPaymentMethodSelection(interaction) {
@@ -2580,19 +2281,12 @@ async function showPaymentMethodSelection(interaction) {
       .setLabel('Dutch Payment Methods')
       .setDescription('Only for Dutch people - the Netherlands - No other countries.')
       .setEmoji('<:tikkie:1371869238259875922>');
-    
-    // Prepare option for German Apple Giftcards
-    const appleGiftcardOption = new StringSelectMenuOptionBuilder()
-      .setValue('apple_giftcard')
-      .setLabel('German Apple Giftcard')
-      .setDescription('German Apple giftcards only, other countries are not accepted.')
-      .setEmoji('<:applepay:1371864533047578755>');
 
     // Create payment method select menu
     const selectMenu = new StringSelectMenuBuilder()
       .setCustomId('payment_method_select')
       .setPlaceholder('Select Payment Method')
-      .addOptions(paypalOption, cryptoOption, ibanOption, paypalGiftcardOption, dutchOption, appleGiftcardOption);
+      .addOptions(paypalOption, cryptoOption, ibanOption, paypalGiftcardOption, dutchOption);
 
     const row = new ActionRowBuilder().addComponents(selectMenu);
 
@@ -2622,16 +2316,8 @@ function getRankAbbrev(rank, specific) {
   if (specific === '3' || specific === 3) return base + '3';
   return base;
 }
-// Helper: Get mastery abbreviation
-function getMasteryAbbrev(mastery, specific) {
-  if (!mastery) return '';
-  const map = { bronze: 'b', silver: 's', gold: 'g' };
-  const base = map[mastery.toLowerCase()] || mastery[0].toLowerCase();
-  if (!specific || specific === '1' || specific === 1) return base;
-  if (specific === '2' || specific === 2) return base + '2';
-  if (specific === '3' || specific === 3) return base + '3';
-  return base;
-}
+// Helper: Get mastery abbreviation - REMOVED (feature disabled)
+// The mastery feature has been removed from Brawl Stars
 // Helper: Sanitize username
 function sanitizeUsername(username) {
   return username.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase();
@@ -2641,7 +2327,7 @@ function getCategoryIdByType(type) {
   if (type === 'ranked') return '1322913302921089094';
   if (type === 'trophies') return '1322947795803574343';
   if (type === 'bulk') return '1322947859561320550';
-  if (type === 'mastery') return '1322947859561320550';
+  // Mastery category removed - feature disabled
   if (type === 'other') return '1322947859561320550'; // Use the same category as bulk/mastery
   return null;
 }
@@ -2655,12 +2341,147 @@ function getChannelNameByType(type, userData, username) {
   if (type === 'trophies' || type === 'bulk') {
     return `${userData.currentTrophies}-${userData.desiredTrophies}-${sanitizeUsername(username)}`;
   }
-  if (type === 'mastery') {
-    const start = getMasteryAbbrev(userData.currentMastery, userData.currentMasterySpecific);
-    const end = getMasteryAbbrev(userData.desiredMastery, userData.desiredMasterySpecific);
-    return `${start}-${end}-${sanitizeUsername(username)}`;
-  }
+  // Mastery channel name removed - feature disabled
   return `${type}-${sanitizeUsername(username)}`;
+}
+
+// Trophy boost flow
+async function handleTrophyFlow(interaction) {
+  try {
+    console.log(`[TROPHY_FLOW] Starting trophy flow for user ${interaction.user.id}`);
+    
+    // CHECK TICKET RATE LIMITS FIRST
+    const { checkTicketRateLimit } = require('../utils/rateLimitSystem');
+    const rateLimitCheck = await checkTicketRateLimit(interaction.user.id, 'trophies');
+    
+    if (!rateLimitCheck.allowed) {
+      console.log(`[TROPHY_FLOW] User ${interaction.user.id} blocked by ticket rate limit`);
+      return await interaction.reply({
+        content: rateLimitCheck.reason,
+        ephemeral: true
+      });
+    }
+    
+    // Get existing user state or create new one, preserving discount flags
+    let userData = flowState.get(interaction.user.id) || {};
+    
+    // Update with trophy flow specific data while preserving existing flags
+    userData = {
+      ...userData, // Preserve existing data including hasDiscount, discountClaimed
+      type: 'trophies',
+      timestamp: Date.now()
+    };
+    
+    flowState.set(interaction.user.id, userData);
+    
+    const modal = new ModalBuilder()
+      .setCustomId('modal_trophies_start')
+      .setTitle('Trophies Boost');
+
+    const brawlerNameInput = new TextInputBuilder()
+      .setCustomId('brawler_name')
+      .setLabel('Brawler Name')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('Enter the name of the brawler')
+      .setRequired(true);
+
+    const currentInput = new TextInputBuilder()
+      .setCustomId('brawler_current')
+      .setLabel('Current Trophies')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('Enter the current trophy count')
+      .setRequired(true);
+
+    const desiredInput = new TextInputBuilder()
+      .setCustomId('brawler_desired')
+      .setLabel('Desired Trophies')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('Enter the desired trophy count')
+      .setRequired(true);
+
+    const brawlerLevelInput = new TextInputBuilder()
+      .setCustomId('brawler_level')
+      .setLabel('Brawler Power Level (1-11)')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('Enter the power level of the brawler (1-11)')
+      .setRequired(true);
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(brawlerNameInput),
+      new ActionRowBuilder().addComponents(currentInput),
+      new ActionRowBuilder().addComponents(desiredInput),
+      new ActionRowBuilder().addComponents(brawlerLevelInput)
+    );
+    
+    return await interaction.showModal(modal);
+    
+  } catch (error) {
+    console.error('[TROPHY_FLOW] Error:', error);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'An error occurred while creating the trophy ticket.',
+        ephemeral: true
+      }).catch(console.error);
+    }
+  }
+}
+
+// Other request flow
+async function handleOtherFlow(interaction) {
+  try {
+    console.log(`[OTHER_FLOW] Starting other flow for user ${interaction.user.id}`);
+    
+    // CHECK TICKET RATE LIMITS FIRST
+    const { checkTicketRateLimit } = require('../utils/rateLimitSystem');
+    const rateLimitCheck = await checkTicketRateLimit(interaction.user.id, 'other');
+    
+    if (!rateLimitCheck.allowed) {
+      console.log(`[OTHER_FLOW] User ${interaction.user.id} blocked by ticket rate limit`);
+      return await interaction.reply({
+        content: rateLimitCheck.reason,
+        ephemeral: true
+      });
+    }
+    
+    // Get existing user state or create new one, preserving discount flags
+    let userData = flowState.get(interaction.user.id) || {};
+    
+    // Update with other flow specific data while preserving existing flags
+    userData = {
+      ...userData, // Preserve existing data including hasDiscount, discountClaimed
+      type: 'other',
+      timestamp: Date.now()
+    };
+    
+    flowState.set(interaction.user.id, userData);
+    
+    const modal = new ModalBuilder()
+      .setCustomId('modal_other_request')
+      .setTitle('Other Request');
+
+    const requestDetailsInput = new TextInputBuilder()
+      .setCustomId('other_request')
+      .setLabel('Request Details')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Please describe your request in detail')
+      .setRequired(true)
+      .setMaxLength(1000);
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(requestDetailsInput)
+    );
+    
+    return await interaction.showModal(modal);
+    
+  } catch (error) {
+    console.error('[OTHER_FLOW] Error:', error);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'An error occurred while creating the other request ticket.',
+        ephemeral: true
+      }).catch(console.error);
+    }
+  }
 }
 
 // Helper function for ticket creation
@@ -2760,9 +2581,9 @@ module.exports = {
   flowState,
   handleRankedFlow,
   handleBulkFlow,
-  handleMasteryFlow,
+  handleTrophyFlow,
+  handleOtherFlow,
   handleRankedRankSelection,
-  handleMasterySelection,
   handleTicketConfirm,
   handleTicketCancel,
   showPaymentMethodSelection,
@@ -2773,10 +2594,10 @@ module.exports = {
   handleCryptoTypeSelect,
   showPriceEmbed,
   getRankValue,
-  getMasteryValue,
   isDesiredRankHigher,
   showP11Modal,
   handleP11ModalSubmit,
   safeInteractionResponse,
-  createFinalTicket
+  createFinalTicket,
+  handlePurchaseBoostClick
 }; 

@@ -4,11 +4,9 @@ const {
     showPaymentMethodSelection,
     handleRankedFlow,
     handleBulkFlow,
-    handleMasteryFlow,
     handleTrophyFlow,
     handleOtherFlow,
     getRankValue,
-    getMasteryValue,
     handlePaymentMethodSelect,
     handleDutchMethodSelect,
     handleCryptoTypeSelect
@@ -61,51 +59,10 @@ const selectMenuHandlers = {
         }
     },
 
-    // Mastery selection handlers
-    mastery_select: async (interaction) => {
-        try {
-            const [mastery, specific] = interaction.values[0].split('_');
-            const userData = flowState.get(interaction.user.id);
-            
-            if (!userData) {
-                return interaction.reply({
-                    content: 'Your session has expired. Please start over.',
-                    ephemeral: true
-                });
-            }
+    // Mastery selection handlers - REMOVED (feature disabled)
+    // The mastery feature has been removed from Brawl Stars
 
-            if (userData.type !== 'mastery') {
-                return interaction.reply({
-                    content: 'Invalid selection type.',
-                    ephemeral: true
-                });
-            }
-
-            // Update user data with selected mastery level
-            if (userData.currentMastery) {
-                userData.desiredMastery = mastery;
-                userData.desiredMasterySpecific = specific;
-                userData.formattedDesiredMastery = `${mastery} ${specific}`;
-            } else {
-                userData.currentMastery = mastery;
-                userData.currentMasterySpecific = specific;
-                userData.formattedCurrentMastery = `${mastery} ${specific}`;
-            }
-
-            flowState.set(interaction.user.id, userData);
-
-            // Continue the mastery flow
-            await handleMasteryFlow(interaction, interaction.channel);
-        } catch (error) {
-            console.error('[MASTERY_SELECT] Error:', error);
-            if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({
-                    content: 'An error occurred while processing your selection.',
-                    ephemeral: true
-                });
-            }
-        }
-    },
+    // Crypto selection handlers
     payment_method_select: handlePaymentMethodSelect,
     dutch_method_select: handleDutchMethodSelect,
     crypto_type_select: handleCryptoTypeSelect,

@@ -24,8 +24,7 @@ const {
 const { 
   calculateTrophyPrice, 
   calculateBulkPrice, 
-  calculateRankedPrice, 
-  calculateMasteryPrice 
+  calculateRankedPrice
 } = require('../utils/priceCalculator');
 const { 
   createTicketChannelWithOverflow,
@@ -37,9 +36,7 @@ const {
 const { 
   handleRankedFlow,
   handleBulkFlow,
-  handleMasteryFlow,
   handleRankedRankSelection,
-  handleMasterySelection,
   showPaymentMethodSelection,
   showPriceEmbed,
   flowState,
@@ -180,7 +177,6 @@ const messageCommands = {
       new ButtonBuilder().setCustomId('ticket_bulk').setLabel('Bulk Trophies').setEmoji('<:gold_trophy:1351658932434768025>').setStyle(ButtonStyle.Primary)
     );
     const row2 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('ticket_mastery').setLabel('Mastery').setEmoji('<:mastery:1351659726991134832>').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId('ticket_other').setLabel('Other').setEmoji('<:winmatcherino:1298703851934711848>').setStyle(ButtonStyle.Success)
     );
     await message.channel.send({ embeds: [embed], components: [row1, row2] });
@@ -299,10 +295,6 @@ const buttonHandlers = {
     return handleBulkFlow(interaction);
   },
 
-  'ticket_mastery': async (interaction) => {
-    return handleMasteryFlow(interaction);
-  },
-
   // Ranked buttons
   'ranked_masters': async (interaction) => {
     return handleRankedRankSelection(interaction, 'Masters');
@@ -327,17 +319,6 @@ const buttonHandlers = {
   },
   'ranked_pro': async (interaction) => {
     return handleRankedRankSelection(interaction, 'Pro');
-  },
-
-  // Mastery buttons
-  'mastery_bronze': async (interaction) => {
-    return handleMasterySelection(interaction, 'Bronze');
-  },
-  'mastery_silver': async (interaction) => {
-    return handleMasterySelection(interaction, 'Silver');
-  },
-  'mastery_gold': async (interaction) => {
-    return handleMasterySelection(interaction, 'Gold');
   },
 
   // Payment method buttons
@@ -405,12 +386,6 @@ const buttonHandlers = {
         orderFields.push(
           { name: '**Current Trophies:**', value: `\`${userData.currentTrophies}\`` },
           { name: '**Desired Trophies:**', value: `\`${userData.desiredTrophies}\`` }
-        );
-      } else if (type === 'mastery') {
-        orderFields.push(
-          { name: '**Brawler:**', value: `\`${userData.brawler}\`` },
-          { name: '**Current Mastery:**', value: `\`${userData.currentMastery} ${userData.currentMasterySpecific}\`` },
-          { name: '**Desired Mastery:**', value: `\`${userData.desiredMastery} ${userData.desiredMasterySpecific}\`` }
         );
       }
 
@@ -689,7 +664,7 @@ const buttonHandlers = {
   'payment_apple_giftcard': async (interaction) => {
     const userData = flowState.get(interaction.user.id);
     if (userData) {
-      userData.paymentMethod = 'German Apple Giftcard';
+
       flowState.set(interaction.user.id, userData);
       return showPriceEmbed(interaction);
     }
@@ -948,21 +923,6 @@ const modalHandlers = {
     
     // Show payment method selection
     return showPaymentMethodSelection(interaction);
-  },
-
-  'modal_mastery_brawler': async (interaction) => {
-    const brawlerName = interaction.fields.getTextInputValue('mastery_brawler').trim();
-    flowState.set(interaction.user.id, { 
-      step: 'mastery_current_main', 
-      brawlerName 
-    });
-    const embed = new EmbedBuilder().setTitle('Current Mastery').setDescription('Select your current mastery level:').setColor(EMBED_COLOR);
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('mastery_current_Bronze').setLabel('Bronze').setEmoji('<:mastery_bronze:1357487786394914847>').setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId('mastery_current_Silver').setLabel('Silver').setEmoji('<:mastery_silver:1357487832481923153>').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('mastery_current_Gold').setLabel('Gold').setEmoji('<:mastery_gold:1357487865029722254>').setStyle(ButtonStyle.Success)
-    );
-    return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
   },
   
   'modal_crypto_other': async (interaction) => {

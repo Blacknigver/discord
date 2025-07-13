@@ -4,7 +4,7 @@ const { ChannelType, PermissionsBitField } = require('discord.js');
 // Import from config.js
 const { MAX_CATEGORY_CHANNELS } = require('./config');
 // Import from constants.js
-const { RANKED_ORDER, RANKED_STEP_COSTS, MASTERY_ORDER, MASTERY_STEPS_COST } = require('./src/constants');
+const { RANKED_ORDER, RANKED_STEP_COSTS } = require('./src/constants');
 const axios = require('axios');
 
 /**
@@ -528,67 +528,6 @@ function calculateRankedPrice(currentRank, currentRankSpecific, desiredRank, des
 }
 
 /**
- * Calculate mastery boost price
- */
-function calculateMasteryPrice(brawler, currentMastery, currentMasterySpecific, desiredMastery, desiredMasterySpecific) {
-  console.log(`[PRICE DEBUG] Calculating mastery price for ${brawler}: ${currentMastery} ${currentMasterySpecific} to ${desiredMastery} ${desiredMasterySpecific}`);
-  
-  // Format mastery levels
-  const formatMastery = (mastery, specific) => {
-    if (!mastery || !specific) return null;
-    // Convert Bronze/Silver/Gold to Level X format
-    if (mastery === 'Bronze') {
-      if (specific === '1') return 'Level 1';
-      if (specific === '2') return 'Level 2';
-      if (specific === '3') return 'Level 3';
-    } else if (mastery === 'Silver') {
-      if (specific === '1') return 'Level 4';
-      if (specific === '2') return 'Level 5'; 
-      if (specific === '3') return 'Level 6';
-    } else if (mastery === 'Gold') {
-      if (specific === '1') return 'Level 7';
-      if (specific === '2') return 'Level 8';
-      if (specific === '3') return 'Level 9';
-    }
-    return null;
-  };
-  
-  const currentMasteryFormatted = formatMastery(currentMastery, currentMasterySpecific);
-  const desiredMasteryFormatted = formatMastery(desiredMastery, desiredMasterySpecific);
-  
-  if (!currentMasteryFormatted || !desiredMasteryFormatted) {
-    console.log(`[PRICE DEBUG] Invalid mastery format: current=${currentMastery}/${currentMasterySpecific}, desired=${desiredMastery}/${desiredMasterySpecific}`);
-    return 0;
-  }
-  
-  console.log(`[PRICE DEBUG] Formatted masteries: current=${currentMasteryFormatted}, desired=${desiredMasteryFormatted}`);
-  
-  const idxStart = MASTERY_ORDER.indexOf(currentMasteryFormatted);
-  const idxEnd = MASTERY_ORDER.indexOf(desiredMasteryFormatted);
-  
-  if (idxStart < 0 || idxEnd < 0) {
-    console.log(`[PRICE DEBUG] Mastery not found in MASTERY_ORDER: current=${currentMasteryFormatted}, desired=${desiredMasteryFormatted}`);
-    return 0;
-  }
-  
-  if (idxStart >= idxEnd) {
-    console.log(`[PRICE DEBUG] Current mastery (${idxStart}) is higher than or equal to desired mastery (${idxEnd})`);
-    return 0;
-  }
-  
-  let total = 0;
-  for (let i = idxStart; i < idxEnd; i++) {
-    const stepKey = `${MASTERY_ORDER[i]}->${MASTERY_ORDER[i+1]}`;
-    const stepCost = MASTERY_STEPS_COST[stepKey] || 0;
-    console.log(`[PRICE DEBUG] Mastery step ${i}: ${stepKey} = €${stepCost}`);
-    total += stepCost;
-  }
-  
-  console.log(`[PRICE DEBUG] Total mastery price: €${Math.round(total * 100) / 100}`);
-  return Math.round(total * 100) / 100;
-}
-
-/**
  * Moves a channel to a specific category based on event type and user ID
  * @param {Object} channel - Discord channel object to move
  * @param {String} eventType - 'payment_received', 'claim_boost', or 'boost_completed'
@@ -654,6 +593,5 @@ module.exports = {
   calculateTrophyPowerLevelMultiplier,
   calculateBulkPrice,
   calculateRankedPrice,
-  calculateMasteryPrice,
   moveToCategory
 }; 

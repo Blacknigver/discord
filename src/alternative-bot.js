@@ -25,9 +25,10 @@ const { TOKEN, CLIENT_ID } = require('./constants');
 const { listCommand, messageCommands, buttonHandlers, modalHandlers } = require('./commands');
 const { checkTicketTimeouts, ticketDataMap, TicketData } = require('./utils/ticketManager');
 const db = require('../database');
+// Import modal handlers from modules
 const { 
+  handleTrophiesStartModal,
   handleBulkTrophiesModal,
-  handleMasteryBrawlerModal,
   handleOtherRequestModal
 } = require('./modules/modalHandlers');
 const config = require('../config');

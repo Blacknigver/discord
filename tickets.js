@@ -39,6 +39,8 @@ class TicketData {
     this.reminded24h = false;
     this.reminded48h = false;
     this.lastActivity = openTime;
+    this.reminderMessageId = null;
+    this.paymentCompleted = false;
   }
 }
 
@@ -82,6 +84,11 @@ async function createTicketChannelWithOverflow(guild, userId, categoryId, channe
     
     if (orderDetails.paymentMethod) {
       topic += ` | Payment: ${orderDetails.paymentMethod}`;
+    }
+    
+    // Add rank information for better extraction
+    if (orderDetails.current && orderDetails.desired) {
+      topic += ` | From: ${orderDetails.current} to ${orderDetails.desired}`;
     }
     
     // Prepare permissions for the channel
@@ -200,16 +207,84 @@ async function createTicketChannelWithOverflow(guild, userId, categoryId, channe
     /* ---------------- Persist to DB ---------------- */
     try {
       const db = require('./database');
-      if (db.isConnected) {
-        await db.query(
-          `INSERT INTO tickets (channel_id, user_id, status, created_at, metadata)
-           VALUES ($1,$2,'open',NOW(),$3)
-           ON CONFLICT (channel_id) DO NOTHING`,
-          [channel.id, userId, JSON.stringify(orderDetails)]
+      
+      console.log(`[TICKET_CREATE] === STORING BOOST INFORMATION IN DATABASE ===`);
+      console.log(`[TICKET_CREATE] Channel ID: ${channel.id}`);
+      console.log(`[TICKET_CREATE] Raw orderDetails:`, orderDetails);
+      
+      // Wait for database connection instead of checking isConnected
+      try {
+        await db.waitUntilConnected();
+        console.log(`[TICKET_CREATE] ✅ Database connection confirmed`);
+      } catch (connectionError) {
+        console.error(`[TICKET_CREATE] ❌ Database connection failed: ${connectionError.message}`);
+        throw connectionError;
+      }
+      
+      // Extract boost information from orderDetails for proper storage
+      let boostType = null;
+      let desiredRank = null;
+      let desiredTrophies = null;
+      
+      if (orderDetails && typeof orderDetails === 'object') {
+        if (orderDetails.type) {
+          boostType = orderDetails.type;
+          console.log(`[TICKET_CREATE] ✅ Extracted boost type: ${boostType}`);
+        } else {
+          console.log(`[TICKET_CREATE] ❌ No type found in orderDetails`);
+        }
+        
+        if (orderDetails.desired) {
+          console.log(`[TICKET_CREATE] Found desired field: "${orderDetails.desired}"`);
+          if (orderDetails.type === 'ranked') {
+            desiredRank = orderDetails.desired;
+            console.log(`[TICKET_CREATE] ✅ Set desired_rank for ranked boost: ${desiredRank}`);
+          } else if (orderDetails.type === 'trophies' || orderDetails.type === 'bulk') {
+            desiredTrophies = orderDetails.desired;
+            console.log(`[TICKET_CREATE] ✅ Set desired_trophies for trophy/bulk boost: ${desiredTrophies}`);
+          }
+        } else {
+          console.log(`[TICKET_CREATE] ❌ No desired field found in orderDetails`);
+        }
+      } else {
+        console.log(`[TICKET_CREATE] ❌ orderDetails is null, undefined, or not an object:`, typeof orderDetails);
+      }
+      
+      console.log(`[TICKET_CREATE] Final values to store:`);
+      console.log(`[TICKET_CREATE] - boost_type: ${boostType || 'NULL'}`);
+      console.log(`[TICKET_CREATE] - desired_rank: ${desiredRank || 'NULL'}`);
+      console.log(`[TICKET_CREATE] - desired_trophies: ${desiredTrophies || 'NULL'}`);
+      
+      const result = await db.query(
+        `INSERT INTO tickets (channel_id, user_id, status, created_at, metadata, boost_type, desired_rank, desired_trophies)
+         VALUES ($1,$2,'open',NOW(),$3,$4,$5,$6)
+         ON CONFLICT (channel_id) DO NOTHING
+         RETURNING channel_id, boost_type, desired_rank, desired_trophies`,
+        [channel.id, userId, JSON.stringify(orderDetails), boostType, desiredRank, desiredTrophies]
+      );
+      
+      if (result.rows.length > 0) {
+        console.log(`[TICKET_CREATE] ✅ Successfully stored ticket in database:`, result.rows[0]);
+      } else {
+        console.log(`[TICKET_CREATE] ❌ No rows returned - ticket may have already existed`);
+        
+        // Try to update existing ticket with boost information if it exists
+        const updateResult = await db.query(
+          `UPDATE tickets SET boost_type = $2, desired_rank = $3, desired_trophies = $4, metadata = $5
+           WHERE channel_id = $1 
+           RETURNING channel_id, boost_type, desired_rank, desired_trophies`,
+          [channel.id, boostType, desiredRank, desiredTrophies, JSON.stringify(orderDetails)]
         );
+        
+        if (updateResult.rows.length > 0) {
+          console.log(`[TICKET_CREATE] ✅ Updated existing ticket with boost info:`, updateResult.rows[0]);
+        } else {
+          console.log(`[TICKET_CREATE] ❌ Failed to update existing ticket`);
+        }
       }
     } catch (dbErr) {
-      console.error('[TICKET_CREATE] Failed to write ticket to DB:', dbErr.message);
+      console.error(`[TICKET_CREATE] ❌ Failed to write ticket to DB: ${dbErr.message}`);
+      console.error(`[TICKET_CREATE] Database error stack:`, dbErr.stack);
     }
 
     return channel;
@@ -220,13 +295,95 @@ async function createTicketChannelWithOverflow(guild, userId, categoryId, channe
   }
 }
 
-// Auto-close logging
-async function autoCloseLog(guild, userId, channelName, reason) {
-  console.log(`Ticket auto-closed: ${channelName} for user ${userId} - Reason: ${reason}`);
+// Auto-close logging with HTML transcript
+async function autoCloseLog(guild, userId, channelName, reason, channel = null) {
+  try {
+    console.log(`[AUTO_CLOSE_LOG] Ticket auto-closed: ${channelName} for user ${userId} - Reason: ${reason}`);
+    
+    const logChannelId = '1354587880382795836';
+    const logChannel = guild.channels.cache.get(logChannelId);
+    
+    if (!logChannel) {
+      console.error(`[AUTO_CLOSE_LOG] Log channel ${logChannelId} not found`);
+      return;
+    }
+    
+    // Generate and DM transcript to user if channel is available
+    if (channel && guild.client) {
+      try {
+        const { generateAndDMTranscript } = require('./src/utils/transcriptGenerator.js');
+        await generateAndDMTranscript(channel, userId, guild.client, reason);
+        console.log(`[AUTO_CLOSE_LOG] Successfully DMed transcript to user ${userId}`);
+      } catch (dmError) {
+        console.error(`[AUTO_CLOSE_LOG] Error DMing transcript: ${dmError.message}`);
+      }
+    }
+    
+    // Create basic log embed
+    const logEmbed = new EmbedBuilder()
+      .setTitle('🔒 Ticket Auto-Closed')
+      .setDescription(`**Channel:** ${channelName}\n**User:** <@${userId}>\n**Reason:** ${reason}`)
+      .setColor('#ff6b6b')
+      .setTimestamp()
+      .setFooter({ text: 'Brawl Shop Auto-Close System' });
+    
+    // Try to generate HTML transcript if channel is available
+    let transcriptFile = null;
+    if (channel) {
+      try {
+        console.log(`[AUTO_CLOSE_LOG] Generating text transcript for ${channelName}...`);
+        
+        const { generateTextTranscript, saveTranscriptToFile } = require('./src/utils/transcriptGenerator.js');
+        
+        // Generate transcript
+        const textContent = await generateTextTranscript(channel, false);
+        
+        // Save transcript to file
+        const filename = `transcript.txt`;
+        const filepath = await saveTranscriptToFile(textContent, filename, 'txt');
+        
+        // Create attachment
+        const { AttachmentBuilder } = require('discord.js');
+        transcriptFile = new AttachmentBuilder(filepath, { name: filename });
+        
+        console.log(`[AUTO_CLOSE_LOG] Successfully generated transcript: ${filename}`);
+        
+        // Add transcript info to embed
+        logEmbed.addFields({
+          name: '📄 Transcript',
+          value: 'Text transcript attached below',
+          inline: false
+        });
+        
+      } catch (transcriptError) {
+        console.error(`[AUTO_CLOSE_LOG] Error generating transcript: ${transcriptError.message}`);
+        logEmbed.addFields({
+          name: '❌ Transcript Error',
+          value: 'Could not generate transcript',
+          inline: false
+        });
+      }
+    }
+    
+    // Send log message with optional transcript attachment
+    const messageOptions = {
+      embeds: [logEmbed]
+    };
+    
+    if (transcriptFile) {
+      messageOptions.files = [transcriptFile];
+    }
+    
+    await logChannel.send(messageOptions);
+    console.log(`[AUTO_CLOSE_LOG] Sent auto-close log to channel ${logChannelId}`);
+    
+  } catch (error) {
+    console.error(`[AUTO_CLOSE_LOG] Error sending auto-close log: ${error.message}`);
+  }
 }
 
 /**
- * Logs and deletes a ticket
+ * Logs and deletes a ticket with HTML transcript generation
  */
 async function autoCloseLogAndDelete(channel, userId, channelName, reason) {
   try {
@@ -239,9 +396,13 @@ async function autoCloseLogAndDelete(channel, userId, channelName, reason) {
       // Continue with deletion even if payment cancellation fails
     }
     
-    // Then log and delete the channel
-    await autoCloseLog(channel.guild, userId, channelName, reason);
+    // Generate transcript and log BEFORE deleting the channel
+    console.log(`[AUTO_CLOSE] Generating transcript for ${channelName} before deletion...`);
+    await autoCloseLog(channel.guild, userId, channelName, reason, channel);
+    
+    // Delete the channel after logging
     await channel.delete();
+    console.log(`[AUTO_CLOSE] Successfully deleted channel ${channelName}`);
     
     // Remove from ticket data map
     if (ticketDataMap.has(channel.id)) {
@@ -271,11 +432,77 @@ async function sendInactivityReminder(channel, openerId) {
 }
 
 /**
+ * Sends auto-close reminder message with exact format requested
+ * @param {Channel} channel - The channel to send reminder to
+ * @param {string} openerId - The user ID of the ticket opener
+ * @param {number} hoursInactive - How many hours the ticket has been inactive
+ * @param {number} hoursUntilClose - How many hours until auto-close
+ * @param {string} oldReminderMessageId - ID of old reminder message to delete
+ * @returns {string} The ID of the new reminder message
+ */
+async function sendAutoCloseReminder(channel, openerId, hoursInactive, hoursUntilClose, oldReminderMessageId = null) {
+  try {
+    // Delete old reminder message if it exists
+    if (oldReminderMessageId) {
+      try {
+        const oldMessage = await channel.messages.fetch(oldReminderMessageId);
+        if (oldMessage) {
+          await oldMessage.delete();
+          console.log(`[AUTO_CLOSE] Deleted old reminder message ${oldReminderMessageId}`);
+        }
+      } catch (error) {
+        console.log(`[AUTO_CLOSE] Could not delete old reminder message ${oldReminderMessageId}: ${error.message}`);
+      }
+    }
+    
+    // Calculate Discord timestamp for close time
+    const closeTime = Math.floor((Date.now() + (hoursUntilClose * 60 * 60 * 1000)) / 1000);
+    
+    // Create the reminder embed
+    const reminderEmbed = new EmbedBuilder()
+      .setTitle('Auto-Close Reminder')
+      .setDescription(`Your ticket has been inactive for ${hoursInactive} hours, please send a message or click the 'Payment Completed' button after sending the money.\n\n> <a:warning:1393326303804919889> If this ticket remains inactive it will be closed <t:${closeTime}:R>`)
+      .setColor('#ff0000'); // Red color
+    
+    // Create the warning button
+    const warningButton = new ButtonBuilder()
+      .setCustomId('auto_close_warning')
+      .setLabel(`Ticket will be closed in ${hoursUntilClose}h`)
+      .setStyle(ButtonStyle.Danger)
+      .setEmoji('<a:warning:1393326303804919889>');
+    
+    const actionRow = new ActionRowBuilder().addComponents(warningButton);
+    
+    // Send the reminder message
+    const reminderMessage = await channel.send({
+      content: `<@${openerId}>`,
+      embeds: [reminderEmbed],
+      components: [actionRow]
+    });
+    
+    console.log(`[AUTO_CLOSE] Sent ${hoursInactive}h reminder to channel ${channel.id} (closes in ${hoursUntilClose}h)`);
+    return reminderMessage.id;
+    
+  } catch (error) {
+    console.error(`[AUTO_CLOSE] Error sending reminder to channel ${channel.id}:`, error);
+    return null;
+  }
+}
+
+/**
  * Check for inactive tickets to auto-close
  */
 async function checkAutoClose(client) {
   const now = Date.now();
   const channelsToProcess = [...ticketDataMap.entries()]; // Create a copy to avoid modification during iteration
+  
+  // First, process completion-based auto-close (boost/profile completions)
+  try {
+    const { processCompletionAutoClose } = require('./src/utils/completionUtils.js');
+    await processCompletionAutoClose(client);
+  } catch (error) {
+    console.error(`[AUTO_CLOSE] Error processing completion auto-close: ${error.message}`);
+  }
   
   for (const [channelId, data] of channelsToProcess) {
     try {
@@ -283,6 +510,12 @@ async function checkAutoClose(client) {
       if (!channel) {
         console.log(`[AUTO_CLOSE] Channel ${channelId} not found, removing from ticket data`);
         ticketDataMap.delete(channelId);
+        continue;
+      }
+      
+      // Check if payment has been completed - if so, skip auto-close
+      if (data.paymentCompleted) {
+        console.log(`[AUTO_CLOSE] Skipping auto-close for channel ${channelId} - payment completed`);
         continue;
       }
       
@@ -297,41 +530,45 @@ async function checkAutoClose(client) {
       
       // If no messages from user
       if (!hasMessages) {
-        // Send 6h reminder
+        // Send 6h reminder (closes in 18h)
         if (timeSinceOpen > 6 * 60 * 60 * 1000 && !data.reminded6h) {
           data.reminded6h = true;
-          try {
-            await channel.send({
-              content: `<@${data.openerId}>`,
-              embeds: [
-                new EmbedBuilder()
-                  .setColor(PINK_COLOR)
-                  .setDescription('This ticket will automatically close in 18 hours if you don\'t respond.')
-              ]
-            });
-            console.log(`[AUTO_CLOSE] Sent 6h reminder to channel ${channelId}`);
-          } catch (reminderError) {
-            console.error(`[AUTO_CLOSE] Error sending 6h reminder to channel ${channelId}:`, reminderError);
-            // Don't return or throw, continue with other checks
+          const reminderMessageId = await sendAutoCloseReminder(channel, data.openerId, 6, 18, data.reminderMessageId);
+          if (reminderMessageId) {
+            data.reminderMessageId = reminderMessageId;
+            // Update database
+            try {
+              const db = require('./database.js');
+              if (db.isConnected) {
+                await db.query(
+                  'UPDATE tickets SET reminder_6h = TRUE, reminder_message_id = $2 WHERE channel_id = $1',
+                  [channelId, reminderMessageId]
+                );
+              }
+            } catch (dbError) {
+              console.error(`[AUTO_CLOSE] Error updating database for 6h reminder: ${dbError.message}`);
+            }
           }
         }
         
-        // Send 12h reminder
+        // Send 12h reminder (closes in 12h)
         if (timeSinceOpen > 12 * 60 * 60 * 1000 && !data.reminded12h) {
           data.reminded12h = true;
-          try {
-            await channel.send({
-              content: `<@${data.openerId}>`,
-              embeds: [
-                new EmbedBuilder()
-                  .setColor(PINK_COLOR)
-                  .setDescription('This ticket will automatically close in 12 hours if you don\'t respond.')
-              ]
-            });
-            console.log(`[AUTO_CLOSE] Sent 12h reminder to channel ${channelId}`);
-          } catch (reminderError) {
-            console.error(`[AUTO_CLOSE] Error sending 12h reminder to channel ${channelId}:`, reminderError);
-            // Don't return or throw, continue with other checks
+          const reminderMessageId = await sendAutoCloseReminder(channel, data.openerId, 12, 12, data.reminderMessageId);
+          if (reminderMessageId) {
+            data.reminderMessageId = reminderMessageId;
+            // Update database
+            try {
+              const db = require('./database.js');
+              if (db.isConnected) {
+                await db.query(
+                  'UPDATE tickets SET reminder_12h = TRUE, reminder_message_id = $2 WHERE channel_id = $1',
+                  [channelId, reminderMessageId]
+                );
+              }
+            } catch (dbError) {
+              console.error(`[AUTO_CLOSE] Error updating database for 12h reminder: ${dbError.message}`);
+            }
           }
         }
         
@@ -350,21 +587,23 @@ async function checkAutoClose(client) {
       } 
       // If user has sent messages but inactive
       else if (hasMessages && timeSinceLastMsg > 24 * 60 * 60 * 1000 && !data.reminded24h) {
-        // Send 24h inactivity reminder
+        // Send 24h inactivity reminder (closes in 24h)
         data.reminded24h = true;
-        try {
-          await channel.send({
-            content: `<@${data.openerId}>`,
-            embeds: [
-              new EmbedBuilder()
-                .setColor(PINK_COLOR)
-                .setDescription('This ticket will automatically close in 24 hours due to inactivity.')
-            ]
-          });
-          console.log(`[AUTO_CLOSE] Sent 24h inactivity reminder to channel ${channelId}`);
-        } catch (reminderError) {
-          console.error(`[AUTO_CLOSE] Error sending 24h inactivity reminder to channel ${channelId}:`, reminderError);
-          // Don't return or throw, continue with other checks
+        const reminderMessageId = await sendAutoCloseReminder(channel, data.openerId, 24, 24, data.reminderMessageId);
+        if (reminderMessageId) {
+          data.reminderMessageId = reminderMessageId;
+          // Update database
+          try {
+            const db = require('./database.js');
+            if (db.isConnected) {
+              await db.query(
+                'UPDATE tickets SET reminder_24h = TRUE, reminder_message_id = $2 WHERE channel_id = $1',
+                [channelId, reminderMessageId]
+              );
+            }
+          } catch (dbError) {
+            console.error(`[AUTO_CLOSE] Error updating database for 24h reminder: ${dbError.message}`);
+          }
         }
       } 
       // Auto close after 48h of inactivity (if user had previously sent messages)
@@ -391,6 +630,196 @@ async function checkAutoClose(client) {
 }
 
 /**
+ * Handles when a user sends a message in a ticket - resets auto-close timer and deletes reminder
+ * @param {string} channelId - The channel ID
+ * @param {string} userId - The user ID who sent the message
+ */
+async function handleUserMessage(channelId, userId) {
+  const ticketData = ticketDataMap.get(channelId);
+  if (!ticketData) return;
+  
+  // Only reset if this is the ticket opener
+  if (ticketData.openerId !== userId) return;
+  
+  console.log(`[AUTO_CLOSE] User ${userId} sent message in ticket ${channelId} - resetting auto-close timer`);
+  
+  // Update last message time
+  const now = Date.now();
+  ticketData.lastUserMessageTime = now;
+  
+  // Reset all reminder flags
+  ticketData.reminded6h = false;
+  ticketData.reminded12h = false;
+  ticketData.reminded24h = false;
+  ticketData.reminded48h = false;
+  
+  // Delete existing reminder message if it exists
+  if (ticketData.reminderMessageId) {
+    try {
+      // Get the client from the global object or try to find a channel directly 
+      const client = global.client || require('./index.js').client;
+      if (client) {
+        const channel = client.channels.cache.get(channelId);
+        if (channel) {
+          const reminderMessage = await channel.messages.fetch(ticketData.reminderMessageId);
+          if (reminderMessage) {
+            await reminderMessage.delete();
+            console.log(`[AUTO_CLOSE] Deleted reminder message ${ticketData.reminderMessageId} due to user activity`);
+          }
+        }
+      }
+    } catch (error) {
+      console.log(`[AUTO_CLOSE] Could not delete reminder message ${ticketData.reminderMessageId}: ${error.message}`);
+    }
+    ticketData.reminderMessageId = null;
+  }
+  
+  // Update database
+  try {
+    const db = require('./database.js');
+    if (db.isConnected) {
+      await db.query(
+        `UPDATE tickets SET 
+          last_msg_time = to_timestamp($2 / 1000.0),
+          reminder_6h = FALSE,
+          reminder_12h = FALSE,
+          reminder_24h = FALSE,
+          reminder_message_id = NULL
+        WHERE channel_id = $1`,
+        [channelId, now]
+      );
+      console.log(`[AUTO_CLOSE] Updated database for user message in ticket ${channelId}`);
+    }
+  } catch (dbError) {
+    console.error(`[AUTO_CLOSE] Error updating database for user message: ${dbError.message}`);
+  }
+}
+
+/**
+ * Handles when a user clicks the Payment Completed button - stops auto-close permanently
+ * @param {string} channelId - The channel ID
+ * @param {string} userId - The user ID who clicked the button
+ */
+async function handlePaymentCompleted(channelId, userId) {
+  const ticketData = ticketDataMap.get(channelId);
+  if (!ticketData) return;
+  
+  // Only allow if this is the ticket opener
+  if (ticketData.openerId !== userId) return;
+  
+  console.log(`[AUTO_CLOSE] User ${userId} clicked Payment Completed in ticket ${channelId} - stopping auto-close permanently`);
+  
+  // Mark payment as completed
+  ticketData.paymentCompleted = true;
+  
+  // Delete existing reminder message if it exists
+  if (ticketData.reminderMessageId) {
+    try {
+      // Get the client from the global object or try to find a channel directly 
+      const client = global.client || require('./index.js').client;
+      if (client) {
+        const channel = client.channels.cache.get(channelId);
+        if (channel) {
+          const reminderMessage = await channel.messages.fetch(ticketData.reminderMessageId);
+          if (reminderMessage) {
+            await reminderMessage.delete();
+            console.log(`[AUTO_CLOSE] Deleted reminder message ${ticketData.reminderMessageId} due to payment completion`);
+          }
+        }
+      }
+    } catch (error) {
+      console.log(`[AUTO_CLOSE] Could not delete reminder message ${ticketData.reminderMessageId}: ${error.message}`);
+    }
+    ticketData.reminderMessageId = null;
+  }
+  
+  // Update database
+  try {
+    const db = require('./database.js');
+    if (db.isConnected) {
+      await db.query(
+        `UPDATE tickets SET 
+          payment_completed = TRUE,
+          reminder_message_id = NULL
+        WHERE channel_id = $1`,
+        [channelId]
+      );
+      console.log(`[AUTO_CLOSE] Updated database for payment completion in ticket ${channelId}`);
+    }
+  } catch (dbError) {
+    console.error(`[AUTO_CLOSE] Error updating database for payment completion: ${dbError.message}`);
+  }
+}
+
+/**
+ * Deletes a ticket channel with transcript generation and DM
+ * @param {Channel} channel - The channel to delete
+ * @param {User} user - The user who deleted the ticket
+ * @param {string} reason - Optional reason for deletion
+ */
+async function deleteTicket(channel, user, reason = '') {
+  try {
+    console.log(`[TICKET_DELETE] Deleting ticket ${channel.id} by user ${user.id}`);
+    
+    // Get ticket data to find the ticket opener
+    const ticketData = ticketDataMap.get(channel.id);
+    const ticketOpenerId = ticketData ? ticketData.openerId : null;
+    
+    // Generate and DM transcript to ticket opener BEFORE deleting
+    if (ticketOpenerId && channel.client) {
+      try {
+        const { generateAndDMTranscript } = require('./src/utils/transcriptGenerator.js');
+        const deleteReason = reason || `Deleted by ${user.username}`;
+        await generateAndDMTranscript(channel, ticketOpenerId, channel.client, deleteReason);
+        console.log(`[TICKET_DELETE] Successfully DMed transcript to ticket opener ${ticketOpenerId}`);
+      } catch (dmError) {
+        console.error(`[TICKET_DELETE] Error DMing transcript: ${dmError.message}`);
+      }
+    }
+    
+    // Generate and log transcript to log channel BEFORE deleting
+    if (channel.client) {
+      try {
+        const { generateAndLogTranscript } = require('./src/utils/transcriptGenerator.js');
+        const logChannelId = '1354587880382795836';
+        const deleteReason = reason || `Deleted by ${user.username}`;
+        await generateAndLogTranscript(channel, ticketOpenerId || 'Unknown', channel.client, deleteReason, logChannelId);
+        console.log(`[TICKET_DELETE] Successfully logged transcript to channel ${logChannelId}`);
+      } catch (logError) {
+        console.error(`[TICKET_DELETE] Error logging transcript: ${logError.message}`);
+      }
+    }
+    
+    // Delete the channel
+    await channel.delete(`Ticket deleted by ${user.username}${reason ? ` - ${reason}` : ''}`);
+    console.log(`[TICKET_DELETE] Successfully deleted channel ${channel.name}`);
+    
+    // Remove from ticket data map
+    if (ticketDataMap.has(channel.id)) {
+      ticketDataMap.delete(channel.id);
+    }
+    
+    // Update database
+    try {
+      const db = require('./database');
+      if (db.isConnected) {
+        await db.query(
+          `UPDATE tickets SET status='deleted', closed_at=NOW(), last_activity=NOW() WHERE channel_id=$1`,
+          [channel.id]
+        );
+      }
+    } catch (dbErr) {
+      console.error('[TICKET_DELETE] Failed to update ticket status in DB:', dbErr.message);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error(`[TICKET_DELETE] Error deleting ticket: ${error.message}`);
+    return false;
+  }
+}
+
+/**
  * Initialize ticket system
  */
 async function initializeTicketSystem(client, db) {
@@ -401,7 +830,8 @@ async function initializeTicketSystem(client, db) {
         EXTRACT(EPOCH FROM open_time)*1000 AS open_time,
         msg_count,
         EXTRACT(EPOCH FROM last_msg_time)*1000 AS last_msg_time,
-        reminder_6h, reminder_12h, reminder_24h
+        reminder_6h, reminder_12h, reminder_24h,
+        reminder_message_id, payment_completed
       FROM tickets;
     `);
     for (const row of res.rows) {
@@ -410,12 +840,14 @@ async function initializeTicketSystem(client, db) {
       data.reminded6h = row.reminder_6h;
       data.reminded12h = row.reminder_12h;
       data.reminded24h = row.reminder_24h;
+      data.reminderMessageId = row.reminder_message_id;
+      data.paymentCompleted = row.payment_completed || false;
       ticketDataMap.set(row.channel_id, data);
     }
     console.log(`Loaded ${res.rows.length} tickets`);
     
     // Start the auto-close check interval
-    setInterval(() => checkAutoClose(client), 60 * 60 * 1000); // Check every hour
+    setInterval(() => checkAutoClose(client), 5 * 60 * 1000); // Check every 5 minutes
   } catch (err) {
     console.error('Error loading tickets:', err);
   }
@@ -437,6 +869,35 @@ function setupTicketHandlers(client) {
 async function closeTicket(channel, user, reason = '') {
   try {
     console.log(`[TICKET_CLOSE] Closing ticket ${channel.id} by user ${user.id}`);
+    
+    // Get ticket data to find the ticket opener
+    const ticketData = ticketDataMap.get(channel.id);
+    const ticketOpenerId = ticketData ? ticketData.openerId : null;
+    
+    // Generate and DM transcript to ticket opener
+    if (ticketOpenerId && channel.client) {
+      try {
+        const { generateAndDMTranscript } = require('./src/utils/transcriptGenerator.js');
+        const closeReason = reason || `Closed by ${user.username}`;
+        await generateAndDMTranscript(channel, ticketOpenerId, channel.client, closeReason);
+        console.log(`[TICKET_CLOSE] Successfully DMed transcript to ticket opener ${ticketOpenerId}`);
+      } catch (dmError) {
+        console.error(`[TICKET_CLOSE] Error DMing transcript: ${dmError.message}`);
+      }
+    }
+    
+    // Generate and log transcript to log channel
+    if (channel.client) {
+      try {
+        const { generateAndLogTranscript } = require('./src/utils/transcriptGenerator.js');
+        const logChannelId = '1354587880382795836';
+        const closeReason = reason || `Closed by ${user.username}`;
+        await generateAndLogTranscript(channel, ticketOpenerId || 'Unknown', channel.client, closeReason, logChannelId);
+        console.log(`[TICKET_CLOSE] Successfully logged transcript to channel ${logChannelId}`);
+      } catch (logError) {
+        console.error(`[TICKET_CLOSE] Error logging transcript: ${logError.message}`);
+      }
+    }
     
     // Create and send the closed embed
     const closedEmbed = new EmbedBuilder()
@@ -613,13 +1074,68 @@ async function reopenTicket(channel, user) {
 }
 
 /**
- * Deletes a ticket channel
+ * Deletes a ticket channel with transcript generation
  * @param {Channel} channel - The channel to delete
  * @param {User} user - The user who triggered the deletion
  */
 async function deleteTicket(channel, user) {
   try {
     console.log(`[TICKET_DELETE] Deleting ticket ${channel.id} by user ${user.id}`);
+    
+    // Generate transcript BEFORE deleting the channel
+    const ticketData = ticketDataMap.get(channel.id);
+    const channelName = channel.name;
+    const openerId = ticketData ? ticketData.openerId : 'Unknown';
+    
+    console.log(`[TICKET_DELETE] Generating transcript for manual deletion of ${channelName}...`);
+    
+    // Generate transcript and send to log channel
+    try {
+      const logChannelId = '1354587880382795836';
+      const logChannel = channel.guild.channels.cache.get(logChannelId);
+      
+      if (logChannel) {
+        console.log(`[TICKET_DELETE] Generating text transcript for ${channelName}...`);
+        
+        const { generateTextTranscript, saveTranscriptToFile } = require('./src/utils/transcriptGenerator.js');
+        
+        // Generate transcript
+        const textContent = await generateTextTranscript(channel, false);
+        
+        // Save transcript to file
+        const filename = `transcript.txt`;
+        const filepath = await saveTranscriptToFile(textContent, filename, 'txt');
+        
+        // Create attachment
+        const { AttachmentBuilder } = require('discord.js');
+        const transcriptFile = new AttachmentBuilder(filepath, { name: filename });
+        
+        // Create log embed for manual deletion
+        const logEmbed = new EmbedBuilder()
+          .setTitle('🗑️ Ticket Manually Deleted')
+          .setDescription(`**Channel:** ${channelName}\n**Opener:** <@${openerId}>\n**Deleted by:** <@${user.id}>`)
+          .setColor('#ff0000')
+          .setTimestamp()
+          .setFooter({ text: 'Brawl Shop Ticket System' })
+          .addFields({
+            name: '📄 Transcript',
+            value: 'Text transcript attached below',
+            inline: false
+          });
+        
+        // Send log with transcript
+        await logChannel.send({
+          embeds: [logEmbed],
+          files: [transcriptFile]
+        });
+        
+        console.log(`[TICKET_DELETE] Successfully generated and sent transcript for ${channelName}`);
+      } else {
+        console.error(`[TICKET_DELETE] Log channel ${logChannelId} not found`);
+      }
+    } catch (transcriptError) {
+      console.error(`[TICKET_DELETE] Error generating transcript for manual deletion: ${transcriptError.message}`);
+    }
     
     // Create a deletion message
     const deleteEmbed = new EmbedBuilder()
@@ -672,5 +1188,7 @@ module.exports = {
   initializeTicketSystem,
   closeTicket,
   reopenTicket,
-  deleteTicket
+  deleteTicket,
+  handleUserMessage,
+  handlePaymentCompleted
 }; 

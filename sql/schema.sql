@@ -84,7 +84,11 @@ CREATE TABLE IF NOT EXISTS tickets (
     closed_at      TIMESTAMP,
     last_activity  TIMESTAMP NOT NULL DEFAULT NOW(),
     metadata       JSONB,
-    listing_id     INTEGER REFERENCES account_listings(listing_id) ON DELETE CASCADE  -- Link to account listing with cascade delete
+    listing_id     INTEGER REFERENCES account_listings(listing_id) ON DELETE CASCADE,  -- Link to account listing with cascade delete
+    booster_image_url TEXT,            -- URL/attachment link of image uploaded by booster for boost completion proof
+    boost_type     TEXT,               -- Type of boost (ranked, trophies, bulk)
+    desired_rank   TEXT,               -- Desired rank for ranked boosts
+    desired_trophies TEXT              -- Desired trophies for trophy boosts
 );
 
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
@@ -148,4 +152,63 @@ ALTER TABLE members ALTER COLUMN invite_code DROP NOT NULL;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS guild_id TEXT; 
 
 -- Migration: Add listing_id to existing tickets table
-ALTER TABLE tickets ADD COLUMN IF NOT EXISTS listing_id INTEGER REFERENCES account_listings(listing_id) ON DELETE CASCADE; 
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS listing_id INTEGER REFERENCES account_listings(listing_id) ON DELETE CASCADE;
+
+-- Migration: Add booster image and boost information fields to tickets table
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS booster_image_url TEXT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS boost_type TEXT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS desired_rank TEXT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS desired_trophies TEXT; 
+
+-- Migration: Add discount tracking fields to tickets table
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS discount_offer_sent BOOLEAN DEFAULT FALSE;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS discount_message_id TEXT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS discount_expires_at TIMESTAMP;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS discount_claimed BOOLEAN DEFAULT FALSE;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS discount_percentage NUMERIC(5,2) DEFAULT 0; 
+
+-- Migration: Add completion auto-close tracking fields to tickets table
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS completion_auto_close_at TIMESTAMP;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS completion_type TEXT; -- 'boost' or 'profile'
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS completion_notified BOOLEAN DEFAULT FALSE;
+
+-- Migration: Add auto-close reminder tracking fields to tickets table
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reminder_message_id TEXT;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS payment_completed BOOLEAN DEFAULT FALSE;
+-- Migration: Add auto-close reminder flag fields (6h, 12h, 24h) to tickets table
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reminder_6h BOOLEAN DEFAULT FALSE;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reminder_12h BOOLEAN DEFAULT FALSE;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reminder_24h BOOLEAN DEFAULT FALSE;
+
+-- === Rate Limiting System ===
+-- Track button interaction rate limits per user
+CREATE TABLE IF NOT EXISTS user_rate_limits (
+    user_id TEXT PRIMARY KEY,
+    last_interaction_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    interaction_count INTEGER NOT NULL DEFAULT 0,
+    timeout_level INTEGER NOT NULL DEFAULT 0,  -- 0=none, 1=15s, 2=30s, 3=60s, 4=60s+
+    timeout_until TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Index for efficient rate limit lookups
+CREATE INDEX IF NOT EXISTS idx_rate_limits_user ON user_rate_limits(user_id);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_timeout ON user_rate_limits(timeout_until); 
+
+-- Table for tracking scheduled embeds
+CREATE TABLE IF NOT EXISTS scheduled_embeds (
+    id SERIAL PRIMARY KEY,
+    channel_id TEXT NOT NULL,
+    message_id TEXT,
+    embed_type TEXT NOT NULL,
+    last_sent_at TIMESTAMP DEFAULT NOW(),
+    next_send_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Indexes for scheduled embeds
+CREATE INDEX IF NOT EXISTS idx_scheduled_embeds_channel ON scheduled_embeds(channel_id);
+CREATE INDEX IF NOT EXISTS idx_scheduled_embeds_next_send ON scheduled_embeds(next_send_at);
+CREATE INDEX IF NOT EXISTS idx_scheduled_embeds_type ON scheduled_embeds(embed_type); 

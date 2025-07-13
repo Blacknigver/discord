@@ -9,10 +9,10 @@ const ticketSystem = require('./tickets.js');
 const { 
     flowState, 
     showPaymentMethodSelection,
-    handleMasteryBrawlerModal,
+  
     handleBulkTrophiesModal,
     handleRankedRankSelection,
-    handleMasterySelection,
+  
 } = require('./src/modules/ticketFlow.js');
 const { InteractionResponseFlags } = require('discord.js');
 
@@ -239,49 +239,59 @@ function setupInteractions(client) {
                 imageUrl = flowData?.imageUrl;
               }
 
-              const msgEmbed = new EmbedBuilder()
-                .setDescription(`**# ${description} 𝐏𝐫𝐨𝐟𝐢𝐥𝐞 <:winmatcherino:1298703851934711848>**\n**Get yours now at:**\n> <#1352022023307657359> \n> <#1352956136197984297> \n> <#1364568631194681344>`)
-;
+              // Create announcement text
+              const announcementText = `**# ${description} 𝐏𝐫𝐨𝐟𝐢𝐥𝐞 <:winmatcherino:1298703851934711848>**\n**Get yours now at:**\n> <#1352022023307657359> \n> <#1352956136197984297> \n> <#1364568631194681344>`;
+              
+              // Determine if image is a link or attachment (same logic as boost system)
+              const isImageLink = imageUrl && (
+                imageUrl.includes('media.discordapp.net') || 
+                imageUrl.includes('i.imgur.com') ||
+                imageUrl.includes('imgur.com') ||
+                imageUrl.includes('cdn.discordapp.com')
+              );
+              
+              console.log(`[PROFILE_ANNOUNCEMENT] Image URL: ${imageUrl}, Is link: ${isImageLink}`);
 
-              let messageOptions = { 
+              if (isImageLink) {
+                // Send as embed with image (no title, just image)
+              const msgEmbed = new EmbedBuilder()
+                  .setDescription(announcementText)
+                  .setImage(imageUrl)
+                  .setColor('#e68df2');
+
+                await targetChannel.send({
                 embeds: [msgEmbed]
-                // files: [] // Removed BrawlShop.png file attachment due to guild restrictions
+                });
+                
+                console.log(`[PROFILE_ANNOUNCEMENT] Sent embed announcement with image link`);
+              } else {
+                // Send as regular message with image attachment
+                const messageOptions = {
+                  content: announcementText
               };
               
-              // If we have an image URL, handle it properly
+                // If we have an image URL, try to download and attach it
               if (imageUrl) {
-                if (imageUrl.includes('media.discordapp.net') || imageUrl.includes('cdn.discordapp.com')) {
-                  // For Discord CDN URLs, we need to download and re-upload as attachment
                   try {
                     const axios = require('axios');
+                    const { AttachmentBuilder } = require('discord.js');
+                    
                     const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
                     if (response.status === 200) {
                       const buffer = Buffer.from(response.data);
-                      const { AttachmentBuilder } = require('discord.js');
-                      const attachment = new AttachmentBuilder(buffer, { name: 'profile_image.png' });
-                      messageOptions.files.push(attachment); // Add the user's image as additional file
-                      msgEmbed.setImage('attachment://profile_image.png'); // Set as main image (bottom)
+                      const attachment = new AttachmentBuilder(buffer, { name: 'profile_completed.png' });
+                      messageOptions.files = [attachment];
+                      console.log(`[PROFILE_ANNOUNCEMENT] Attached image file to regular message`);
                     }
-                  } catch (fetchError) {
-                    console.error('[DESCRIPTION_MODAL] Failed to fetch Discord CDN image:', fetchError);
-                    // Fallback: just set the image URL in embed
-                    msgEmbed.setImage(imageUrl);
-                    messageOptions = { 
-                      embeds: [msgEmbed],
-                      files: [] // Removed BrawlShop.png file attachment due to guild restrictions
-                    };
+                  } catch (downloadError) {
+                    console.error(`[PROFILE_ANNOUNCEMENT] Error downloading image: ${downloadError.message}`);
+                    // Continue without attachment
                   }
-                } else {
-                  // For other URLs, set directly as image
-                  msgEmbed.setImage(imageUrl);
-                  messageOptions = { 
-                    embeds: [msgEmbed],
-                    files: [] // Removed BrawlShop.png file attachment due to guild restrictions
-                  };
                 }
-              }
 
-              await targetChannel.send(messageOptions);
+                await targetChannel.send(messageOptions);
+                console.log(`[PROFILE_ANNOUNCEMENT] Sent regular message announcement`);
+              }
             }
             
             // Clean up the profilePurchaseFlow entry

@@ -223,6 +223,10 @@ const { commands } = require('./commands.js');
 // Bot token from environment variable
 const token = process.env.TOKEN;
 
+// Initialize rate limiting cleanup
+const { cleanupOldRateLimits } = require('./src/utils/rateLimitSystem');
+setInterval(cleanupOldRateLimits, 60 * 60 * 1000); // Clean up every hour
+
 // Define slash commands
 // =============================
 // Define extra admin-only commands (/addbalance & /removebalance)
@@ -250,6 +254,9 @@ const allCommands = [...defaultCommands, ...commands];
 client.once(Events.ClientReady, async readyClient => {
   console.log(`Ready! Logged in as ${readyClient.user.tag}`);
   
+  // Make client available globally for tickets module
+  global.client = readyClient;
+  
   // Initialize invite tracking system
   try {
     console.log('[BOT] Initializing invite tracking system...');
@@ -257,6 +264,36 @@ client.once(Events.ClientReady, async readyClient => {
     console.log('[BOT] Invite tracking system initialized successfully');
   } catch (error) {
     console.error('[BOT] Failed to initialize invite tracking system:', error);
+  }
+  
+  // Initialize scheduled embed system
+  try {
+    console.log('[BOT] Initializing scheduled embed system...');
+    const ScheduledEmbedSystem = require('./src/utils/scheduledEmbeds');
+    const scheduledEmbeds = new ScheduledEmbedSystem(readyClient);
+    await scheduledEmbeds.initialize();
+    console.log('[BOT] Scheduled embed system initialized successfully');
+  } catch (error) {
+    console.error('[BOT] Failed to initialize scheduled embed system:', error);
+  }
+  
+  // Initialize rate limiting cleanup
+  try {
+    console.log('[BOT] Initializing rate limiting cleanup...');
+    const { cleanupOldRateLimits } = require('./src/utils/rateLimitSystem');
+    
+    // Run cleanup every hour
+    setInterval(async () => {
+      try {
+        await cleanupOldRateLimits();
+      } catch (error) {
+        console.error('[BOT] Rate limit cleanup error:', error);
+      }
+    }, 60 * 60 * 1000); // Every hour
+    
+    console.log('[BOT] Rate limiting cleanup initialized successfully');
+  } catch (error) {
+    console.error('[BOT] Failed to initialize rate limiting cleanup:', error);
   }
   
   // Register slash commands
@@ -297,10 +334,20 @@ client.once(Events.ClientReady, async readyClient => {
   }
 });
 
-// Handle message commands
+// Handle message commands and user messages for auto-close reset
 client.on(Events.MessageCreate, async message => {
   // Ignore messages from bots
   if (message.author.bot) return;
+  
+  // Handle auto-close logic for user messages in ticket channels
+  if (message.guild && message.channel.name && (message.channel.name.includes('ticket') || message.channel.name.includes('ranked') || message.channel.name.includes('trophy') || message.channel.name.includes('bulk') || message.channel.name.includes('other'))) {
+    try {
+      const { handleUserMessage } = require('./tickets.js');
+      await handleUserMessage(message.channel.id, message.author.id);
+    } catch (error) {
+      console.error(`[MESSAGE_HANDLER] Error handling user message for auto-close: ${error.message}`);
+    }
+  }
   
   // Check for command prefix
   if (!message.content.startsWith('?')) return;
@@ -342,6 +389,18 @@ client.login(process.env.TOKEN)
 async function processButtonInteraction(interaction) {
   const { customId } = interaction;
   console.log(`[INTERACTION] Button clicked: ${customId} by user ${interaction.user.id}`);
+
+  // CHECK BUTTON RATE LIMITS FIRST
+  const { checkButtonRateLimit } = require('./src/utils/rateLimitSystem');
+  const rateLimitCheck = await checkButtonRateLimit(interaction.user.id, `button:${customId}`);
+  
+  if (!rateLimitCheck.allowed) {
+    console.log(`[INTERACTION] User ${interaction.user.id} blocked by button rate limit: ${customId}`);
+    return await interaction.reply({
+      content: rateLimitCheck.reason,
+      ephemeral: true
+    });
+  }
 
   // Special handling for PayPal buttons
   if (customId === 'copy_email') {
@@ -400,8 +459,67 @@ async function processButtonInteraction(interaction) {
       
       console.log(`[PAYPAL_BUTTON] Set view-only permissions for booster role ${boosterRoleId} in channel ${interaction.channel.id}`);
       
+      // Extract order details from the channel messages
+      let orderDetails = {};
+      
+      try {
+        const messages = await interaction.channel.messages.fetch({ limit: 10 });
+        const orderRecapMsg = messages.find(msg => 
+          msg.embeds.length > 0 && msg.embeds[0].title === 'Order Recap'
+        );
+        
+        if (orderRecapMsg && orderRecapMsg.embeds[0]) {
+          const embed = orderRecapMsg.embeds[0];
+          console.log(`[INDEX] Found Order Recap embed, extracting details...`);
+          
+          // Extract order information from fields
+          if (embed.fields && embed.fields.length > 0) {
+            for (const field of embed.fields) {
+              const fieldName = field.name.toLowerCase();
+              const fieldValue = field.value.replace(/`/g, '').trim(); // Remove backticks
+              
+              if (fieldName.includes('current rank')) {
+                orderDetails.current = fieldValue;
+              } else if (fieldName.includes('desired rank')) {
+                orderDetails.desired = fieldValue;
+              } else if (fieldName.includes('current trophies')) {
+                orderDetails.current = fieldValue;
+              } else if (fieldName.includes('desired trophies')) {
+                orderDetails.desired = fieldValue;
+                orderDetails.current = fieldValue;
+                orderDetails.desired = fieldValue;
+              } else if (fieldName.includes('price')) {
+                orderDetails.price = fieldValue;
+              } else if (fieldName.includes('payment method')) {
+                orderDetails.paymentMethod = fieldValue;
+              }
+            }
+          }
+          
+          console.log(`[INDEX] Extracted order details:`, orderDetails);
+        } else {
+          console.log(`[INDEX] No Order Recap embed found, using channel topic for details`);
+          
+          // Fallback to channel topic if Order Recap not found
+          if (interaction.channel.topic) {
+            const topicPriceMatch = interaction.channel.topic.match(/Price:\s*([€]?[\d,.]+)/i);
+            if (topicPriceMatch) {
+              orderDetails.price = topicPriceMatch[1];
+            }
+            
+            const topicRanksMatch = interaction.channel.topic.match(/From:\s*([^|]+)\s*to\s*([^|]+)/i);
+            if (topicRanksMatch) {
+              orderDetails.current = topicRanksMatch[1].trim();
+              orderDetails.desired = topicRanksMatch[2].trim();
+            }
+          }
+        }
+      } catch (extractError) {
+        console.error(`[INDEX] Error extracting order details: ${extractError.message}`);
+      }
+      
       // Send boost available embed as a reply to the verification message
-      await sendBoostAvailableEmbed(interaction.channel, {}, creatorId, boosterRoleId, message);
+      await sendBoostAvailableEmbed(interaction.channel, orderDetails, creatorId, boosterRoleId, message);
       
       // Clean up payment method messages AFTER boost available is sent
       const { cleanupMessages } = require('./src/utils/messageCleanup.js');

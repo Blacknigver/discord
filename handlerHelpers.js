@@ -2,7 +2,7 @@ const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('
 const axios = require('axios'); // For convertEuroToCrypto
 const { EMBED_COLOR, STAFF_ROLES } = require('./config.js'); // Add relevant config imports
 const { flowState } = require('./src/modules/ticketFlow.js'); // If flowState is used by helpers directly
-const { getRankValue, getMasteryValue } = require('./src/modules/ticketFlow.js'); // Used by createRankedSelectionRows, etc.
+const { getRankValue } = require('./src/modules/ticketFlow.js'); // Used by createRankedSelectionRows, etc.
 const { sendPayPalTermsEmbed, sendPayPalInfoEmbed, sendPayPalGiftcardOtherPaymentEmbed, sendLitecoinEmbed, sendSolanaEmbed, sendBitcoinEmbed, sendIbanEmbed, sendAppleGiftcardEmbed, sendBolGiftcardEmbed, sendTikkieEmbed, activeCryptoPayments, sendPaymentConfirmationEmbed, sendStaffPaymentVerificationEmbed, sendBoostAvailableEmbed, createCryptoTxForm, verifyCryptoTransaction, sendCryptoWaitingEmbed, sendCryptoStillWaitingEmbed, sendInsufficientAmountEmbed, resendLitecoinEmbed, resendSolanaEmbed } = require('./ticketPayments.js'); // For sendPaymentInfoEmbed and setupCryptoTimeout indirectly
 
 
@@ -41,8 +41,7 @@ async function sendPaymentInfoEmbed(channel, paymentMethod, subType = null) {
         return sendPayPalGiftcardOtherPaymentEmbed(channel, userId, 'PayPal Giftcard');
       case 'IBAN Bank Transfer':
         return sendIbanEmbed(channel, userId);
-      case 'German Apple Giftcard':
-        return sendAppleGiftcardEmbed(channel, userId);
+
       case 'Dutch Payment Methods':
         if (subType === 'Tikkie') {
           return sendTikkieEmbed(channel, userId);
@@ -310,13 +309,7 @@ async function sendOrderRecapEmbed(channel, userData) {
         { name: '**Current Trophies:**', value: `\`${userData.currentTrophies || 0}\`` },
         { name: '**Desired Trophies:**', value: `\`${userData.desiredTrophies || 0}\`` }
       );
-    } else if (userData.type === 'mastery') {
-      fields.push(
-        { name: '**Boost Type:**', value: '\`Mastery Boost\`' },
-        { name: '**Brawler:**', value: `\`${(userData.brawler || 'Not specified').trim()}\`` },
-        { name: '**Current Mastery:**', value: `\`${(userData.formattedCurrentMastery || userData.currentMastery + ' ' + userData.currentMasterySpecific).trim()}\`` },
-        { name: '**Desired Mastery:**', value: `\`${(userData.formattedDesiredMastery || userData.desiredMastery + ' ' + userData.desiredMasterySpecific).trim()}\`` }
-      );
+
     } else if (userData.type === 'bulk') {
       fields.push(
         { name: '**Boost Type:**', value: '\`Bulk Trophy Boost\`' },

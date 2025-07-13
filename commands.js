@@ -26,6 +26,7 @@ const { handleReviewCommand } = require('./review');
 const invitesCommand = require('./src/commands/invites');
 const inviteLeaderboardCommand = require('./src/commands/inviteLeaderboard');
 const inviteAdminCommand = require('./src/commands/inviteAdmin');
+const transcriptCommand = require('./src/commands/transcript');
 
 // Internal state to store ephemeral data between interactions
 const ephemeralFlowState = new Map();
@@ -223,6 +224,10 @@ async function handleSlashCommands(interaction) {
 
   if (interaction.commandName === 'invite-admin') {
     return inviteAdminCommand.execute(interaction);
+  }
+
+  if (interaction.commandName === 'transcript') {
+    return transcriptCommand.execute(interaction);
   }
 
   if (interaction.commandName === 'ticket-panel') {
@@ -501,6 +506,21 @@ async function handleListButtons(interaction) {
   const { customId } = interaction;
   console.log(`[BUTTON_HANDLER] Received button interaction with customId: ${customId} from user ${interaction.user.id}`);
 
+  // CHECK BUTTON RATE LIMITS FIRST
+  const { checkButtonRateLimit } = require('./src/utils/rateLimitSystem');
+  const rateLimitCheck = await checkButtonRateLimit(interaction.user.id, `button:${customId}`);
+  
+  if (!rateLimitCheck.allowed) {
+    console.log(`[BUTTON_HANDLER] User ${interaction.user.id} blocked by button rate limit: ${customId}`);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: rateLimitCheck.reason,
+        ephemeral: true
+      }).catch(console.error);
+    }
+    return;
+  }
+
   // Extract message ID from custom ID
   const messageId = customId.split('_').pop();
   
@@ -695,12 +715,13 @@ async function handleListButtons(interaction) {
 
 // Set up and export the commands
 const commands = [
-  listCommand.toJSON(),
-  ticketPanelCommand.toJSON(),
-  reviewCommand.toJSON(),
-  invitesCommand.data.toJSON(),
-  inviteLeaderboardCommand.data.toJSON(),
-  inviteAdminCommand.data.toJSON()
+  listCommand,
+  ticketPanelCommand,
+  reviewCommand,
+  invitesCommand.data,
+  inviteLeaderboardCommand.data,
+  inviteAdminCommand.data,
+  transcriptCommand.data
 ];
 
 // Initialize the bot
@@ -727,7 +748,7 @@ function initializeBot() {
   client.on('ready', async () => {
     try {
       console.log('Started refreshing application (/) commands.');
-      await client.application.commands.set(commands);
+      await client.application.commands.set(commands.map(command => command.toJSON()));
       console.log('Successfully registered application commands.');
     } catch (error) {
       console.error('Error registering slash commands:', error);
@@ -746,7 +767,7 @@ function initializeBot() {
 
 // Export everything needed
 module.exports = {
-  commands: exportedCommands,
+  commands: commands,
   handleCommand: handleSlashCommands,
   handleListButtons,
   handleMessageCommands

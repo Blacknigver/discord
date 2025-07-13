@@ -135,9 +135,115 @@ async function sendBoostAvailableEmbed(channel, orderDetails, creatorId, booster
   const { ROLE_IDS } = require('./src/constants');
   const roleId = boosterRoleId || ROLE_IDS.BOOSTER || ROLE_IDS.BOOST_AVAILABLE || '1303702944696504441';
   
+  // Enhanced order details extraction
+  let extractedDetails = {
+    current: orderDetails?.current || 'N/A',
+    desired: orderDetails?.desired || 'N/A', 
+    price: orderDetails?.price || 'N/A',
+    type: orderDetails?.type || 'N/A'
+  };
+  
+  console.log(`[BOOST_AVAILABLE] Initial order details:`, extractedDetails);
+  
+  // First try to extract from channel topic if details are missing
+  if ((extractedDetails.current === 'N/A' || extractedDetails.desired === 'N/A' || extractedDetails.price === 'N/A') && channel.topic) {
+    console.log(`[BOOST_AVAILABLE] Extracting from channel topic: "${channel.topic}"`);
+    
+    // Extract price from topic
+    const topicPriceMatch = channel.topic.match(/Price:\s*([€$]?[\d,.]+)/i);
+    if (topicPriceMatch && topicPriceMatch[1]) {
+      extractedDetails.price = topicPriceMatch[1].includes('€') ? topicPriceMatch[1] : '€' + topicPriceMatch[1];
+      console.log(`[BOOST_AVAILABLE] ✅ Extracted price from topic: ${extractedDetails.price}`);
+    }
+    
+    // Extract from/to ranks from topic
+    const topicRanksMatch = channel.topic.match(/From:\s*([^|]+)\s*to\s*([^|]+)/i);
+    if (topicRanksMatch) {
+      extractedDetails.current = topicRanksMatch[1].trim();
+      extractedDetails.desired = topicRanksMatch[2].trim();
+      console.log(`[BOOST_AVAILABLE] ✅ Extracted ranks from topic: ${extractedDetails.current} → ${extractedDetails.desired}`);
+    }
+    
+    // Extract type from topic
+    const topicTypeMatch = channel.topic.match(/Type:\s*(\w+)/i);
+    if (topicTypeMatch) {
+      extractedDetails.type = topicTypeMatch[1];
+      console.log(`[BOOST_AVAILABLE] ✅ Extracted type from topic: ${extractedDetails.type}`);
+    }
+  }
+  
+  // If still missing details, try to extract from message history  
+  if (extractedDetails.current === 'N/A' || extractedDetails.desired === 'N/A' || extractedDetails.price === 'N/A') {
+    try {
+      console.log(`[BOOST_AVAILABLE] Searching message history for Order Recap embed...`);
+      const messages = await channel.messages.fetch({ limit: 20 });
+      
+      // Look for Order Recap embed (exact format from handlerHelpers.js)
+      const orderRecapMsg = messages.find(msg => 
+        msg.embeds.length > 0 && msg.embeds[0].title === 'Order Recap'
+      );
+      
+      if (orderRecapMsg && orderRecapMsg.embeds[0].fields) {
+        console.log(`[BOOST_AVAILABLE] ✅ Found Order Recap embed, extracting fields...`);
+        const embed = orderRecapMsg.embeds[0];
+        
+        for (const field of embed.fields) {
+          const fieldName = field.name.toLowerCase();
+          const fieldValue = field.value.replace(/[`*]/g, '').trim(); // Remove backticks and bold formatting
+          
+          console.log(`[BOOST_AVAILABLE] Processing field: "${field.name}" = "${fieldValue}"`);
+          
+          if (fieldName.includes('current rank')) {
+            extractedDetails.current = fieldValue;
+            console.log(`[BOOST_AVAILABLE] ✅ Set current rank: ${fieldValue}`);
+          } else if (fieldName.includes('desired rank') || fieldName.includes('target rank')) {
+            extractedDetails.desired = fieldValue;
+            console.log(`[BOOST_AVAILABLE] ✅ Set desired rank: ${fieldValue}`);
+          } else if (fieldName.includes('current trophies')) {
+            extractedDetails.current = fieldValue + ' trophies';
+            console.log(`[BOOST_AVAILABLE] ✅ Set current trophies: ${fieldValue}`);
+          } else if (fieldName.includes('desired trophies') || fieldName.includes('target trophies')) {
+            extractedDetails.desired = fieldValue + ' trophies';
+            console.log(`[BOOST_AVAILABLE] ✅ Set desired trophies: ${fieldValue}`);
+          } else if (fieldName.includes('price')) {
+            // Handle price field format: `€XX.XX`
+            const priceMatch = fieldValue.match(/([€$]?[\d,.]+)/);
+            if (priceMatch) {
+              extractedDetails.price = priceMatch[1].includes('€') || priceMatch[1].includes('$') ? 
+                                     priceMatch[1] : '€' + priceMatch[1];
+              console.log(`[BOOST_AVAILABLE] ✅ Set price: ${extractedDetails.price}`);
+            }
+          } else if (fieldName.includes('boost type')) {
+            extractedDetails.type = fieldValue;
+            console.log(`[BOOST_AVAILABLE] ✅ Set boost type: ${fieldValue}`);
+          }
+        }
+      } else {
+        console.log(`[BOOST_AVAILABLE] ❌ No Order Recap embed found in ${messages.size} messages`);
+      }
+    } catch (messageError) {
+      console.error(`[BOOST_AVAILABLE] Error searching message history: ${messageError.message}`);
+    }
+  }
+  
+  console.log(`[BOOST_AVAILABLE] Final extracted details:`, extractedDetails);
+  
+  // Build the order information text
+  let orderDescription = '';
+  if (extractedDetails.current !== 'N/A' && extractedDetails.desired !== 'N/A') {
+    orderDescription = `**From:** \`${extractedDetails.current}\`\n**To:** \`${extractedDetails.desired}\``;
+  } else {
+    orderDescription = 'Order details not available';
+  }
+  
+  let priceText = '';
+  if (extractedDetails.price !== 'N/A') {
+    priceText = `\n**Price:** \`${extractedDetails.price}\``;
+  }
+  
   const embed = new EmbedBuilder()
     .setTitle('Boost Available')
-    .setDescription(`<@&${roleId}> This boost has been paid for and is available.\n\nClaim this boost by clicking the 'Claim Boost' button below.`)
+    .setDescription(`<@&${roleId}> This boost has been paid for and is available.\n\nClaim this boost by clicking the 'Claim Boost' button below.\n\n**Order Information:**\n${orderDescription}${priceText}`)
     .setColor('#e68df2');
 
   const row = new ActionRowBuilder().addComponents(
@@ -194,9 +300,6 @@ async function sendConfirmationEmbed(interaction, userData) {
   if (type === 'ranked') {
     startingLabel = "Current Rank";
     desiredLabel = "Desired Rank";
-  } else if (type === 'mastery') {
-    startingLabel = "Current Mastery";
-    desiredLabel = "Desired Mastery";
   } else if (type === 'trophies' || type === 'bulk-trophies') {
     startingLabel = "Current Trophies";
     desiredLabel = "Desired Trophies";
@@ -257,9 +360,7 @@ async function sendOrderDetailsEmbed(channel, userData) {
   const { startRank, desiredRank, price, type } = userData;
   
   let categoryLabel = "Rank";
-  if (type === 'mastery') {
-    categoryLabel = "Mastery";
-  } else if (type === 'trophies' || type === 'bulk-trophies') {
+  if (type === 'trophies' || type === 'bulk-trophies') {
     categoryLabel = "Trophies";
   }
   
@@ -337,7 +438,10 @@ async function sendPayPalScreenshotRequestEmbed(channel, userId) {
       '**What should we be able to see:**\n' +
       '> A screenshot on the PayPal App/Website or from the E-Mail you received.\n' +
       '> Make sure it includes way you paid: **PayPal Balance**\n\n' +
-      'Please paste your screenshot in the chat.'
+      '**How to provide the screenshot:**\n' +
+      '> • Upload an image file directly to chat\n' +
+      '> • Or paste an image URL (imgur, Discord attachment links, etc.)\n\n' +
+      'Please paste your screenshot or image URL in the chat.'
     );
 
   // Find the payment info message to reply to

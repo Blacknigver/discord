@@ -540,14 +540,12 @@ async function handleCryptoTxForm(interaction, cryptoType) {
                 const embed = orderMsg.embeds[0];
                 const currentField = embed.fields.find(f => 
                   f.name === 'Current Rank' || 
-                  f.name === 'Current Trophies' || 
-                  f.name === 'Current Mastery Rank'
+                  f.name === 'Current Trophies'
                 );
                 
                 const targetField = embed.fields.find(f => 
                   f.name === 'Target Rank' || 
-                  f.name === 'Target Trophies' || 
-                  f.name === 'Target Mastery Rank'
+                  f.name === 'Target Trophies'
                 );
                 
                 const priceField = embed.fields.find(f => 
@@ -608,14 +606,12 @@ async function handleCryptoTxForm(interaction, cryptoType) {
                       const embed = orderMsg.embeds[0];
                       const currentField = embed.fields.find(f => 
                         f.name === 'Current Rank' || 
-                        f.name === 'Current Trophies' || 
-                        f.name === 'Current Mastery Rank'
+                        f.name === 'Current Trophies'
                       );
                       
                       const targetField = embed.fields.find(f => 
                         f.name === 'Target Rank' || 
-                        f.name === 'Target Trophies' || 
-                        f.name === 'Target Mastery Rank'
+                        f.name === 'Target Trophies'
                       );
                       
                       const priceField = embed.fields.find(f => 
@@ -666,12 +662,7 @@ async function handleCryptoTxForm(interaction, cryptoType) {
       
       // Send staff verification embed
       const { sendStaffPaymentVerificationEmbed } = require('../../ticketPayments');
-      await sendStaffPaymentVerificationEmbed(
-        interaction.channel,
-        interaction.user.id,
-        'btc',
-        { txId }
-      );
+      await sendStaffPaymentVerificationEmbed(interaction.channel, 'crypto_btc', { txId });
       await interaction.reply({
         content: 'Your transaction has been submitted for verification by staff.',
         ephemeral: true

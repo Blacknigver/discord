@@ -40,8 +40,8 @@ async function createTicket(interaction, categoryKeyOrId, answers = []) {
   } catch (err) {
     console.error('[TICKET_PROXY] Failed to create ticket via proxy:', err);
     return null;
-  }
-}
+        }
+      }
 
 // Older code expected a `checkTicketTimeouts` loop – alias to core.checkAutoClose if present
 const checkTicketTimeouts = core.checkAutoClose || core.checkTicketTimeouts;

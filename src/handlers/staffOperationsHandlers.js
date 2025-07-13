@@ -15,7 +15,19 @@ const {
  */
 const paymentCompletedHandlers = {
   'payment_completed_paypal': async (interaction) => {
-    await handlePaymentCompleted(interaction, 'paypal');
+    // Use the modern PayPal payment completed handler (no countdown)
+    try {
+      const { paypalPaymentCompletedHandler } = require('./paypalWorkflowHandlers.js');
+      await paypalPaymentCompletedHandler(interaction);
+    } catch (error) {
+      console.error('Error handling PayPal payment completion:', error);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: 'An error occurred. Please try again or contact staff.',
+          ephemeral: true
+        });
+      }
+    }
   },
   
   'payment_completed_iban': async (interaction) => {
@@ -38,7 +50,22 @@ const paymentCompletedHandlers = {
   },
   
   'payment_completed_tikkie': async (interaction) => {
-    await handlePaymentCompleted(interaction, 'tikkie');
+    // For Tikkie, skip confirmation and go directly to staff verification like IBAN
+    try {
+      await sendStaffPaymentVerificationEmbed(interaction.channel, interaction.user.id, 'tikkie');
+      await interaction.reply({
+        content: 'Payment confirmation sent to staff for verification.',
+        ephemeral: true
+      });
+    } catch (error) {
+      console.error('Error handling Tikkie payment completion:', error);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: 'An error occurred. Please try again or contact staff.',
+          ephemeral: true
+        });
+      }
+    }
   }
 };
 
@@ -152,12 +179,7 @@ const tikkieLinkExpiredHandler = async (interaction) => {
  */
 const paymentConfirmHandlers = {
   'confirm_payment_paypal': async (interaction) => {
-    // Pass user ID and payment type correctly to staff verification embed
-    await sendStaffPaymentVerificationEmbed(
-      interaction.channel,
-      interaction.user.id,
-      'paypal'
-    );
+    await sendStaffPaymentVerificationEmbed(interaction.channel, 'paypal');
     await interaction.update({
       content: 'Payment confirmation sent to staff for verification.',
       embeds: [],
@@ -168,11 +190,7 @@ const paymentConfirmHandlers = {
   // IBAN payments skip confirmation and go directly to staff verification
   
   'confirm_payment_tikkie': async (interaction) => {
-    await sendStaffPaymentVerificationEmbed(
-      interaction.channel,
-      interaction.user.id,
-      'tikkie'
-    );
+    await sendStaffPaymentVerificationEmbed(interaction.channel, 'tikkie');
     await interaction.update({
       content: 'Payment confirmation sent to staff for verification.',
       embeds: [],
@@ -245,13 +263,13 @@ async function handleStaffConfirmPayment(interaction, paymentMethod) {
     const currentRank = orderInfoFields.find(f => 
       f.name === 'Current Rank' || 
       f.name === 'Current Trophies' || 
-      f.name === 'Current Mastery Rank'
+              f.name === 'Current Mastery Rank' // Legacy mastery field - feature removed
     )?.value || 'N/A';
     
     const targetRank = orderInfoFields.find(f => 
       f.name === 'Target Rank' || 
       f.name === 'Target Trophies' || 
-      f.name === 'Target Mastery Rank'
+              f.name === 'Target Mastery Rank' // Legacy mastery field - feature removed
     )?.value || 'N/A';
     
     const amount = orderInfoFields.find(f => 
@@ -361,13 +379,15 @@ const additionalStaffHandlers = {
       
       // Send boost available notification
       const { sendBoostAvailableEmbed } = require('../../ticketPayments');
+      const config = require('../../config');
       const orderDetails = {
         current: 'Current Rank/Trophies',
         desired: 'Desired Rank/Trophies',
         price: '€0'
       };
       
-      await sendBoostAvailableEmbed(interaction.message, orderDetails);
+      // Pass correct arguments: channel, orderDetails, creatorId, boosterRoleId, replyToMessage
+      await sendBoostAvailableEmbed(interaction.channel, orderDetails, userId, config.ROLES.BOOSTER_ROLE, interaction.message);
       
       // Clean up payment method messages AFTER boost available is sent
       const { cleanupMessages } = require('../utils/messageCleanup.js');
@@ -439,9 +459,11 @@ const additionalStaffHandlers = {
           }
         }
       }
+      
       // Send staff verification embed
-      await sendStaffPaymentVerificationEmbed(
-        interaction.channel,
+      const { sendStaffPaymentVerificationEmbedWithUserId } = require('../../ticketPayments');
+      await sendStaffPaymentVerificationEmbedWithUserId(
+        await interaction.channel.send('Verifying payment...'),
         interaction.user.id,
         paymentType
       );

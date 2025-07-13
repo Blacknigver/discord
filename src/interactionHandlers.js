@@ -16,10 +16,17 @@ const {
 
 const {
   handleRankedRankSelection,
-  handleMasterySelection,
+
   handleTicketConfirm,
-  handleTicketCancel
+  handleTicketCancel,
+  handleRankedFlow,
+  handleBulkFlow,
+  handleTrophyFlow,
+
+  handleOtherFlow
 } = require('./modules/ticketFlow');
+
+const { handleCryptoButtons } = require('./handlers/cryptoPaymentHandler');
 
 // Map button IDs to their handler functions
 const buttonHandlers = {
@@ -43,18 +50,132 @@ async function handleButtonInteraction(interaction, client) {
   const customId = interaction.customId;
   
   try {
-    // Verbose interaction logging suppressed to keep output focused on errors
+    console.log(`[INTERACTION] Button clicked: ${customId} by user ${interaction.user.id}`);
     
-    // PayPal payment verification buttons
-    if (customId === 'payment_received') {
-      return handlePayPalPaymentReceived(interaction);
+    // CHECK BUTTON RATE LIMITS FIRST
+    const { checkButtonRateLimit } = require('./utils/rateLimitSystem');
+    const rateLimitCheck = await checkButtonRateLimit(interaction.user.id, `button:${customId}`);
+    
+    if (!rateLimitCheck.allowed) {
+      console.log(`[INTERACTION] User ${interaction.user.id} blocked by button rate limit: ${customId}`);
+      return await interaction.reply({
+        content: rateLimitCheck.reason,
+        ephemeral: true
+      });
     }
     
-    if (customId === 'payment_not_received') {
-      return handlePayPalPaymentNotReceived(interaction);
+    // === DISCOUNT SYSTEM HANDLERS ===
+    if (customId === 'claim_10_percent_discount') {
+      const { handleClaimDiscountButton } = require('./handlers/discountHandlers.js');
+      return handleClaimDiscountButton(interaction);
     }
+    
+    // Handle discount ticket buttons (same as regular but with discount flag)
+    if (customId.startsWith('discount_ticket_')) {
+      const ticketType = customId.replace('discount_ticket_', '');
+      console.log(`[DISCOUNT_TICKET] User ${interaction.user.id} clicked discount ticket button: ${ticketType}`);
+      
+      // Mark this user as having a discount for the flow
+      const { flowState } = require('./modules/ticketFlow.js');
+      
+      // Create flow state with discount flag
+      const initialUserData = {
+        type: ticketType,
+        hasDiscount: true,
+        discountClaimed: true,
+        timestamp: Date.now()
+      };
+      
+      flowState.set(interaction.user.id, initialUserData);
+      
+      // Route to appropriate handler based on ticket type
+      if (ticketType === 'ranked') {
+        return handleRankedFlow(interaction);
+      } else if (ticketType === 'bulk') {
+        return handleBulkFlow(interaction);
+      } else if (ticketType === 'trophies') {
+        // Handle trophies with modal (same as regular ticket_trophies)
+        try {
+          const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+          
+          const modal = new ModalBuilder()
+            .setCustomId('modal_trophies_start')
+            .setTitle('Trophies Boost');
 
-    // (payment_completed handled centrally in interactions/buttonHandlers.js)
+          const brawlerNameInput = new TextInputBuilder()
+            .setCustomId('brawler_name')
+            .setLabel('Brawler Name')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Enter the name of the brawler')
+            .setRequired(true);
+
+          const currentInput = new TextInputBuilder()
+            .setCustomId('brawler_current')
+            .setLabel('Current Trophies')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Enter the current trophy count')
+            .setRequired(true);
+
+          const desiredInput = new TextInputBuilder()
+            .setCustomId('brawler_desired')
+            .setLabel('Desired Trophies')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Enter the desired trophy count')
+            .setRequired(true);
+
+          const brawlerLevelInput = new TextInputBuilder()
+            .setCustomId('brawler_level')
+            .setLabel('Brawler Power Level (1-11)')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Enter the power level of the brawler (1-11)')
+            .setRequired(true);
+
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(brawlerNameInput),
+            new ActionRowBuilder().addComponents(currentInput),
+            new ActionRowBuilder().addComponents(desiredInput),
+            new ActionRowBuilder().addComponents(brawlerLevelInput)
+          );
+          
+          return interaction.showModal(modal);
+        } catch (error) {
+          console.error('[DISCOUNT_TROPHIES] Error:', error);
+          return interaction.reply({
+            content: 'An error occurred while showing the trophy form.',
+            ephemeral: true
+          });
+        }
+      } else if (ticketType === 'other') {
+        // Handle other with modal (same as regular ticket_other)
+        try {
+          const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+          
+          const modal = new ModalBuilder()
+            .setCustomId('modal_other_request')
+            .setTitle('Other Request');
+
+          const requestDetailsInput = new TextInputBuilder()
+            .setCustomId('other_request')
+            .setLabel('Request Details')
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('Please describe your request in detail')
+            .setRequired(true)
+            .setMaxLength(1000);
+
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(requestDetailsInput)
+          );
+          
+          return interaction.showModal(modal);
+        } catch (error) {
+          console.error('[DISCOUNT_OTHER] Error:', error);
+          return interaction.reply({
+            content: 'An error occurred while showing the request form.',
+            ephemeral: true
+          });
+        }
+      }
+    }
     
     // Handle ranked flow buttons
     if (customId.startsWith('ranked_')) {
@@ -62,38 +183,128 @@ async function handleButtonInteraction(interaction, client) {
       return handleRankedRankSelection(interaction, rankInput);
     }
     
-    // Check if we have a handler for this button
-    const handler = buttonHandlers[customId];
-    
-    if (handler) {
-      // Call the appropriate handler
-      await handler(interaction, client);
-    } else {
-      console.warn(`[BUTTON] No handler found for button: ${customId}`);
-      
-      // If this is happening in production, we should reply with a message
-      if (!interaction.replied) {
-        await interaction.reply({
-          content: 'This button is no longer in use or has expired.',
-          ephemeral: true
-        });
-      }
+    // Handle ticket confirmation buttons
+    if (customId === 'confirm_ticket') {
+      return handleTicketConfirm(interaction);
     }
+    
+    // Handle ticket cancellation buttons
+    if (customId === 'cancel_ticket') {
+      return handleTicketCancel(interaction);
+    }
+    
+    // Handle crypto payment buttons
+    if (customId.startsWith('payment_completed_') || customId.startsWith('copy_')) {
+      // These are handled in interactions/buttonHandlers.js to prevent duplicates
+      // Only handle if not already handled by the main button handlers
+      if (customId.startsWith('payment_completed_crypto_') || customId.startsWith('copy_') && !customId.includes('address')) {
+      return handleCryptoButtons(interaction);
+      }
+      // Let other handlers handle the main crypto buttons
+      return false;
+    }
+    
+    // Remove handler for payment_completed_paypal to prevent duplicates
+    
+    if (customId === 'payment_received') {
+      console.log(`[PAYMENT_HANDLER] PayPal payment confirmed by staff ${interaction.user.id}`);
+      return handlePayPalPaymentReceived(interaction);
+    }
+    
+    if (customId === 'payment_not_received') {
+      console.log(`[PAYMENT_HANDLER] PayPal payment rejected by staff ${interaction.user.id}`);
+      return handlePayPalPaymentNotReceived(interaction);
+    }
+    
+    // Handle boost management buttons
+    if (customId === 'claim_boost') {
+      const { claimBoostHandler } = require('./handlers/boostManagementHandlers.js');
+      return claimBoostHandler(interaction);
+    }
+    
+    if (customId === 'boost_completed') {
+      const { boostCompletedHandler } = require('./handlers/boostManagementHandlers.js');
+      return boostCompletedHandler(interaction);
+    }
+    
+    if (customId === 'boost_is_completed') {
+      const { boostIsCompletedHandler } = require('./handlers/boostManagementHandlers.js');
+      return boostIsCompletedHandler(interaction);
+    }
+    
+    if (customId === 'boost_confirm_completed') {
+      const { boostConfirmCompletedHandler } = require('./handlers/boostManagementHandlers.js');
+      return boostConfirmCompletedHandler(interaction);
+    }
+    
+    if (customId === 'boost_not_completed') {
+      const { boostNotCompletedHandler } = require('./handlers/boostManagementHandlers.js');
+      return boostNotCompletedHandler(interaction);
+    }
+    
+    if (customId === 'boost_confirm_not_completed') {
+      const { boostConfirmNotCompletedHandler } = require('./handlers/boostManagementHandlers.js');
+      return boostConfirmNotCompletedHandler(interaction);
+    }
+    
+    if (customId === 'boost_cancel_confirmation') {
+      const { boostCancelConfirmationHandler } = require('./handlers/boostManagementHandlers.js');
+      return boostCancelConfirmationHandler(interaction);
+    }
+    
+    if (customId === 'payout_completed') {
+      const { payoutCompletedHandler } = require('./handlers/boostManagementHandlers.js');
+      return payoutCompletedHandler(interaction);
+    }
+    
+    // Regular ticket panel buttons (non-discount)
+    if (customId === 'ticket_ranked') {
+      return handleRankedFlow(interaction);
+    }
+    
+    if (customId === 'ticket_bulk') {
+      return handleBulkFlow(interaction);
+    }
+    
+    if (customId === 'ticket_trophies') {
+      return handleTrophyFlow(interaction);
+    }
+    
+    if (customId === 'ticket_other') {
+      return handleOtherFlow(interaction);
+    }
+    
+    // Profile completion handlers
+    if (customId.startsWith('upload_description_')) {
+      const { handleUploadDescription } = require('./handlers/profileCompletionHandler.js');
+      return handleUploadDescription(interaction);
+    }
+    
+    if (customId.startsWith('payment_completed_')) {
+      const listingId = customId.split('_')[2];
+      const { handleProfilePurchaseCompletion } = require('./handlers/profileCompletionHandler.js');
+      return handleProfilePurchaseCompletion(interaction, listingId, true);
+    }
+    
+    console.log(`[INTERACTION] No handler found for button: ${customId}`);
+    return false;
+    
   } catch (error) {
-    console.error(`[BUTTON] Error handling button interaction: ${error.message}`);
+    console.error(`[INTERACTION] Error handling button ${customId}: ${error.message}`);
     console.error(error.stack);
     
-    // Try to reply if we haven't already
     if (!interaction.replied && !interaction.deferred) {
       try {
         await interaction.reply({
-          content: 'An error occurred while processing this button. Please try again or contact support.',
+          content: 'An error occurred while processing your request. Please try again.',
           ephemeral: true
         });
       } catch (replyError) {
-        console.error(`[BUTTON] Error sending error reply: ${replyError.message}`);
+        console.error(`[INTERACTION] Error sending error reply: ${replyError.message}`);
       }
     }
+    
+    return false;
   }
 }
 
@@ -178,48 +389,59 @@ async function handleModalSubmitInteraction(interaction, client) {
             imageUrl = flowData?.imageUrl;
           }
 
-          const msgEmbed = new EmbedBuilder()
-            .setDescription(`**# ${description} 𝐏𝐫𝐨𝐟𝐢𝐥𝐞 <:winmatcherino:1298703851934711848>**\n**Get yours now at:**\n> <#1352022023307657359> \n> <#1352956136197984297> \n> <#1364568631194681344>`);
-
-          let messageOptions = { 
-            embeds: [msgEmbed]
-            // files: [] // Removed BrawlShop.png file attachment due to guild restrictions
-          };
+          // Create announcement text
+          const announcementText = `**# ${description} 𝐏𝐫𝐨𝐟𝐢𝐥𝐞 <:winmatcherino:1298703851934711848>**\n**Get yours now at:**\n> <#1352022023307657359> \n> <#1352956136197984297> \n> <#1364568631194681344>`;
           
-          // If we have an image URL, handle it properly
-          if (imageUrl) {
-            if (imageUrl.includes('media.discordapp.net') || imageUrl.includes('cdn.discordapp.com')) {
-              // For Discord CDN URLs, we need to download and re-upload as attachment
+          // Determine if image is a link or attachment (same logic as boost system)
+          const isImageLink = imageUrl && (
+            imageUrl.includes('media.discordapp.net') || 
+            imageUrl.includes('i.imgur.com') ||
+            imageUrl.includes('imgur.com') ||
+            imageUrl.includes('cdn.discordapp.com')
+          );
+          
+          console.log(`[PROFILE_ANNOUNCEMENT] Image URL: ${imageUrl}, Is link: ${isImageLink}`);
+
+          if (isImageLink) {
+            // Send as embed with image (no title, just image)
+            const msgEmbed = new EmbedBuilder()
+              .setDescription(announcementText)
+              .setImage(imageUrl)
+              .setColor('#e68df2');
+
+            await targetChannel.send({
+              embeds: [msgEmbed]
+            });
+            
+            console.log(`[PROFILE_ANNOUNCEMENT] Sent embed announcement with image link`);
+          } else {
+            // Send as regular message with image attachment
+            const messageOptions = {
+              content: announcementText
+            };
+
+            // If we have an image URL, try to download and attach it
+            if (imageUrl) {
               try {
                 const axios = require('axios');
+                const { AttachmentBuilder } = require('discord.js');
+                
                 const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
                 if (response.status === 200) {
                   const buffer = Buffer.from(response.data);
-                  const { AttachmentBuilder } = require('discord.js');
-                  const attachment = new AttachmentBuilder(buffer, { name: 'profile_image.png' });
-                  messageOptions.files.push(attachment); // Add the user's image as additional file
-                  msgEmbed.setImage('attachment://profile_image.png'); // Set as main image (bottom)
+                  const attachment = new AttachmentBuilder(buffer, { name: 'profile_completed.png' });
+                  messageOptions.files = [attachment];
+                  console.log(`[PROFILE_ANNOUNCEMENT] Attached image file to regular message`);
                 }
-              } catch (fetchError) {
-                console.error('[DESCRIPTION_MODAL] Failed to fetch Discord CDN image:', fetchError);
-                // Fallback: just set the image URL in embed
-                msgEmbed.setImage(imageUrl);
-                messageOptions = { 
-                  embeds: [msgEmbed],
-                  files: [] // Removed BrawlShop.png file attachment due to guild restrictions
-                };
+              } catch (downloadError) {
+                console.error(`[PROFILE_ANNOUNCEMENT] Error downloading image: ${downloadError.message}`);
+                // Continue without attachment
               }
-            } else {
-              // For other URLs, set directly as image
-              msgEmbed.setImage(imageUrl);
-              messageOptions = { 
-                embeds: [msgEmbed],
-                files: [] // Removed BrawlShop.png file attachment due to guild restrictions
-              };
             }
-          }
 
-          await targetChannel.send(messageOptions);
+            await targetChannel.send(messageOptions);
+            console.log(`[PROFILE_ANNOUNCEMENT] Sent regular message announcement`);
+          }
         }
         
         // Clean up the profilePurchaseFlow entry

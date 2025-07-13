@@ -33,51 +33,8 @@ async function handleBulkTrophiesModal(interaction) {
   }
 }
 
-// Handle mastery brawler form submission
-async function handleMasteryBrawlerModal(interaction) {
-  const brawler = interaction.fields.getTextInputValue('brawler_name').trim();
-
-  // Store data and show current mastery selection
-  const userData = flowState.get(interaction.user.id);
-  if (userData) {
-    userData.brawler = brawler;
-    userData.step = 'current_mastery';
-    flowState.set(interaction.user.id, userData);
-
-    const embed = new djs.EmbedBuilder()
-      .setTitle('Current Mastery')
-      .setDescription('Please select your current mastery below.')
-      .setColor(EMBED_COLOR);
-
-    const row = new djs.ActionRowBuilder().addComponents(
-      new djs.ButtonBuilder()
-        .setCustomId('mastery_Bronze')
-        .setLabel('Bronze')
-        .setEmoji('<:mastery_bronze:1357487786394914847>')
-        .setStyle(djs.ButtonStyle.Danger),
-      new djs.ButtonBuilder()
-        .setCustomId('mastery_Silver')
-        .setLabel('Silver')
-        .setEmoji('<:mastery_silver:1357487832481923153>')
-        .setStyle(djs.ButtonStyle.Primary),
-      new djs.ButtonBuilder()
-        .setCustomId('mastery_Gold')
-        .setLabel('Gold')
-        .setEmoji('<:mastery_gold:1357487865029722254>')
-        .setStyle(djs.ButtonStyle.Success)
-    );
-
-    if (!djs.InteractionResponseFlags) {
-      console.error("[MODAL_HANDLERS_DEBUG] djs.InteractionResponseFlags is UNDEFINED before reply in handleMasteryBrawlerModal");
-    } else if (typeof djs.InteractionResponseFlags.Ephemeral === 'undefined') {
-      console.error("[MODAL_HANDLERS_DEBUG] djs.InteractionResponseFlags.Ephemeral is UNDEFINED. Flags object:", djs.InteractionResponseFlags);
-    } else {
-      console.log("[MODAL_HANDLERS_DEBUG] djs.InteractionResponseFlags.Ephemeral IS DEFINED. Value:", djs.InteractionResponseFlags.Ephemeral);
-    }
-
-    return interaction.reply({ embeds: [embed], components: [row], flags: InteractionResponseFlags_Ephemeral });
-  }
-}
+// Handle mastery brawler form submission - REMOVED (feature disabled)
+// The mastery feature has been removed from Brawl Stars
 
 // Handle other request form submission
 async function handleOtherRequestModal(interaction) {
@@ -214,8 +171,12 @@ async function handleTrophiesStartModal(interaction) {
       console.log(`[TROPHIES_MODAL] Base price: €${basePrice.toFixed(2)}, multiplier: ${powerLevelMultiplier}x, final: €${price.toFixed(2)}`);
     }
     
-    // Store the data in flowState
-    flowState.set(interaction.user.id, {
+    // Get existing flow state or create new one, preserving discount flags
+    let userData = flowState.get(interaction.user.id) || {};
+    
+    // Store the data in flowState while preserving existing flags
+    userData = {
+      ...userData, // Preserve existing data including hasDiscount, discountClaimed
       type: 'trophies',
       brawler: brawlerName,
       brawlerLevel: brawlerLevel,
@@ -227,9 +188,11 @@ async function handleTrophiesStartModal(interaction) {
       powerLevelMultiplier: powerLevelMultiplier,
       step: 'payment_method',
       timestamp: Date.now()
-    });
+    };
     
-    console.log(`[TROPHIES] Stored trophy data for ${interaction.user.id}: ${brawlerName}, level ${brawlerLevel}, ${currentTrophies} → ${desiredTrophies}, price €${price}`);
+    flowState.set(interaction.user.id, userData);
+    
+    console.log(`[TROPHIES] Stored trophy data for ${interaction.user.id}: ${brawlerName}, level ${brawlerLevel}, ${currentTrophies} → ${desiredTrophies}, price €${price}, hasDiscount: ${userData.hasDiscount}`);
     
     // Show payment method selection - will create a new ephemeral message
     return showPaymentMethodSelection(interaction);
@@ -245,7 +208,6 @@ async function handleTrophiesStartModal(interaction) {
 module.exports = {
   handleTrophiesStartModal,
   handleBulkTrophiesModal,
-  handleMasteryBrawlerModal,
   handleOtherRequestModal,
   handleCryptoTxForm,
   modalHandlers: {
@@ -254,7 +216,6 @@ module.exports = {
     'crypto_tx_form_btc': handleCryptoTxForm,
     'modal_trophies_start': handleTrophiesStartModal,
     'modal_bulk_trophies': handleBulkTrophiesModal,
-    'modal_mastery_brawler': handleMasteryBrawlerModal,
     'modal_other_request': handleOtherRequestModal
   }
 }; 

@@ -8,44 +8,10 @@ const PINK_COLOR = '#e68df2';
 const flowState = new Map();
 
 function parsePrice(priceStr = '') {
-  const match = priceStr.match(/€(\d+(?:\.\d+)?)/);
-  return match ? parseFloat(match[1]) : 0;
-}
-
-/**
- * Format payment method names for display
- * @param {string} paymentLabel - The raw payment method label from selection
- * @returns {string} - Properly formatted payment method name
- */
-function formatPaymentMethodName(paymentLabel) {
-  // Handle crypto payments
-  if (paymentLabel.startsWith('Crypto-')) {
-    const coin = paymentLabel.split('-')[1];
-    return `Crypto - ${coin.toUpperCase()}`;
-  }
-  
-  // Handle Dutch payments
-  if (paymentLabel.startsWith('Dutch-')) {
-    const method = paymentLabel.split('-')[1];
-    if (method === 'Tikkie') {
-      return 'Dutch - Tikkie';
-    } else if (method === 'Bol') {
-      return 'Dutch - Bol.com';
-    }
-    return `Dutch - ${method}`;
-  }
-  
-  // Handle other payment methods
-  switch (paymentLabel) {
-    case 'iban':
-      return 'IBAN Bank Transfer';
-    case 'paypal':
-      return 'PayPal';
-    case 'paypal_giftcard':
-      return 'PayPal Giftcard';
-    default:
-      return paymentLabel;
-  }
+  // Remove currency symbols and whitespace
+  const cleaned = priceStr.replace(/[^0-9.,]/g, '').replace(',', '.');
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? 0 : num;
 }
 
 function buildPrimarySelect(listingId) {
@@ -206,6 +172,19 @@ async function finalize(interaction, paymentLabel, state) {
   // Remove components so the menu cannot be used again, but LEAVE the original embed untouched
   await interaction.update({ components: [] });
 
+  // CHECK TICKET RATE LIMITS FIRST
+  const { checkTicketRateLimit } = require('../utils/rateLimitSystem');
+  const rateLimitCheck = await checkTicketRateLimit(interaction.user.id, 'profile');
+  
+  if (!rateLimitCheck.allowed) {
+    console.log(`[PROFILE_PAYMENT] User ${interaction.user.id} blocked by ticket rate limit`);
+    await interaction.followUp({
+      content: rateLimitCheck.reason,
+      ephemeral: true
+    });
+    return;
+  }
+
   // Create ticket channel
   const user = interaction.user;
   const ticketName = `𝐩𝐫𝐨𝐟𝐢𝐥𝐞-${user.username}`;
@@ -267,8 +246,8 @@ async function finalize(interaction, paymentLabel, state) {
 
   // Payment alert embed
   const paymentEmbed = new EmbedBuilder()
-    .setTitle(`${formatPaymentMethodName(paymentLabel)} Payment`)
-    .setDescription(`<@${user.id}> wants to pay with **${formatPaymentMethodName(paymentLabel)}**.\n\nPlease assist them with this.`)
+    .setTitle(paymentLabel)
+    .setDescription(`<@${user.id}> wants to pay with **${paymentLabel}**.\n\nPlease assist them with this.`)
     .setColor(0x00d26a);
 
   const paymentButtonRow = new ActionRowBuilder().addComponents(

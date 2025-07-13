@@ -2,7 +2,7 @@
  * Price calculator for various boost types - this is a helper for constants-based calculations
  * For full implementations, see helpers.js which directly calculates prices
  */
-const { TROPHY_PRICE_TIERS, BULK_PRICE_TIERS, RANKED_STEP_COSTS, MASTERY_STEP_COSTS } = require('../constants');
+const { TROPHY_PRICE_TIERS, BULK_PRICE_TIERS, RANKED_STEP_COSTS } = require('../constants');
 
 // This is a basic implementation using tiers defined in constants
 // For a more detailed implementation, see utils.js which includes power level multipliers
@@ -70,20 +70,8 @@ function calculateRankedPrice(currentRank, currentRankSpecific, desiredRank, des
   return helpers.calculateRankedPrice(currentRank, currentRankSpecific, desiredRank, desiredRankSpecific);
 }
 
-// This is a simplified implementation for reference only
-// For the full implementation with specific mastery handling, see helpers.js
-function calculateMasteryPrice(brawler, currentMastery, currentMasterySpecific, desiredMastery, desiredMasterySpecific) {
-  // Redirect to the proper implementation in helpers.js
-  console.log(`[PRICE CALCULATOR] Redirecting to helpers.js for calculateMasteryPrice: ${brawler} - ${currentMastery} ${currentMasterySpecific} -> ${desiredMastery} ${desiredMasterySpecific}`);
-  
-  // Import the proper implementation dynamically to avoid circular dependencies
-  const helpers = require('./helpers');
-  return helpers.calculateMasteryPrice(brawler, currentMastery, currentMasterySpecific, desiredMastery, desiredMasterySpecific);
-}
-
 module.exports = {
   calculateTrophyPrice,
   calculateBulkPrice,
-  calculateRankedPrice,
-  calculateMasteryPrice
+  calculateRankedPrice
 }; 

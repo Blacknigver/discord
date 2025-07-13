@@ -6,7 +6,6 @@ const {
 } = require('../config.js'); // Adjusted path
 const { 
     getRankValue, 
-    getMasteryValue,
     showPaymentMethodSelection,
 } = require('../src/modules/ticketFlow.js'); // Adjusted path
 const { 
@@ -72,8 +71,7 @@ async function sendPaymentInfoEmbed(channel, paymentMethod, subType = null, curr
         return sendPayPalGiftcardOtherPaymentEmbed(channel, userId, 'PayPal Giftcard');
       case 'IBAN Bank Transfer':
         return sendIbanEmbed(channel, userId, interaction);
-      case 'German Apple Giftcard':
-        return sendAppleGiftcardEmbed(channel, userId, interaction);
+
       case 'Dutch Payment Methods':
         if (subType === 'Tikkie') {
           return sendTikkieEmbed(channel, userId, interaction);
@@ -534,13 +532,6 @@ async function sendOrderRecapEmbed(channel, userData) {
         { name: '**Brawler:**', value: `\`${(userData.brawler || 'Not specified').trim()}\`` },
         { name: '**Current Trophies:**', value: `\`${userData.currentTrophies || 0}\`` },
         { name: '**Desired Trophies:**', value: `\`${userData.desiredTrophies || 0}\`` }
-      );
-    } else if (userData.type === 'mastery') {
-      fields.push(
-        { name: '**Boost Type:**', value: '`Mastery Boost`' },
-        { name: '**Brawler:**', value: `\`${(userData.brawler || 'Not specified').trim()}\`` },
-        { name: '**Current Mastery:**', value: `\`${(userData.formattedCurrentMastery || userData.currentMastery + ' ' + userData.currentMasterySpecific).trim()}\`` },
-        { name: '**Desired Mastery:**', value: `\`${(userData.formattedDesiredMastery || userData.desiredMastery + ' ' + userData.desiredMasterySpecific).trim()}\`` }
       );
     } else if (userData.type === 'bulk') {
       fields.push(

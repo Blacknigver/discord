@@ -27,7 +27,6 @@ const messageCommands = {
       new ButtonBuilder().setCustomId('ticket_bulk').setLabel('Bulk Trophies').setEmoji('<:gold_trophy:1351658932434768025>').setStyle(ButtonStyle.Primary)
     );
     const row2 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('ticket_mastery').setLabel('Mastery').setEmoji('<:mastery:1351659726991134832>').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId('ticket_other').setLabel('Other').setEmoji('<:winmatcherino:1298703851934711848>').setStyle(ButtonStyle.Success)
     );
     await message.channel.send({ embeds: [embed], components: [row1, row2] });
@@ -102,6 +101,11 @@ const messageCommands = {
       const { MessageFlags, AttachmentBuilder } = require('discord.js');
       const { ContainerBuilder, SectionBuilder, TextDisplayBuilder, SeparatorBuilder, MediaGalleryBuilder } = require('@discordjs/builders');
       
+      // Ensure the Components V2 flag exists (polyfill for older discord.js versions)
+      if (!('IsComponentsV2' in MessageFlags)) {
+        MessageFlags.IsComponentsV2 = 1 << 31; // Reserved high-bit placeholder
+      }
+
       console.log('DEBUG: Discord.js imports successful');
       
       // Test what spacing values are actually accepted
@@ -123,7 +127,7 @@ const messageCommands = {
         console.log('DEBUG: ❌ Numeric spacing 2 failed:', err.message);
       }
       
-      console.log('DEBUG: Creating banner with new image URL...');
+      console.log('DEBUG: Creating banner file...');
 
     // Create banner image using MediaGallery (for displaying images)
     const bannerGallery = new MediaGalleryBuilder()
@@ -172,7 +176,6 @@ const messageCommands = {
       new ButtonBuilder().setCustomId('ticket_trophies').setLabel('Trophies').setEmoji('<:trophy:1301901071471345664>').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('ticket_ranked').setLabel('Ranked').setEmoji('<:Masters:1293283897618075728>').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('ticket_bulk').setLabel('Bulk Trophies').setEmoji('<:gold_trophy:1351658932434768025>').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('ticket_mastery').setLabel('Mastery').setEmoji('<:mastery:1351659726991134832>').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId('ticket_other').setLabel('Other').setEmoji('<:winmatcherino:1298703851934711848>').setStyle(ButtonStyle.Success)
     );
 
@@ -278,6 +281,71 @@ const messageCommands = {
     } catch (err) {
       console.error('[AFFILIATE_COMMAND] Error creating affiliate panel:', err);
       await message.reply('Failed to create affiliate panel: ' + err.message);
+    }
+  },
+
+  triggerembeds: async (message) => {
+    if (!TICKET_PANEL_ALLOWED_USERS || !Array.isArray(TICKET_PANEL_ALLOWED_USERS) || !TICKET_PANEL_ALLOWED_USERS.includes(message.author.id)) {
+      return message.reply("You don't have permission!");
+    }
+
+    try {
+      console.log('[TRIGGER_EMBEDS] Manual trigger requested by', message.author.id);
+      
+      // Get the existing scheduled embed system instance
+      const ScheduledEmbedSystem = require('../src/utils/scheduledEmbeds');
+      const scheduledEmbeds = ScheduledEmbedSystem.getInstance();
+      
+      if (!scheduledEmbeds) {
+        return message.reply('❌ Scheduled embed system not initialized!');
+      }
+      
+      // Trigger immediate check
+      await scheduledEmbeds.checkAndSendEmbeds();
+      
+      await message.reply('✅ Triggered scheduled embeds check!');
+    } catch (error) {
+      console.error('[TRIGGER_EMBEDS] Error:', error);
+      await message.reply('❌ Error triggering embeds: ' + error.message);
+    }
+  },
+
+  forceembeds: async (message) => {
+    if (!TICKET_PANEL_ALLOWED_USERS || !Array.isArray(TICKET_PANEL_ALLOWED_USERS) || !TICKET_PANEL_ALLOWED_USERS.includes(message.author.id)) {
+      return message.reply("You don't have permission!");
+    }
+
+    try {
+      console.log('[FORCE_EMBEDS] Force send requested by', message.author.id);
+      
+      const db = require('../database');
+      
+      if (!db.isConnected) {
+        return message.reply('❌ Database not connected!');
+      }
+      
+      // Get the existing scheduled embed system instance
+      const ScheduledEmbedSystem = require('../src/utils/scheduledEmbeds');
+      const scheduledEmbeds = ScheduledEmbedSystem.getInstance();
+      
+      if (!scheduledEmbeds) {
+        return message.reply('❌ Scheduled embed system not initialized!');
+      }
+      
+      // Update all scheduled embeds to send immediately
+      const result = await db.query(
+        'UPDATE scheduled_embeds SET next_send_at = NOW() - INTERVAL \'1 minute\''
+      );
+      
+      console.log(`[FORCE_EMBEDS] Updated ${result.rowCount} scheduled embeds to send immediately`);
+      
+      // Trigger immediate check using the existing instance
+      await scheduledEmbeds.checkAndSendEmbeds();
+      
+      await message.reply(`✅ Force updated ${result.rowCount} scheduled embeds and triggered check!`);
+    } catch (error) {
+      console.error('[FORCE_EMBEDS] Error:', error);
+      await message.reply('❌ Error forcing embeds: ' + error.message);
     }
   }
 };

@@ -76,7 +76,7 @@ async function handlePaymentMethodSelection(interaction) {
           flowState.set(userId, userData);
           return showDutchPaymentMethodSelection(interaction);
         case 'apple_giftcard':
-          userData.paymentMethod = 'German Apple Giftcard';
+  
           break;
         default:
           userData.paymentMethod = 'Unknown';
@@ -369,16 +369,7 @@ async function handlePurchaseBoostClick(interaction) {
       }
       orderRecap.push(['Current Trophies', `\`${userData.currentTrophies}\``]);
       orderRecap.push(['Desired Trophies', `\`${userData.desiredTrophies}\``]);
-    } else if (userData.type === 'mastery') {
-      if (!userData.brawler || !userData.currentMastery || !userData.desiredMastery) {
-        return interaction.reply({
-          content: 'Missing mastery information. Please restart the ordering process.',
-          ephemeral: true
-        });
-      }
-      orderRecap.push(['Brawler', `\`${userData.brawler}\``]);
-      orderRecap.push(['Current Mastery', `\`${userData.formattedCurrentMastery || `${userData.currentMastery} ${userData.currentMasterySpecific || ''}`}\``]);
-      orderRecap.push(['Desired Mastery', `\`${userData.formattedDesiredMastery || `${userData.desiredMastery} ${userData.desiredMasterySpecific || ''}`}\``]);
+
     }
     
     // Add price and payment information
@@ -470,7 +461,7 @@ async function handlePurchaseBoostClick(interaction) {
               // Always use the new PayPal Giftcard format
               await payments.sendPayPalGiftcardOtherPaymentEmbed(channel, userId, userData.giftcardInfo || 'PayPal Giftcard');
               break;
-            case 'German Apple Giftcard':
+    
               await payments.sendAppleGiftcardEmbed(channel, userId);
               break;
             case 'Dutch Payment Methods':

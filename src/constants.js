@@ -164,25 +164,8 @@ const RANKED_STEP_PRICES = {
   'Masters 3 to Pro': 120.00
 };
 
-// Mastery steps for reference pricing
-const MASTERY_ORDER = [
-    'Level 1', 'Level 2', 'Level 3', // Bronze
-    'Level 4', 'Level 5', 'Level 6', // Silver
-    'Level 7', 'Level 8', 'Level 9'  // Gold
-];
-
-// Update mastery step costs with correct pricing
-const MASTERY_STEPS_COST = {
-  'Bronze 1': 0,   // Base price
-  'Bronze 2': 2,   // Bronze 1 to Bronze 2 = €2
-  'Bronze 3': 5,   // Bronze 2 to Bronze 3 = €3 (cumulative: 2 + 3 = 5)
-  'Silver 1': 7,   // Bronze 3 to Silver 1 = €2 (cumulative: 5 + 2 = 7)
-  'Silver 2': 13,  // Silver 1 to Silver 2 = €6 (cumulative: 7 + 6 = 13)
-  'Silver 3': 21,  // Silver 2 to Silver 3 = €8 (cumulative: 13 + 8 = 21)
-  'Gold 1': 36,    // Silver 3 to Gold 1 = €15 (cumulative: 21 + 15 = 36)
-  'Gold 2': 56,    // Gold 1 to Gold 2 = €20 (cumulative: 36 + 20 = 56)
-  'Gold 3': 86     // Gold 2 to Gold 3 = €30 (cumulative: 56 + 30 = 86)
-};
+// Mastery constants - REMOVED (feature disabled)
+// The mastery feature has been removed from Brawl Stars and is no longer available
 
 // Custom emojis
 const EMOJIS = {
@@ -236,11 +219,7 @@ const PAYMENT_METHODS = {
     name: 'Dutch Payment Methods',
     description: 'Only for Dutch people - the Netherlands - No other countries.'
   },
-  APPLE_GIFTCARD: {
-    emoji: EMOJIS.APPLE_PAY,
-    name: 'German Apple Giftcard',
-    description: 'German Apple giftcards only, other countries are not accepted.'
-  },
+
   TIKKIE: {
     link: 'https://tikkie.me/pay/im6epjm7vgj0d48n04p4',
     emoji: EMOJIS.TIKKIE,
@@ -295,8 +274,6 @@ module.exports = {
   RANKED_ORDER,
   RANKED_STEP_COSTS,
   RANKED_STEP_PRICES,
-  MASTERY_ORDER,
-  MASTERY_STEPS_COST,
   CRYPTO_WALLET_ADDRESSES,
   PAYMENT_METHODS,
   EMOJIS,

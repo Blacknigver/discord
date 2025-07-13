@@ -1,7 +1,6 @@
 // Interaction handler for button clicks, select menus, modals, etc.
 const { 
   handleRankedRankSelection, 
-  handleMasterySelection, 
   handlePaymentMethodSelect,
   handleDutchMethodSelect,
   handleTicketConfirm,
@@ -10,7 +9,6 @@ const {
 
 // Import modal handlers from modalHandlers.js
 const {
-  handleMasteryBrawlerModal, 
   handleBulkTrophiesModal
 } = require('../modules/modalHandlers.js');
 const { handleCryptoButtons, handleCryptoTxFormSubmit } = require('./cryptoPaymentHandler.js');
@@ -93,16 +91,137 @@ async function handleButtonInteraction(interaction) {
   try {
     console.log(`[INTERACTION] Button clicked: ${customId} by user ${interaction.user.id}`);
     
+    // CHECK BUTTON RATE LIMITS FIRST
+    const { checkButtonRateLimit } = require('../utils/rateLimitSystem');
+    const rateLimitCheck = await checkButtonRateLimit(interaction.user.id, `button:${customId}`);
+    
+    if (!rateLimitCheck.allowed) {
+      console.log(`[INTERACTION] User ${interaction.user.id} blocked by button rate limit: ${customId}`);
+      return await interaction.reply({
+        content: rateLimitCheck.reason,
+        ephemeral: true
+      });
+    }
+    
+    // === DISCOUNT SYSTEM HANDLERS ===
+    if (customId === 'claim_10_percent_discount') {
+      const { handleClaimDiscountButton } = require('../handlers/discountHandlers.js');
+      return handleClaimDiscountButton(interaction);
+    }
+    
+    // Handle discount ticket buttons (same as regular but with discount flag)
+    if (customId.startsWith('discount_ticket_')) {
+      const ticketType = customId.replace('discount_ticket_', '');
+      console.log(`[DISCOUNT_TICKET] User ${interaction.user.id} clicked discount ticket button: ${ticketType}`);
+      
+      // Mark this user as having a discount for the flow
+      const { flowState, handleRankedFlow, handleBulkFlow } = require('../modules/ticketFlow.js');
+      
+      // Create flow state with discount flag
+      const initialUserData = {
+        type: ticketType,
+        hasDiscount: true,
+        discountClaimed: true,
+        timestamp: Date.now()
+      };
+      
+      flowState.set(interaction.user.id, initialUserData);
+      
+      // Route to appropriate handler based on ticket type
+      if (ticketType === 'ranked') {
+        return handleRankedFlow(interaction);
+      } else if (ticketType === 'bulk') {
+        return handleBulkFlow(interaction);
+      } else if (ticketType === 'trophies') {
+        // Handle trophies with modal (same as regular ticket_trophies)
+        try {
+          const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+          
+          const modal = new ModalBuilder()
+            .setCustomId('modal_trophies_start')
+            .setTitle('Trophies Boost');
+
+          const brawlerNameInput = new TextInputBuilder()
+            .setCustomId('brawler_name')
+            .setLabel('Brawler Name')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Enter the name of the brawler')
+            .setRequired(true);
+
+          const currentInput = new TextInputBuilder()
+            .setCustomId('brawler_current')
+            .setLabel('Current Trophies')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Enter the current trophy count')
+            .setRequired(true);
+
+          const desiredInput = new TextInputBuilder()
+            .setCustomId('brawler_desired')
+            .setLabel('Desired Trophies')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Enter the desired trophy count')
+            .setRequired(true);
+
+          const brawlerLevelInput = new TextInputBuilder()
+            .setCustomId('brawler_level')
+            .setLabel('Brawler Power Level (1-11)')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Enter the power level of the brawler (1-11)')
+            .setRequired(true);
+
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(brawlerNameInput),
+            new ActionRowBuilder().addComponents(currentInput),
+            new ActionRowBuilder().addComponents(desiredInput),
+            new ActionRowBuilder().addComponents(brawlerLevelInput)
+          );
+          
+          return interaction.showModal(modal);
+        } catch (error) {
+          console.error('[DISCOUNT_TROPHIES] Error:', error);
+          return interaction.reply({
+            content: 'An error occurred while showing the trophy form.',
+            ephemeral: true
+          });
+        }
+      } else if (ticketType === 'other') {
+        // Handle other with modal (same as regular ticket_other)
+        try {
+          const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+          
+          const modal = new ModalBuilder()
+            .setCustomId('modal_other_request')
+            .setTitle('Other Request');
+
+          const requestDetailsInput = new TextInputBuilder()
+            .setCustomId('other_request')
+            .setLabel('Request Details')
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('Please describe your request in detail')
+            .setRequired(true)
+            .setMaxLength(1000);
+
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(requestDetailsInput)
+          );
+          
+          return interaction.showModal(modal);
+        } catch (error) {
+          console.error('[DISCOUNT_OTHER] Error:', error);
+          return interaction.reply({
+            content: 'An error occurred while showing the request form.',
+            ephemeral: true
+          });
+        }
+      }
+      
+      return true; // Mark as handled
+    }
+    
     // Handle ranked flow buttons
     if (customId.startsWith('ranked_')) {
       const rankInput = customId.replace('ranked_', '');
       return handleRankedRankSelection(interaction, rankInput);
-    }
-    
-    // Handle mastery flow buttons
-    if (customId.startsWith('mastery_')) {
-      const masteryInput = customId.replace('mastery_', '');
-      return handleMasterySelection(interaction, masteryInput);
     }
     
     // Handle ticket confirmation buttons
@@ -273,11 +392,6 @@ async function handleModalSubmit(interaction) {
       return handleBulkTrophiesModal(interaction);
     }
     
-    // Handle mastery brawler modal
-    if (customId === 'modal_mastery_brawler') {
-      return handleMasteryBrawlerModal(interaction);
-    }
-    
     // Handle review modal submissions
     if (customId.startsWith('review_modal_')) {
       const { reviewFeedbackModalHandlers } = require('../../paymentHandlers.js');
@@ -291,6 +405,14 @@ async function handleModalSubmit(interaction) {
       const { reviewFeedbackModalHandlers } = require('../../paymentHandlers.js');
       if (reviewFeedbackModalHandlers && reviewFeedbackModalHandlers['feedback_modal']) {
         return reviewFeedbackModalHandlers['feedback_modal'](interaction);
+      }
+    }
+    
+    // Handle simple feedback modal submissions
+    if (customId.startsWith('simple_feedback_modal_')) {
+      const { reviewFeedbackModalHandlers } = require('../../paymentHandlers.js');
+      if (reviewFeedbackModalHandlers && reviewFeedbackModalHandlers['simple_feedback_modal']) {
+        return reviewFeedbackModalHandlers['simple_feedback_modal'](interaction);
       }
     }
     

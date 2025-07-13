@@ -112,7 +112,6 @@ async function sendPayPalTermsEmbed(ticketChannel, userId, options = {}) {
     const orderDetailsMsg = messages.find(msg => 
       msg.embeds.length > 0 && 
       (msg.embeds[0].description?.includes('Current Rank') || 
-       msg.embeds[0].description?.includes('Current Mastery') || 
        msg.embeds[0].description?.includes('Current Trophies'))
     );
     
@@ -207,7 +206,10 @@ async function sendPayPalScreenshotRequestEmbed(ticketChannel, userId) {
       '**What should we be able to see:**\n' +
       '> A screenshot on the PayPal App/Website or from the E-Mail you received.\n' +
       '> Make sure it includes way you paid: **PayPal Balance**\n\n' +
-      'Please paste your screenshot in the chat.'
+      '**How to provide the screenshot:**\n' +
+      '> • Upload an image file directly to chat\n' +
+      '> • Or paste an image URL (imgur, Discord attachment links, etc.)\n\n' +
+      'Please paste your screenshot or image URL in the chat.'
     );
 
   // Make sure the user can upload files
@@ -298,7 +300,6 @@ async function sendLitecoinEmbed(ticketChannel, userId, price = null, interactio
       msg.embeds.length > 0 && 
       (msg.embeds[0].title === 'Order Information' || 
        msg.embeds[0].description?.includes('Current Rank') ||
-       msg.embeds[0].description?.includes('Current Mastery') ||
        msg.embeds[0].description?.includes('Current Trophies'))
     );
     
@@ -481,7 +482,6 @@ async function sendBitcoinEmbed(ticketChannel, userId, interaction) {
     const orderDetailMsg = messages.find(msg => 
       msg.embeds.length > 0 && 
       (msg.embeds[0].description?.includes('Current Rank') || 
-       msg.embeds[0].description?.includes('Current Mastery') || 
        msg.embeds[0].description?.includes('Current Trophies') ||
        msg.embeds[0].description?.includes('Final Price'))
     );
@@ -722,7 +722,6 @@ async function sendSolanaEmbed(ticketChannel, userId, price = null, interaction 
       msg.embeds.length > 0 && 
       (msg.embeds[0].title === 'Order Information' || 
        msg.embeds[0].description?.includes('Current Rank') ||
-       msg.embeds[0].description?.includes('Current Mastery') ||
        msg.embeds[0].description?.includes('Current Trophies'))
     );
     
@@ -775,6 +774,28 @@ async function sendIbanEmbed(ticketChannel, userId, interaction) {
 
   const row = new ActionRowBuilder().addComponents(copyButton, paymentButton);
   
+  // Find the order details message to reply to (same as other payment methods)
+  try {
+    const messages = await ticketChannel.messages.fetch({ limit: 10 });
+    const orderDetailsMsg = messages.find(msg => 
+      msg.embeds.length > 0 && 
+      (msg.embeds[0].title === 'Order Information' || 
+       msg.embeds[0].description?.includes('Current Rank') ||
+       msg.embeds[0].description?.includes('Current Trophies'))
+    );
+    
+    if (orderDetailsMsg) {
+      return await orderDetailsMsg.reply({ 
+        content: `<@${userId}>`, 
+        embeds: [ibanEmbed], 
+        components: [row] 
+      });
+    }
+  } catch (error) {
+    console.error(`[IBAN] Error finding order details message to reply to: ${error.message}`);
+  }
+  
+  // Fallback if we couldn't find the message to reply to
   return await ticketChannel.send({ 
     content: `<@${userId}>`,
     embeds: [ibanEmbed],
@@ -782,34 +803,7 @@ async function sendIbanEmbed(ticketChannel, userId, interaction) {
   });
 }
 
-// German Apple Giftcard Information
-async function sendAppleGiftcardEmbed(ticketChannel, userId, interaction) {
-  const appleGiftcardEmbed = new EmbedBuilder()
-    .setTitle('Apple Giftcard Payment Information')
-    .setColor(DEFAULT_EMBED_COLOR)
-    .setDescription(
-      `Please wait for <@${PAYMENT_STAFF.APPLE_GIFTCARD_VERIFIER}> to assist you.\\n\\n` +
-      `**__ONLY__ send the code to <@${PAYMENT_STAFF.APPLE_GIFTCARD_VERIFIER}> or an Owner, and only send the code in __DMS__, not in the ticket.**\\n\\n` +
-      'For payments above €100 using a German Apple Giftcard please do not send anything yet, and wait for an **Owner**\\n' +
-      '-# If you do this, we are not responsible if you somehow get scammed.'
-    );
 
-  try {
-    const mentionMessage = await ticketChannel.send(`<@&${ROLE_IDS.APPLE_GIFTCARD_STAFF_ROLE}> <@${PAYMENT_STAFF.APPLE_GIFTCARD_VERIFIER}>`);
-    console.log(`[PAYMENT] Sent German Apple Giftcard ping for user ${userId}`);
-    
-    setTimeout(() => {
-      mentionMessage.delete().catch(e => console.error('Error deleting German Apple Giftcard ping message:', e));
-    }, 1000);
-  } catch (error) {
-    console.error('[PAYMENT] Error sending German Apple Giftcard ping:', error);
-  }
-  
-  return await ticketChannel.send({ 
-    content: `<@${userId}>`, 
-    embeds: [appleGiftcardEmbed] 
-  });
-}
 
 // Bol.com Giftcard Information
 async function sendBolGiftcardEmbed(ticketChannel, userId, interaction) {
@@ -1101,7 +1095,6 @@ async function sendBoostAvailableEmbed(ticketChannel, orderDetails, userId, boos
       const orderDetailMsg = messages.find(msg => 
         msg.embeds.length > 0 && 
         (msg.embeds[0].description?.includes('Current Rank') || 
-         msg.embeds[0].description?.includes('Current Mastery') || 
          msg.embeds[0].description?.includes('Current Trophies') ||
          msg.embeds[0].description?.includes('Final Price'))
       );
@@ -1255,15 +1248,6 @@ async function sendOrderDetailsEmbed(ticketChannel, orderDetails) {
       `**Final Price:**\n` +
       `\`${orderDetails.price}\``;
   } 
-  else if (orderDetails.type === 'mastery') {
-    embedDescription = 
-      `**Current Mastery:**\n` +
-      `\`${orderDetails.current}\`\n\n` + 
-      `**Desired Mastery:**\n` +
-      `\`${orderDetails.desired}\`\n\n` +
-      `**Final Price:**\n` +
-      `\`${orderDetails.price}\``;
-  }
   else if (orderDetails.type === 'bulk' || orderDetails.type === 'trophies') {
     embedDescription = 
       `**Current Trophies:**\n` +
@@ -1328,7 +1312,6 @@ async function sendCryptoOtherPaymentEmbed(ticketChannel, userId, cryptoCoin) {
       msg.embeds.length > 0 && 
       (msg.embeds[0].title === 'Order Information' || 
        msg.embeds[0].description?.includes('Current Rank') ||
-       msg.embeds[0].description?.includes('Current Mastery') ||
        msg.embeds[0].description?.includes('Current Trophies'))
     );
     
@@ -1382,7 +1365,6 @@ Please wait for an owner to assist you, since fees apply, they will tell you wha
       msg.embeds.length > 0 && 
       (msg.embeds[0].title === 'Order Information' || 
        msg.embeds[0].description?.includes('Current Rank') ||
-       msg.embeds[0].description?.includes('Current Mastery') ||
        msg.embeds[0].description?.includes('Current Trophies'))
     );
     
@@ -1405,39 +1387,6 @@ Please wait for an owner to assist you, since fees apply, they will tell you wha
   });
 }
 
-// === Helper: Notify boosters once payment is confirmed ===
-async function sendPaymentConfirmedNotification(ticketChannel, orderDetails = {}) {
-  try {
-    const boosterRoleId = ROLE_IDS.BOOSTER || ROLE_IDS.BOOST_AVAILABLE || '1303702944696504441';
-
-    // Fallback text for order info
-    const descriptionLines = [];
-    if (orderDetails.current || orderDetails.target) {
-      descriptionLines.push(`**Current:** \`${orderDetails.current || 'N/A'}\``);
-      descriptionLines.push(`**Target:** \`${orderDetails.target || 'N/A'}\``);
-    }
-    if (orderDetails.amount) {
-      descriptionLines.push(`**Price:** \`${orderDetails.amount}\``);
-    }
-
-    const embed = new EmbedBuilder()
-      .setTitle('Boost Available')
-      .setColor(DEFAULT_EMBED_COLOR)
-      .setDescription(
-        descriptionLines.length > 0
-          ? descriptionLines.join('\n')
-          : 'A new boost is ready to be claimed.'
-      );
-
-    await ticketChannel.send({
-      content: `<@&${boosterRoleId}>`,
-      embeds: [embed]
-    });
-  } catch (error) {
-    console.error('[PAYMENT_NOTIFY] Error sending payment confirmed notification:', error);
-  }
-}
-
 module.exports = {
   sendWelcomeEmbed,
   sendPayPalTermsEmbed,
@@ -1446,7 +1395,6 @@ module.exports = {
   sendLitecoinEmbed,
   showCryptoSelection,
   sendIbanEmbed,
-  sendAppleGiftcardEmbed,
   sendBolGiftcardEmbed,
   sendTikkieEmbed,
   sendLinkExpiredEmbed,
@@ -1472,5 +1420,4 @@ module.exports = {
   handleSolanaTxModalSubmission,
   sendCryptoOtherPaymentEmbed,
   sendPayPalGiftcardOtherPaymentEmbed
-  ,sendPaymentConfirmedNotification
 }; 

@@ -13,7 +13,7 @@ module.exports = {
         .setRequired(true)
         .addChoices(
           { name: 'Rank Boosting', value: 'rank' },
-          { name: 'Mastery Boosting', value: 'mastery' },
+  
           { name: 'Trophy Boosting', value: 'trophies' },
           { name: 'Purchase Account', value: 'purchase' },
           { name: 'Help', value: 'help' }
@@ -62,7 +62,7 @@ module.exports = {
   getPanelTitle(type) {
     const titles = {
       rank: 'Rank Boosting',
-      mastery: 'Mastery Boosting',
+  
       trophies: 'Trophy Boosting',
       purchase: 'Purchase an Account',
       help: 'Help & Support'
@@ -73,7 +73,7 @@ module.exports = {
   getPanelDescription(type) {
     const descriptions = {
       rank: 'Click the button below to open a ticket for rank boosting services.',
-      mastery: 'Click the button below to open a ticket for mastery boosting services.',
+  
       trophies: 'Click the button below to open a ticket for trophy boosting services.',
       purchase: 'Click the button below to open a ticket to purchase an account.',
       help: 'Click the button below to open a ticket for help and support.'
@@ -84,7 +84,7 @@ module.exports = {
   getButtonLabel(type) {
     const labels = {
       rank: 'Rank Boost',
-      mastery: 'Mastery Boost',
+  
       trophies: 'Trophy Boost',
       purchase: 'Purchase Account',
       help: 'Help & Support'

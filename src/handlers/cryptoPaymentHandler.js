@@ -4,7 +4,6 @@ const {
   createCryptoTxForm, 
   verifyCryptoTransaction,
   sendCryptoWaitingEmbed,
-  sendPaymentConfirmationEmbedWithCountdown,
   sendInsufficientAmountEmbed
 } = require('../../ticketPayments.js');
 const { activeCryptoPayments } = require('../../ticketPayments.js');
@@ -132,7 +131,7 @@ async function handleCryptoTxFormSubmit(interaction) {
     
     if (verificationResult.verified) {
       // Success - send confirmation and remove from active payments
-      await sendPaymentConfirmationEmbedWithCountdown(interaction, coinType);
+      await createCryptoTxForm(interaction, coinType);
       activeCryptoPayments.delete(interaction.channel.id);
     } else {
       // Failed - handle different failure reasons

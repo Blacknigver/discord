@@ -52,6 +52,9 @@ const connectedPromise = new Promise(resolve => {
       client.release();
       // Resolve the connected promise so callers waiting for readiness can continue
       connectedPromiseResolve();
+      
+      // Start database keep-alive ping every 4 minutes to prevent cold starts
+      startDatabasePing();
     })
     .catch(err => {
       console.error('❌ Database connection failed.');
@@ -67,6 +70,58 @@ const connectedPromise = new Promise(resolve => {
       pool = null;
     });
 })();
+
+/**
+ * Database keep-alive ping function to prevent cold starts
+ */
+async function pingDatabase() {
+  if (!pool || !isConnected) {
+    return;
+  }
+  
+  try {
+    // Simple ping query to keep connection warm
+    const result = await pool.query('SELECT 1 as ping');
+    console.log(`[DB_PING] Database ping successful - Connection kept alive`);
+  } catch (error) {
+    console.error(`[DB_PING] Database ping failed: ${error.message}`);
+    // If ping fails, try to reconnect
+    isConnected = false;
+    setTimeout(() => {
+      if (pool) {
+        pool.connect()
+          .then(client => {
+            isConnected = true;
+            console.log('✅ Database reconnected after ping failure');
+            client.release();
+          })
+          .catch(err => {
+            console.error('❌ Database reconnection failed:', err.message);
+          });
+      }
+    }, 5000); // Wait 5 seconds before trying to reconnect
+  }
+}
+
+/**
+ * Start the database ping timer
+ */
+function startDatabasePing() {
+  if (!pool) {
+    return;
+  }
+  
+  console.log('[DB_PING] Starting database keep-alive ping every 4 minutes');
+  
+  // Ping every 4 minutes (240,000 milliseconds)
+  const pingInterval = setInterval(pingDatabase, 240000);
+  
+  // Also ping immediately after 30 seconds to ensure connection is active
+  setTimeout(pingDatabase, 30000);
+  
+  // Store the interval ID so we can clear it if needed
+  pool.pingInterval = pingInterval;
+}
 
 const query = async (text, params) => {
   if (!pool) {
@@ -115,5 +170,16 @@ module.exports = {
         resolve();
       });
     });
+  },
+  
+  /**
+   * Stop the database ping timer (useful for testing or shutdown)
+   */
+  stopDatabasePing() {
+    if (pool && pool.pingInterval) {
+      clearInterval(pool.pingInterval);
+      pool.pingInterval = null;
+      console.log('[DB_PING] Database keep-alive ping stopped');
+    }
   }
 };
