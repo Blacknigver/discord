@@ -11,7 +11,15 @@ const connectedPromise = new Promise(resolve => {
 
 (() => {
   // Prefer DATABASE_URL, otherwise build config from PGHOST… vars
-  const { DATABASE_URL, PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD } = process.env;
+  const {
+    DATABASE_URL,
+    PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD,
+    DATABASE_PROJECT_URL, DATABASE_PASSWORD,
+    // Generic explicit DB pieces (override if present)
+    DATABASE_HOST, DATABASE_NAME, DATABASE_USER, DATABASE_PORT,
+    // Supabase-specific explicit pieces
+    SUPABASE_DB_HOST, SUPABASE_DB_NAME, SUPABASE_DB_USER, SUPABASE_DB_PORT
+  } = process.env;
 
   let poolConfig = null;
 
@@ -21,6 +29,43 @@ const connectedPromise = new Promise(resolve => {
       ssl: { rejectUnauthorized: false },
       max: 5 // keep below Neon free-tier limit
     };
+  } else if (SUPABASE_DB_HOST || DATABASE_HOST) {
+    // Allow explicit host override (recommended: paste host from Supabase UI)
+    const host = SUPABASE_DB_HOST || DATABASE_HOST;
+    const user = SUPABASE_DB_USER || DATABASE_USER || 'postgres';
+    const dbName = SUPABASE_DB_NAME || DATABASE_NAME || 'postgres';
+    const port = parseInt(SUPABASE_DB_PORT || DATABASE_PORT || '5432', 10);
+    const encodedPass = encodeURIComponent(DATABASE_PASSWORD || PGPASSWORD || '');
+    const connectionString = `postgresql://${user}:${encodedPass}@${host}:${port}/${dbName}?sslmode=require`;
+    poolConfig = {
+      connectionString,
+      ssl: { rejectUnauthorized: false },
+      max: 5
+    };
+    console.log(`[DB] Using explicit DB host ${host}/${dbName}`);
+  } else if (!DATABASE_URL && DATABASE_PROJECT_URL && DATABASE_PASSWORD) {
+    // Construct a Supabase Postgres connection string from project URL and password
+    // Example: DATABASE_PROJECT_URL=https://<ref>.supabase.co
+    // Host should be db.<ref>.supabase.co, database defaults to 'postgres', user 'postgres'
+    try {
+      const project = DATABASE_PROJECT_URL
+        .replace(/^https?:\/\//, '')
+        .replace(/^db\./, '')
+        .replace(/\/$/, '');
+      const host = `db.${project}`;
+      const user = process.env.DATABASE_USER || 'postgres';
+      const dbName = process.env.DATABASE_NAME || 'postgres';
+      const encodedPass = encodeURIComponent(DATABASE_PASSWORD);
+      const connectionString = `postgresql://${user}:${encodedPass}@${host}:5432/${dbName}?sslmode=require`;
+      poolConfig = {
+        connectionString,
+        ssl: { rejectUnauthorized: false },
+        max: 5
+      };
+      console.log(`[DB] Using Supabase Postgres at ${host}/${dbName}`);
+    } catch (e) {
+      console.error('[DB] Failed constructing Supabase connection string from env:', e?.message || e);
+    }
   } else if (PGHOST && PGDATABASE && PGUSER) {
     poolConfig = {
       host: PGHOST,
@@ -52,9 +97,6 @@ const connectedPromise = new Promise(resolve => {
       client.release();
       // Resolve the connected promise so callers waiting for readiness can continue
       connectedPromiseResolve();
-      
-      // Start database keep-alive ping every 4 minutes to prevent cold starts
-      startDatabasePing();
     })
     .catch(err => {
       console.error('❌ Database connection failed.');
@@ -63,65 +105,14 @@ const connectedPromise = new Promise(resolve => {
 
       // Helpful hints for common mis-config (Neon, Render, Supabase …)
       console.warn('[DB] Verify that:');
-      console.warn(' • The DATABASE_URL/PG* env variables are set in Replit');
-      console.warn(' • The connection string ends with "?sslmode=require" (Neon)');
+      console.warn(' • One of DATABASE_URL or (DATABASE_PROJECT_URL + DATABASE_PASSWORD) or PG* vars is set');
+      console.warn(' • For Neon: the connection string ends with "?sslmode=require"');
+      console.warn(' • For Supabase: host should be db.<project-ref>.supabase.co and SSL enabled');
       console.warn(' • The database accepts external connections (firewall/pool)');
 
       pool = null;
     });
 })();
-
-/**
- * Database keep-alive ping function to prevent cold starts
- */
-async function pingDatabase() {
-  if (!pool || !isConnected) {
-    return;
-  }
-  
-  try {
-    // Simple ping query to keep connection warm
-    const result = await pool.query('SELECT 1 as ping');
-    console.log(`[DB_PING] Database ping successful - Connection kept alive`);
-  } catch (error) {
-    console.error(`[DB_PING] Database ping failed: ${error.message}`);
-    // If ping fails, try to reconnect
-    isConnected = false;
-    setTimeout(() => {
-      if (pool) {
-        pool.connect()
-          .then(client => {
-            isConnected = true;
-            console.log('✅ Database reconnected after ping failure');
-            client.release();
-          })
-          .catch(err => {
-            console.error('❌ Database reconnection failed:', err.message);
-          });
-      }
-    }, 5000); // Wait 5 seconds before trying to reconnect
-  }
-}
-
-/**
- * Start the database ping timer
- */
-function startDatabasePing() {
-  if (!pool) {
-    return;
-  }
-  
-  console.log('[DB_PING] Starting database keep-alive ping every 4 minutes');
-  
-  // Ping every 4 minutes (240,000 milliseconds)
-  const pingInterval = setInterval(pingDatabase, 240000);
-  
-  // Also ping immediately after 30 seconds to ensure connection is active
-  setTimeout(pingDatabase, 30000);
-  
-  // Store the interval ID so we can clear it if needed
-  pool.pingInterval = pingInterval;
-}
 
 const query = async (text, params) => {
   if (!pool) {

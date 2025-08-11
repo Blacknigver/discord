@@ -273,6 +273,11 @@ async function handleButtonInteraction(interaction, client) {
     if (customId === 'ticket_other') {
       return handleOtherFlow(interaction);
     }
+
+    if (customId === 'ticket_prestige') {
+      const { handlePrestigeFlow } = require('./modules/ticketFlow.js');
+      return handlePrestigeFlow(interaction);
+    }
     
     // Profile completion handlers
     if (customId.startsWith('upload_description_')) {
@@ -469,6 +474,10 @@ async function handleModalSubmitInteraction(interaction, client) {
 
     // Handle modal submissions based on other customIds
     // Example: if (modalId === 'rank_details') { ... }
+    if (modalId === 'modal_prestige_brawler') {
+      const { handlePrestigeBrawlerModal } = require('./modules/modalHandlers.js');
+      return handlePrestigeBrawlerModal(interaction);
+    }
     
   } catch (error) {
     console.error(`[MODAL] Error handling modal submit: ${error.message}`);

@@ -334,6 +334,92 @@ client.once(Events.ClientReady, async readyClient => {
   }
 });
 
+/**
+ * Handle first user message in ticket channel for automatic payment notification
+ * @param {Message} message - The Discord message object
+ */
+async function handleFirstUserMessage(message) {
+  try {
+    // Only check ticket channels for ticket creators
+    const channelName = message.channel.name.toLowerCase();
+    const isTicketChannel = channelName.includes('ticket') || channelName.includes('ranked') || 
+                           channelName.includes('trophy') || channelName.includes('bulk') || 
+                           channelName.includes('other');
+    
+    if (!isTicketChannel) return;
+    
+    // Check if user is the ticket creator by checking channel topic or name
+    let isTicketCreator = false;
+    
+    // Method 1: Check channel topic for user ID
+    if (message.channel.topic) {
+      const topicMatch = message.channel.topic.match(/User ID:\s*(\d+)/);
+      if (topicMatch && topicMatch[1] === message.author.id) {
+        isTicketCreator = true;
+      }
+    }
+    
+    // Method 2: Check if username is in channel name (fallback)
+    if (!isTicketCreator) {
+      const sanitizedUsername = message.author.username.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase();
+      if (channelName.includes(sanitizedUsername)) {
+        isTicketCreator = true;
+      }
+    }
+    
+    if (!isTicketCreator) return;
+    
+    // Check if this is their first message AND they are the first real user to send a message
+    const messages = await message.channel.messages.fetch({ limit: 50 });
+    
+    // Get all messages from the ticket creator (non-bot)
+    const ticketCreatorMessages = messages.filter(msg => msg.author.id === message.author.id && !msg.author.bot);
+    
+    // Get all messages from ANY real user (non-bot) 
+    const allRealUserMessages = messages.filter(msg => !msg.author.bot);
+    
+    // Only proceed if:
+    // 1. This is the ticket creator's first message (ticketCreatorMessages.size === 1)
+    // 2. AND this is the first real user message in the channel (allRealUserMessages.size === 1)
+    if (ticketCreatorMessages.size === 1 && allRealUserMessages.size === 1) {
+      // Check if this is an automatic payment (PayPal or Crypto) from ticket panel boosts/carries
+      let isAutomaticPayment = false;
+      
+      // Look for payment method in channel topic or recent messages
+      const channelTopic = message.channel.topic || '';
+      const recentMessages = await message.channel.messages.fetch({ limit: 20 });
+      
+      // Check for PayPal or Crypto payment embeds in recent messages
+      for (const [_, msg] of recentMessages) {
+        if (msg.embeds && msg.embeds.length > 0) {
+          const embedTitle = msg.embeds[0].title || '';
+          if (embedTitle.includes('PayPal Payment Information') || 
+              embedTitle.includes('Bitcoin Payment Information') ||
+              embedTitle.includes('Litecoin Payment Information') ||
+              embedTitle.includes('Solana Payment Information')) {
+            // Additional check: make sure this is NOT a purchase profile ticket
+            if (!channelName.includes('profile') && !channelName.includes('purchase')) {
+              isAutomaticPayment = true;
+              break;
+            }
+          }
+        }
+      }
+      
+      // Send automatic payment message if this is an automatic payment
+      if (isAutomaticPayment) {
+        await message.channel.send({
+          content: '**This process is fully automatic. <a:CheckPurple:1393717601376403486>\n\nYou can send the payment already, don\'t worry! <:moneyy:1391899345208606772>**'
+        });
+        
+        console.log(`[FIRST_MESSAGE] Sent automatic payment notification to ${message.author.username} in ${message.channel.name} (first real user message)`);
+      }
+    }
+  } catch (error) {
+    console.error(`[FIRST_MESSAGE] Error handling first user message: ${error.message}`);
+  }
+}
+
 // Handle message commands and user messages for auto-close reset
 client.on(Events.MessageCreate, async message => {
   // Ignore messages from bots
@@ -344,6 +430,9 @@ client.on(Events.MessageCreate, async message => {
     try {
       const { handleUserMessage } = require('./tickets.js');
       await handleUserMessage(message.channel.id, message.author.id);
+      
+      // Check if this is the user's first message for automatic payment notification
+      await handleFirstUserMessage(message);
     } catch (error) {
       console.error(`[MESSAGE_HANDLER] Error handling user message for auto-close: ${error.message}`);
     }

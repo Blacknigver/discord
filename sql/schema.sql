@@ -1,6 +1,10 @@
 -- schema.sql
 -- Invite & Ticket tracking database schema (generated July 7 2025)
 
+-- NOTE: This schema is compatible with Supabase (PostgreSQL). Run it in the
+-- Supabase SQL Editor. All tables, indexes and constraints used by the bot
+-- are defined below. If you re-run, IF NOT EXISTS guards keep it idempotent.
+
 -- === Invite-Tracking ===
 CREATE TABLE IF NOT EXISTS guild_invites (
     guild_id     TEXT NOT NULL,
@@ -94,11 +98,100 @@ CREATE TABLE IF NOT EXISTS tickets (
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
 CREATE INDEX IF NOT EXISTS idx_tickets_listing ON tickets(listing_id);
 
+-- === PayPal IPN Data Storage ===
+CREATE TABLE IF NOT EXISTS paypal_ipn_notifications (
+    id               SERIAL PRIMARY KEY,
+    txn_id           TEXT NOT NULL UNIQUE,        -- PayPal transaction ID
+    ipn_track_id     TEXT NOT NULL,               -- PayPal IPN tracking ID
+    txn_type         TEXT NOT NULL,               -- transaction type (send_money = Friends & Family)
+    payment_status   TEXT NOT NULL,               -- Completed, Pending, etc.
+    payment_date     TEXT NOT NULL,               -- PayPal formatted timestamp
+    
+    -- Receiver info (our account)
+    receiver_email   TEXT NOT NULL,               -- Our PayPal email
+    receiver_id      TEXT NOT NULL,               -- Our PayPal account ID
+    
+    -- Amount info
+    mc_gross         DECIMAL(10,2) NOT NULL,      -- Gross amount received
+    mc_fee           DECIMAL(10,2) NOT NULL,      -- PayPal fee (0.00 for F&F)
+    mc_currency      TEXT NOT NULL,               -- Currency code
+    
+    -- Sender info
+    payer_email      TEXT NOT NULL,               -- Sender's PayPal email
+    payer_id         TEXT NOT NULL,               -- Sender's PayPal account ID
+    first_name       TEXT NOT NULL,               -- Sender first name
+    last_name        TEXT NOT NULL,               -- Sender last name
+    payer_status     TEXT NOT NULL,               -- verified/unverified
+    
+    -- Transaction details
+    memo             TEXT,                        -- Note/memo (should be empty for F&F)
+    transaction_subject TEXT,                     -- Subject line
+    payment_type     TEXT NOT NULL,               -- instant/echeck
+    pending_reason   TEXT,                        -- Why payment is pending
+    
+    -- Fraud/Risk flags
+    has_fraud_filters BOOLEAN NOT NULL DEFAULT FALSE, -- Any fraud_management_pending_filters_* present
+    fraud_filter_details TEXT,                   -- Details of fraud filters if any
+    
+    -- Metadata
+    received_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+    processed        BOOLEAN NOT NULL DEFAULT FALSE,  -- Whether this IPN was used for verification
+    ticket_channel_id TEXT,                      -- Channel ID where this was used for verification
+    
+    -- Raw IPN data for debugging
+    raw_ipn_data     JSONB                       -- Full IPN payload as JSON
+);
+
 -- === Account Listings Indexes ===
 CREATE INDEX IF NOT EXISTS idx_listings_status ON account_listings(status);
 CREATE INDEX IF NOT EXISTS idx_listings_seller ON account_listings(seller_id);
 CREATE INDEX IF NOT EXISTS idx_listings_message ON account_listings(message_id);
+
+-- === PayPal IPN Indexes ===
+-- Basic index for lookups by txn_id
+CREATE INDEX IF NOT EXISTS idx_ipn_txn_id ON paypal_ipn_notifications(txn_id);
+
+-- Ensure no duplicate PayPal transactions can ever be stored (Supabase-safe)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'unique_paypal_txn'
+      AND conrelid = 'paypal_ipn_notifications'::regclass
+  ) THEN
+    ALTER TABLE paypal_ipn_notifications
+      ADD CONSTRAINT unique_paypal_txn UNIQUE(txn_id);
+  END IF;
+END
+$$;
+CREATE INDEX IF NOT EXISTS idx_ipn_names ON paypal_ipn_notifications(first_name, last_name);
+CREATE INDEX IF NOT EXISTS idx_ipn_processed ON paypal_ipn_notifications(processed);
+CREATE INDEX IF NOT EXISTS idx_ipn_received_at ON paypal_ipn_notifications(received_at);
 CREATE INDEX IF NOT EXISTS idx_listings_created ON account_listings(created_at);
+
+-- === PayPal AI Verifications ===
+CREATE TABLE IF NOT EXISTS paypal_ai_verifications (
+    id                SERIAL PRIMARY KEY,
+    user_id           TEXT NOT NULL,               -- Discord user ID
+    channel_id        TEXT NOT NULL,               -- Ticket channel ID
+    txn_id            TEXT NOT NULL,               -- PayPal transaction ID from IPN
+    screenshot_url    TEXT NOT NULL,               -- URL of the screenshot provided by user
+    ipn_data          JSONB NOT NULL,              -- IPN verification result data
+    ai_result         JSONB,                       -- OpenAI verification result
+    status            TEXT NOT NULL DEFAULT 'processing', -- processing | approved | rejected
+    final_status      TEXT,                        -- approved | rejected (final decision)
+    created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
+    completed_at      TIMESTAMP,                   -- When AI verification completed
+    verified_by       TEXT,                        -- Staff member who manually overrode (if any)
+    notes             TEXT                         -- Additional notes for manual overrides
+);
+
+-- === PayPal AI Verification Indexes ===
+CREATE INDEX IF NOT EXISTS idx_ai_verifications_user ON paypal_ai_verifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_verifications_txn ON paypal_ai_verifications(txn_id);
+CREATE INDEX IF NOT EXISTS idx_ai_verifications_status ON paypal_ai_verifications(status);
+CREATE INDEX IF NOT EXISTS idx_ai_verifications_created ON paypal_ai_verifications(created_at);
 
 -- === House-keeping ===
 -- You can run this file once (or every deploy) to ensure tables exist:
@@ -212,3 +305,67 @@ CREATE TABLE IF NOT EXISTS scheduled_embeds (
 CREATE INDEX IF NOT EXISTS idx_scheduled_embeds_channel ON scheduled_embeds(channel_id);
 CREATE INDEX IF NOT EXISTS idx_scheduled_embeds_next_send ON scheduled_embeds(next_send_at);
 CREATE INDEX IF NOT EXISTS idx_scheduled_embeds_type ON scheduled_embeds(embed_type); 
+
+-- === Automated Crypto Payment System ===
+-- Track crypto payments for automated verification
+CREATE TABLE IF NOT EXISTS crypto_payments (
+    id SERIAL PRIMARY KEY,
+    ticket_channel_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    crypto_type TEXT NOT NULL CHECK (crypto_type IN ('bitcoin', 'litecoin', 'solana')),
+    
+    -- Amount information
+    eur_amount DECIMAL(10,2) NOT NULL,           -- Original EUR amount
+    crypto_amount DECIMAL(20,8) NOT NULL,        -- Expected crypto amount (up to 8 decimals)
+    exchange_rate DECIMAL(20,8) NOT NULL,        -- EUR to crypto rate when calculated
+    
+    -- Our receiving addresses
+    our_address TEXT NOT NULL,                   -- Address we expect to receive payment to
+    
+    -- Transaction details (filled when user submits form)
+    transaction_id TEXT UNIQUE,                  -- UNIQUE globally - prevents transaction reuse
+    sender_address TEXT,                         -- Address user sent from
+    actual_amount DECIMAL(20,8),                 -- Actual amount received
+    
+    -- Status tracking
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'submitted', 'confirming', 'confirmed', 'failed', 'timeout', 'support_requested')),
+    confirmation_count INTEGER DEFAULT 0,
+    confirmation_target INTEGER NOT NULL,        -- Required confirmations for this crypto
+    
+    -- Timing
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    submitted_at TIMESTAMP,                      -- When user submitted payment completed form
+    confirmed_at TIMESTAMP,                      -- When payment was fully confirmed
+    timeout_at TIMESTAMP NOT NULL,               -- When payment times out (created_at + 30 minutes)
+    
+    -- Support system
+    support_message_id TEXT,                     -- Message ID of support request embed
+    support_resolved BOOLEAN DEFAULT FALSE
+);
+
+-- Track user rate limiting for payment verification attempts
+CREATE TABLE IF NOT EXISTS crypto_rate_limits (
+    user_id TEXT PRIMARY KEY,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    window_start TIMESTAMP NOT NULL DEFAULT NOW(),
+    last_attempt TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Track pending confirmation checks (for the 5-minute checking system)
+CREATE TABLE IF NOT EXISTS crypto_confirmations (
+    payment_id INTEGER PRIMARY KEY REFERENCES crypto_payments(id) ON DELETE CASCADE,
+    next_check_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    check_count INTEGER NOT NULL DEFAULT 0,
+    max_checks INTEGER NOT NULL DEFAULT 12,      -- 12 checks = 1 hour (every 5 minutes)
+    last_checked_at TIMESTAMP,
+    api_data JSONB                               -- Store latest API response for debugging
+);
+
+-- Crypto payment indexes for performance
+CREATE INDEX IF NOT EXISTS idx_crypto_payments_ticket ON crypto_payments(ticket_channel_id);
+CREATE INDEX IF NOT EXISTS idx_crypto_payments_user ON crypto_payments(user_id);
+CREATE INDEX IF NOT EXISTS idx_crypto_payments_status ON crypto_payments(status);
+CREATE INDEX IF NOT EXISTS idx_crypto_payments_txid ON crypto_payments(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_crypto_payments_timeout ON crypto_payments(timeout_at);
+CREATE INDEX IF NOT EXISTS idx_crypto_rate_limits_user ON crypto_rate_limits(user_id);
+CREATE INDEX IF NOT EXISTS idx_crypto_confirmations_next_check ON crypto_confirmations(next_check_at); 

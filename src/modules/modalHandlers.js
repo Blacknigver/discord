@@ -49,6 +49,40 @@ async function handleOtherRequestModal(interaction) {
   }
 }
 
+// Handle prestige brawler modal submission
+async function handlePrestigeBrawlerModal(interaction) {
+  try {
+    const brawler = interaction.fields.getTextInputValue('prestige_brawler').trim();
+    let userData = flowState.get(interaction.user.id) || {};
+    userData = { ...userData, type: 'prestige', prestigeBrawler: brawler, step: 'prestige_type' };
+    flowState.set(interaction.user.id, userData);
+
+    // Send embed with prestige type options
+    const embed = new djs.EmbedBuilder()
+      .setTitle('Type of Prestige')
+      .setColor(EMBED_COLOR)
+      .setDescription(
+        'What `Type of Prestige` would you like to order?\n\n' +
+        '- <:prestige:1404458124017926274> **Prestige of our Choice:** `€40`\n' +
+        '- <:prestige:1404458124017926274> **Prestige of your Choice:** `€60`\n' +
+        '-# These are the prices from 1000 trophies, if your brawler is below/above 1000 trophies open a ticket to discuss the prices.'
+      );
+
+    const row = new djs.ActionRowBuilder().addComponents(
+      new djs.ButtonBuilder().setCustomId('prestige_our').setLabel('Prestige of our Choice').setEmoji('<:prestige:1404458124017926274>').setStyle(djs.ButtonStyle.Success),
+      new djs.ButtonBuilder().setCustomId('prestige_your').setLabel('Prestige of your Choice').setEmoji('<:prestige:1404458124017926274>').setStyle(djs.ButtonStyle.Primary)
+    );
+
+    // We can reply ephemerally since the flow uses ephemeral messages elsewhere
+    return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+  } catch (error) {
+    console.error('[PRESTIGE_MODAL] Error handling prestige brawler modal:', error);
+    if (!interaction.replied && !interaction.deferred) {
+      return interaction.reply({ content: 'There was an error. Please try again.', ephemeral: true });
+    }
+  }
+}
+
 /**
  * Handle crypto transaction verification form submission
  * @param {ModalSubmitInteraction} interaction - The interaction object
@@ -209,6 +243,7 @@ module.exports = {
   handleTrophiesStartModal,
   handleBulkTrophiesModal,
   handleOtherRequestModal,
+  handlePrestigeBrawlerModal,
   handleCryptoTxForm,
   modalHandlers: {
     'crypto_tx_form_ltc': handleCryptoTxForm,
@@ -216,6 +251,7 @@ module.exports = {
     'crypto_tx_form_btc': handleCryptoTxForm,
     'modal_trophies_start': handleTrophiesStartModal,
     'modal_bulk_trophies': handleBulkTrophiesModal,
-    'modal_other_request': handleOtherRequestModal
+    'modal_other_request': handleOtherRequestModal,
+    'modal_prestige_brawler': handlePrestigeBrawlerModal
   }
 }; 

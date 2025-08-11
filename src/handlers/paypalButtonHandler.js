@@ -5,7 +5,10 @@ const {
   ButtonBuilder, 
   ButtonStyle, 
   PermissionsBitField,
-  PermissionFlagsBits 
+  PermissionFlagsBits,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
 } = require('discord.js');
 const config = require('../../config');
 const { 
@@ -245,260 +248,46 @@ async function handlePayPalPaymentCompleted(interaction, client) {
       });
     }
     
-    // Disable the buttons on the original message
-    const message = interaction.message;
-    const disabledRow = new ActionRowBuilder();
+    // Show PayPal email collection modal immediately
+    const modal = new ModalBuilder()
+      .setCustomId('paypal_email_modal')
+      .setTitle('PayPal Account Verification');
+
+    const emailInput = new TextInputBuilder()
+      .setCustomId('paypal_email')
+      .setLabel('PayPal E-mail')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('The e-mail on the PayPal account you sent the money from')
+      .setRequired(true)
+      .setMaxLength(100);
+
+    const emailRow = new ActionRowBuilder().addComponents(emailInput);
     
-    // Get the original components and disable them
-    message.components[0].components.forEach(component => {
-      disabledRow.addComponents(
-        ButtonBuilder.from(component).setDisabled(true)
-      );
-    });
+    modal.addComponents(emailRow);
     
-    // Update the message with disabled buttons
-    await interaction.update({ components: [disabledRow] });
+    // Show the modal directly
+    await interaction.showModal(modal);
     
-    // Grant file upload permissions to the user
-    try {
-      await interaction.channel.permissionOverwrites.edit(interaction.user.id, {
-        AttachFiles: true,
-        SendMessages: true
-      });
-      console.log(`[PAYPAL_BUTTON] Granted file upload permissions to user ${interaction.user.id}`);
-    } catch (permError) {
-      console.error(`[PAYPAL_BUTTON] Error granting file permissions: ${permError.message}`);
-    }
-    
-    // Send screenshot request embed
-    const screenshotEmbed = await sendPayPalScreenshotRequestEmbed(interaction.channel, interaction.user.id);
-    
-    // Create a message collector that will listen for ANY message from the user
-    const filter = m => m.author.id === interaction.user.id;
-    
-    // Create collector with a 5 minute timeout
-    const collector = interaction.channel.createMessageCollector({ 
-      filter, 
-      time: 300000 // 5 minutes
-    });
-    
-    // Inform the user we're waiting for a screenshot
-    await interaction.followUp({
-      content: `Please upload a screenshot of your payment. I'll wait for 5 minutes.`,
-      ephemeral: true
-    });
-    
-    let hasProcessedScreenshot = false;
-    
-    collector.on('collect', async (message) => {
-      console.log(`[PAYPAL_BUTTON] Collected message from ${interaction.user.id}: ${message.content || 'No content'}, attachments: ${message.attachments.size}`);
-      
-      let screenshotUrl = null;
-      
-      // Check if the message has an image attachment
-      if (message.attachments.size > 0) {
-        const attachment = message.attachments.first();
+    // Disable the buttons on the original message in a separate step
+    setTimeout(async () => {
+      try {
+        const message = await interaction.channel.messages.fetch(interaction.message.id);
+        const disabledRow = new ActionRowBuilder();
         
-        // Check if it's an image
-        if (attachment.contentType && attachment.contentType.startsWith('image/')) {
-          console.log(`[PAYPAL_BUTTON] User ${interaction.user.id} sent an image attachment: ${attachment.url}`);
-          screenshotUrl = attachment.url;
-        }
-      }
-      
-      // Check if the message contains an image URL (imgur, Discord CDN, etc.)
-      if (!screenshotUrl && message.content) {
-        // Regex patterns for common image hosting sites and Discord CDN
-        const imageUrlPatterns = [
-          /https?:\/\/i\.imgur\.com\/[^\s]+\.(?:png|jpe?g|gif|webp)/i,
-          /https?:\/\/imgur\.com\/[^\s]+\.(?:png|jpe?g|gif|webp)/i,
-          /https?:\/\/media\.discordapp\.net\/attachments\/[^\s]+\.(?:png|jpe?g|gif|webp)/i,
-          /https?:\/\/cdn\.discordapp\.com\/attachments\/[^\s]+\.(?:png|jpe?g|gif|webp)/i,
-          /https?:\/\/[^\s]+\.(?:png|jpe?g|gif|webp)/i // Generic image URL pattern
-        ];
-        
-        for (const pattern of imageUrlPatterns) {
-          const match = message.content.match(pattern);
-          if (match) {
-            screenshotUrl = match[0];
-            console.log(`[PAYPAL_BUTTON] User ${interaction.user.id} sent an image URL: ${screenshotUrl}`);
-            break;
-          }
-        }
-      }
-      
-      // Process the screenshot if we found one
-      if (screenshotUrl && !hasProcessedScreenshot) {
-        hasProcessedScreenshot = true;
-        
-        // Find the PayPal payment information message to reply to
-        try {
-          // Fetch many more messages to ensure we find the payment info message
-          const messages = await interaction.channel.messages.fetch({ limit: 100 });
-          let paymentInfoMessage = null;
-          
-          console.log(`[PAYPAL_BUTTON] Searching through ${messages.size} messages for PayPal info message`);
-          
-          for (const [_, msg] of messages) {
-            if (msg.embeds?.length > 0) {
-              // Check for exact PayPal Payment Information title
-              if (msg.embeds[0].title === 'PayPal Payment Information:' || 
-                  msg.embeds[0].title === 'PayPal Payment Information') {
-                paymentInfoMessage = msg;
-                console.log(`[PAYPAL_BUTTON] Found PayPal info message with ID: ${msg.id}`);
-                break;
-              }
-              
-              // Log all embed titles to help debug
-              console.log(`[PAYPAL_BUTTON] Message ${msg.id} has embed with title: "${msg.embeds[0].title}"`);
-            }
-          }
-        
-          // Get verifier ID (only one verifier, not double pinging)
-          const verifierId = '986164993080836096';
-          
-          // If we found the payment info message, reply to it
-          if (paymentInfoMessage) {
-            console.log(`[PAYPAL_BUTTON] Replying to PayPal info message with verification`);
-            await paymentInfoMessage.reply({
-              content: `<@${verifierId}>`,
-              embeds: [
-                new EmbedBuilder()
-                  .setTitle('Payment Completed')
-                  .setDescription(`<@${interaction.user.id}> has marked the Payment as completed.\n\nPlease confirm the payment has been received.`)
-                  .setColor('#e68df2')
-                  .setImage(screenshotUrl)
-              ],
-              components: [
-                new ActionRowBuilder().addComponents(
-                  new ButtonBuilder()
-                    .setCustomId('payment_received')
-                    .setLabel('Payment Received')
-                    .setStyle(ButtonStyle.Success)
-                    .setEmoji('<:checkmark:1357478063616688304>'),
-                  new ButtonBuilder()
-                    .setCustomId('payment_not_received')
-                    .setLabel('Not Received')
-                    .setStyle(ButtonStyle.Danger)
-                    .setEmoji('<:cross:1351689463453061130>')
-                )
-              ]
-            });
-            console.log(`[PAYPAL_BUTTON] Sent payment verification as reply to PayPal info`);
-          } else {
-            // Fallback: Send as a new message
-            await interaction.channel.send({
-              content: `<@${verifierId}>`,
-              embeds: [
-                new EmbedBuilder()
-                  .setTitle('Payment Completed')
-                  .setDescription(`<@${interaction.user.id}> has marked the Payment as completed.\n\nPlease confirm the payment has been received.`)
-                  .setColor('#e68df2')
-                  .setImage(screenshotUrl)
-              ],
-              components: [
-                new ActionRowBuilder().addComponents(
-                  new ButtonBuilder()
-                    .setCustomId('payment_received')
-                    .setLabel('Payment Received')
-                    .setStyle(ButtonStyle.Success)
-                    .setEmoji('<:checkmark:1357478063616688304>'),
-                  new ButtonBuilder()
-                    .setCustomId('payment_not_received')
-                    .setLabel('Not Received')
-                    .setStyle(ButtonStyle.Danger)
-                    .setEmoji('<:cross:1351689463453061130>')
-                )
-              ]
-            });
-            console.log(`[PAYPAL_BUTTON] Sent payment verification as new message (fallback)`);
-          }
-        } catch (error) {
-          console.error(`[PAYPAL_BUTTON] Error sending verification: ${error.message}`);
-          
-          // Final fallback if all else fails
-          await interaction.channel.send({
-            content: `<@${verifierId}>`,
-            embeds: [
-              new EmbedBuilder()
-                .setTitle('Payment Completed')
-                .setDescription(`<@${interaction.user.id}> has marked the Payment as completed.\n\nPlease confirm the payment has been received.`)
-                .setColor('#e68df2')
-                .setImage(screenshotUrl)
-            ],
-            components: [
-              new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                  .setCustomId('payment_received')
-                  .setLabel('Payment Received')
-                  .setStyle(ButtonStyle.Success)
-                  .setEmoji('<:checkmark:1357478063616688304>'),
-                new ButtonBuilder()
-                  .setCustomId('payment_not_received')
-                  .setLabel('Not Received')
-                  .setStyle(ButtonStyle.Danger)
-                  .setEmoji('<:cross:1351689463453061130>')
-              )
-            ]
-          });
-        }
-        
-        // Stop the collector since we got what we needed
-        collector.stop('screenshot_received');
-      } else if (!screenshotUrl && !hasProcessedScreenshot) {
-        // User sent something that's not a valid image
-        await message.reply(`Please upload a screenshot (image file) or provide an image URL (like imgur or Discord attachment link) showing your payment.`);
-      }
-    });
-    
-    collector.on('end', async (collected, reason) => {
-      console.log(`[PAYPAL_BUTTON] Collector ended with reason: ${reason}, messages collected: ${collected.size}`);
-      
-      if (reason !== 'screenshot_received' && !hasProcessedScreenshot) {
-        // If no valid screenshot was received, re-enable the Payment Completed button
-        try {
-          // Find the PayPal Payment Information message to re-enable its buttons
-          const messages = await interaction.channel.messages.fetch({ limit: 100 });
-          let paymentInfoMessage = null;
-          
-          console.log(`[PAYPAL_BUTTON] Searching for PayPal info message to re-enable buttons`);
-          
-          for (const [_, msg] of messages) {
-            if (msg.embeds?.length > 0) {
-              // Check for exact PayPal Payment Information title
-              if (msg.embeds[0].title === 'PayPal Payment Information:' || 
-                  msg.embeds[0].title === 'PayPal Payment Information') {
-                paymentInfoMessage = msg;
-                console.log(`[PAYPAL_BUTTON] Found PayPal info message with ID: ${msg.id} to re-enable`);
-                break;
-              }
-            }
-          }
-          
-          // Re-enable the buttons on the PayPal info message
-          if (paymentInfoMessage && paymentInfoMessage.components && paymentInfoMessage.components.length > 0) {
-            const enabledRow = new ActionRowBuilder();
-            
-            // Get the original components and enable them
-            paymentInfoMessage.components[0].components.forEach(component => {
-              enabledRow.addComponents(
-                ButtonBuilder.from(component).setDisabled(false)
+        if (message.components && message.components.length > 0) {
+          message.components[0].components.forEach(component => {
+            disabledRow.addComponents(
+              ButtonBuilder.from(component).setDisabled(true)
               );
             });
             
-            await paymentInfoMessage.edit({ components: [enabledRow] });
-            console.log(`[PAYPAL_BUTTON] Re-enabled buttons on PayPal info message after timeout`);
+          await message.edit({ components: [disabledRow] });
+          console.log(`[PAYPAL_BUTTON] Disabled payment buttons after modal shown`);
           }
-        } catch (enableError) {
-          console.error(`[PAYPAL_BUTTON] Error re-enabling Payment Completed button: ${enableError.message}`);
+      } catch (error) {
+        console.error(`[PAYPAL_BUTTON] Error disabling buttons: ${error.message}`);
         }
-        
-        // Send timeout message
-        await interaction.channel.send({
-          content: `<@${interaction.user.id}> You didn't send a valid payment screenshot. Please click the 'Payment Completed' button again to try again.`
-        });
-      }
-    });
+    }, 1000);
     
     return true;
   } catch (error) {
@@ -669,6 +458,10 @@ async function handlePayPalPaymentReceived(interaction) {
       // Clean up payment messages FIRST
       const { cleanupMessages } = require('../utils/messageCleanup.js');
       await cleanupMessages(interaction.channel, null, 'payment_confirmed');
+      
+      // Log successful PayPal payment to logging channel
+      const { sendSuccessfulPayPalPaymentLog } = require('../../ticketPayments');
+      await sendSuccessfulPayPalPaymentLog(interaction.client, interaction.channel.id, creatorId, 'PayPal');
       
       // Send boost available embed with extracted details (DO NOT pass deleted message)
       const { sendBoostAvailableEmbed } = require('../../ticketPayments');
@@ -991,6 +784,357 @@ async function handleClaimBoost(interaction) {
   }
 }
 
+/**
+ * Handle PayPal support request buttons
+ */
+async function handlePayPalSupportRequest(interaction) {
+  try {
+    const customId = interaction.customId;
+    const userId = interaction.user.id;
+    
+    console.log(`[PAYPAL_SUPPORT] User ${userId} clicked support request button: ${customId}`);
+    
+    // Extract user ID from custom ID
+    let requestedUserId;
+    if (customId.startsWith('paypal_request_support_')) {
+      requestedUserId = customId.replace('paypal_request_support_', '');
+    } else if (customId.startsWith('paypal_ai_support_')) {
+      const parts = customId.split('_');
+      requestedUserId = parts[3]; // paypal_ai_support_userId_verificationId
+    }
+    
+    // Verify the user clicking is the same as the one who requested
+    if (userId !== requestedUserId) {
+      return interaction.reply({
+        content: 'Only the person who made the payment request can ask for support.',
+        ephemeral: true
+      });
+    }
+    
+    // Disable the button
+    const message = interaction.message;
+    const disabledComponents = [];
+    
+    if (message.components) {
+      for (const row of message.components) {
+        const disabledRow = new ActionRowBuilder();
+        for (const component of row.components) {
+          if (component.customId === customId) {
+            // Disable this specific button
+            disabledRow.addComponents(
+              ButtonBuilder.from(component).setDisabled(true).setLabel('Support Requested')
+            );
+          } else {
+            // Keep other buttons unchanged
+            disabledRow.addComponents(ButtonBuilder.from(component));
+          }
+        }
+        disabledComponents.push(disabledRow);
+      }
+    }
+    
+    await interaction.update({ components: disabledComponents });
+    
+    // Send support request to staff
+    const ownerId = '987751357773672538';
+    const verifierId = '986164993080836096';
+    
+    const supportEmbed = new EmbedBuilder()
+      .setTitle('PayPal Payment Support Request')
+      .setColor('#FFA500')
+      .setDescription(`<@${userId}> has requested support for their PayPal payment verification.\n\nPlease review the payment details and assist the customer.`)
+      .setTimestamp();
+    
+    await interaction.followUp({
+      content: `<@${ownerId}> <@${verifierId}>`,
+      embeds: [supportEmbed],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`paypal_support_resolve_${userId}`)
+            .setLabel('Mark as Resolved')
+            .setStyle(ButtonStyle.Success)
+            .setEmoji('<:checkmark:1357478063616688304>')
+        )
+      ]
+    });
+    
+    // Send confirmation to user
+    await interaction.followUp({
+      content: 'Support has been notified about your PayPal payment issue. They will assist you shortly.',
+      ephemeral: true
+    });
+    
+    return true;
+    
+  } catch (error) {
+    console.error(`[PAYPAL_SUPPORT] Error handling support request: ${error.message}`);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'An error occurred while requesting support. Please contact staff directly.',
+        ephemeral: true
+      });
+    }
+    return false;
+  }
+}
+
+/**
+ * Handle manual PayPal approval by staff
+ */
+async function handlePayPalManualApprove(interaction) {
+  try {
+    const customId = interaction.customId;
+    const staffId = interaction.user.id;
+    
+    // Extract user ID from custom ID
+    const userId = customId.replace('paypal_manual_approve_', '');
+    
+    console.log(`[PAYPAL_MANUAL] Staff ${staffId} manually approving PayPal payment for user ${userId}`);
+    
+    // Check if user is authorized staff
+    const authorizedStaff = ['986164993080836096', '987751357773672538'];
+    if (!authorizedStaff.includes(staffId)) {
+      return interaction.reply({
+        content: 'Only authorized staff can manually approve payments.',
+        ephemeral: true
+      });
+    }
+    
+    // Disable the buttons
+    const message = interaction.message;
+    const disabledRow = new ActionRowBuilder();
+    
+    if (message.components && message.components.length > 0) {
+      message.components[0].components.forEach(component => {
+        disabledRow.addComponents(
+          ButtonBuilder.from(component).setDisabled(true)
+        );
+      });
+    }
+    
+    await interaction.update({ components: [disabledRow] });
+    
+    // Extract order details for boost available embed
+    let orderDetails = {};
+    try {
+      const topic = interaction.channel.topic || '';
+      const topicMatch = topic.match(/Type:\s*(\w+).*?Price:\s*([€$]?[\d,.]+).*?From:\s*([^|]+)\s*to\s*([^|]+)/i);
+      if (topicMatch) {
+        orderDetails = {
+          type: topicMatch[1],
+          price: topicMatch[2],
+          current: topicMatch[3].trim(),
+          desired: topicMatch[4].trim()
+        };
+      }
+    } catch (error) {
+      console.error(`[PAYPAL_MANUAL] Error extracting order details: ${error.message}`);
+    }
+    
+    // Clean up payment messages
+    const { cleanupMessages } = require('../utils/messageCleanup.js');
+    await cleanupMessages(interaction.channel, null, 'payment_confirmed');
+    
+    // Log successful PayPal payment with manual note
+    const { sendSuccessfulPayPalPaymentLog } = require('../../ticketPayments');
+    await sendSuccessfulPayPalPaymentLog(interaction.client, interaction.channel.id, userId, 'PayPal (Manual Override)');
+    
+    // Send boost available embed
+    const { sendBoostAvailableEmbed } = require('../../ticketPayments');
+    const config = require('../../config');
+    await sendBoostAvailableEmbed(interaction.channel, orderDetails, userId, config.ROLES.BOOSTER_ROLE, null);
+    
+    // Send confirmation
+    await interaction.followUp({
+      content: `✅ Payment manually approved by <@${staffId}>. Proceeding to boost available.`,
+      ephemeral: false
+    });
+    
+    console.log(`[PAYPAL_MANUAL] Manual approval completed for user ${userId} by staff ${staffId}`);
+    return true;
+    
+  } catch (error) {
+    console.error(`[PAYPAL_MANUAL] Error in manual approval: ${error.message}`);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'An error occurred during manual approval.',
+        ephemeral: true
+      });
+    }
+    return false;
+  }
+}
+
+/**
+ * Handle manual PayPal rejection by staff
+ */
+async function handlePayPalManualReject(interaction) {
+  try {
+    const customId = interaction.customId;
+    const staffId = interaction.user.id;
+    
+    // Extract user ID from custom ID
+    const userId = customId.replace('paypal_manual_reject_', '');
+    
+    console.log(`[PAYPAL_MANUAL] Staff ${staffId} manually rejecting PayPal payment for user ${userId}`);
+    
+    // Check if user is authorized staff
+    const authorizedStaff = ['986164993080836096', '987751357773672538'];
+    if (!authorizedStaff.includes(staffId)) {
+      return interaction.reply({
+        content: 'Only authorized staff can manually reject payments.',
+        ephemeral: true
+      });
+    }
+    
+    // Disable the buttons
+    const message = interaction.message;
+    const disabledRow = new ActionRowBuilder();
+    
+    if (message.components && message.components.length > 0) {
+      message.components[0].components.forEach(component => {
+        disabledRow.addComponents(
+          ButtonBuilder.from(component).setDisabled(true)
+        );
+      });
+    }
+    
+    await interaction.update({ components: [disabledRow] });
+    
+    // Send rejection message
+    await interaction.followUp({
+      content: `❌ Payment manually rejected by <@${staffId}>. <@${userId}> please check your payment details and try again, or contact support.`,
+      ephemeral: false
+    });
+    
+    console.log(`[PAYPAL_MANUAL] Manual rejection completed for user ${userId} by staff ${staffId}`);
+    return true;
+    
+  } catch (error) {
+    console.error(`[PAYPAL_MANUAL] Error in manual rejection: ${error.message}`);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'An error occurred during manual rejection.',
+        ephemeral: true
+      });
+    }
+    return false;
+  }
+}
+
+/**
+ * Handle retry screenshot button
+ */
+async function handlePayPalRetryScreenshot(interaction) {
+  try {
+    const customId = interaction.customId;
+    const userId = interaction.user.id;
+    
+    // Extract user ID from custom ID
+    const requestedUserId = customId.replace('paypal_retry_screenshot_', '');
+    
+    // Verify the user clicking is the same as the one who requested
+    if (userId !== requestedUserId) {
+      return interaction.reply({
+        content: 'Only the person who made the payment request can retry the screenshot.',
+        ephemeral: true
+      });
+    }
+    
+    await interaction.reply({
+      content: 'Please upload a new PayPal screenshot showing all required information clearly.',
+      ephemeral: true
+    });
+    
+    // Grant file upload permissions
+    try {
+      await interaction.channel.permissionOverwrites.edit(userId, {
+        AttachFiles: true,
+        SendMessages: true
+      });
+    } catch (permError) {
+      console.error(`[PAYPAL_RETRY] Error granting file permissions: ${permError.message}`);
+    }
+    
+    // Start collecting new screenshot
+    // Note: This would need to integrate with the IPN verification system again
+    // For now, just inform user to upload new screenshot
+    await interaction.followUp({
+      content: 'Upload your new PayPal screenshot in this channel. Make sure it shows all transaction details clearly.',
+      ephemeral: true
+    });
+    
+    return true;
+    
+  } catch (error) {
+    console.error(`[PAYPAL_RETRY] Error handling retry screenshot: ${error.message}`);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'An error occurred. Please try again or contact support.',
+        ephemeral: true
+      });
+    }
+    return false;
+  }
+}
+
+/**
+ * Handle support resolve button (staff only)
+ */
+async function handlePayPalSupportResolve(interaction) {
+  try {
+    const customId = interaction.customId;
+    const staffId = interaction.user.id;
+    
+    // Extract user ID from custom ID
+    const userId = customId.replace('paypal_support_resolve_', '');
+    
+    console.log(`[PAYPAL_SUPPORT_RESOLVE] Staff ${staffId} resolving support for user ${userId}`);
+    
+    // Check if user is authorized staff
+    const authorizedStaff = ['986164993080836096', '987751357773672538'];
+    if (!authorizedStaff.includes(staffId)) {
+      return interaction.reply({
+        content: 'Only authorized staff can resolve support requests.',
+        ephemeral: true
+      });
+    }
+    
+    // Disable the button
+    const message = interaction.message;
+    const disabledRow = new ActionRowBuilder();
+    
+    if (message.components && message.components.length > 0) {
+      message.components[0].components.forEach(component => {
+        disabledRow.addComponents(
+          ButtonBuilder.from(component).setDisabled(true).setLabel('Resolved')
+        );
+      });
+    }
+    
+    await interaction.update({ components: [disabledRow] });
+    
+    // Send confirmation
+    await interaction.followUp({
+      content: `✅ Support request resolved by <@${staffId}>.`,
+      ephemeral: false
+    });
+    
+    return true;
+    
+  } catch (error) {
+    console.error(`[PAYPAL_SUPPORT_RESOLVE] Error resolving support: ${error.message}`);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({
+        content: 'An error occurred while resolving support.',
+        ephemeral: true
+      });
+    }
+    return false;
+  }
+}
+
 module.exports = {
   handlePayPalAcceptToS,
   handlePayPalDenyToS,
@@ -1000,5 +1144,10 @@ module.exports = {
   handlePayPalPaymentCompleted,
   handlePayPalPaymentReceived,
   handlePayPalPaymentNotReceived,
-  handleClaimBoost
+  handleClaimBoost,
+  handlePayPalSupportRequest,
+  handlePayPalManualApprove,
+  handlePayPalManualReject,
+  handlePayPalRetryScreenshot,
+  handlePayPalSupportResolve
 }; 

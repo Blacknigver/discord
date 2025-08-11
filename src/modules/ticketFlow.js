@@ -1192,6 +1192,11 @@ async function showPriceEmbed(interaction) {
         
         console.log(`[TROPHY_PRICE_DEBUG] Trophy power level multiplier: ${trophyMultiplier}x, base: €${trophyBasePrice.toFixed(2)}, final: €${price.toFixed(2)}`);
       }
+    } else if (userData.type === 'prestige') {
+      // For prestige, price is already set when user clicked prestige choice buttons
+      const prestigePriceStr = userData.price || '€0';
+      price = parseFloat(prestigePriceStr.replace('€', '').replace(',', '.'));
+      console.log(`[PRESTIGE_PRICE_DEBUG] Using preset price from choice: ${prestigePriceStr}, parsed as: €${price.toFixed(2)}`);
     }
     // Mastery price calculation removed - feature disabled
     
@@ -1364,6 +1369,16 @@ async function showPriceEmbed(interaction) {
       }
       
       embed.setDescription(description);
+    } else if (userData.type === 'prestige') {
+      let description = `Please confirm your order details:\n\n**Prestige Brawler:** \`${userData.prestigeBrawler}\`\n**Type of Prestige:** \`${userData.prestigeType}\`\n**Payment Method:** \`${userData.paymentMethod}\``;
+      if (discountApplied) {
+        description += `\n\n**Original Price:** \`€${originalPrice.toFixed(2)}\``;
+        description += `\n**Discount (10%):** \`-€${(originalPrice - price).toFixed(2)}\``;
+        description += `\n**Final Price:** \`${formattedPrice}\` 🎉`;
+      } else {
+        description += `\n\n**Total Price:** \`${formattedPrice}\``;
+      }
+      embed.setDescription(description);
     }
     // Mastery order description removed - feature disabled
     
@@ -1487,7 +1502,10 @@ async function handlePurchaseBoostClick(interaction) {
       content: `Your ticket has been created: <#${channel.id}>`,
     });
     
-    await require('../../ticketPayments.js').sendWelcomeEmbed(channel, interaction.user.id);
+    // Determine if this is an automated payment (PayPal + Crypto) for boosts/carries from ticket panel
+    const isAutomatedPayment = userData && ['PayPal', 'Crypto'].includes(userData.paymentMethod);
+    
+    await require('../../ticketPayments.js').sendWelcomeEmbed(channel, interaction.user.id, isAutomatedPayment);
     await require('../../handlerHelpers.js').sendOrderRecapEmbed(channel, userData);
     
     // === DISCOUNT CLAIMING AND DM BUTTON UPDATE LOGIC ===
@@ -1863,6 +1881,12 @@ async function handleTicketConfirm(interaction) {
       console.log(`[TICKET_CONFIRM] ✅ Built trophies current: "${orderDetails.current}"`);
       console.log(`[TICKET_CONFIRM] ✅ Built trophies desired: "${orderDetails.desired}"`);
     }
+    else if (userData.type === 'prestige') {
+      orderDetails.current = userData.prestigeBrawler || '';
+      orderDetails.desired = userData.prestigeType || '';
+      console.log(`[TICKET_CONFIRM] ✅ Built prestige brawler: "${orderDetails.current}"`);
+      console.log(`[TICKET_CONFIRM] ✅ Built prestige type: "${orderDetails.desired}"`);
+    }
     
     if (userData.paymentMethod) {
       orderDetails.paymentMethod = userData.paymentMethod;
@@ -1920,7 +1944,9 @@ async function handleTicketConfirm(interaction) {
       }
       
       // Send welcome message first
-      await require('../../ticketPayments.js').sendWelcomeEmbed(ticketChannel, userId);
+      // Determine if this is an automated payment (PayPal + Crypto) for boosts/carries from ticket panel  
+      const isAutomatedPayment = userData && ['PayPal', 'Crypto'].includes(userData.paymentMethod);
+      await require('../../ticketPayments.js').sendWelcomeEmbed(ticketChannel, userId, isAutomatedPayment);
       
       // Send order details next
       await require('../../ticketPayments.js').sendOrderDetailsEmbed(ticketChannel, orderDetails);
@@ -2327,6 +2353,7 @@ function getCategoryIdByType(type) {
   if (type === 'ranked') return '1322913302921089094';
   if (type === 'trophies') return '1322947795803574343';
   if (type === 'bulk') return '1322947859561320550';
+  if (type === 'prestige') return '1322947859561320550';
   // Mastery category removed - feature disabled
   if (type === 'other') return '1322947859561320550'; // Use the same category as bulk/mastery
   return null;
@@ -2340,6 +2367,9 @@ function getChannelNameByType(type, userData, username) {
   }
   if (type === 'trophies' || type === 'bulk') {
     return `${userData.currentTrophies}-${userData.desiredTrophies}-${sanitizeUsername(username)}`;
+  }
+  if (type === 'prestige') {
+    return `prestige-${sanitizeUsername(username)}`;
   }
   // Mastery channel name removed - feature disabled
   return `${type}-${sanitizeUsername(username)}`;
@@ -2484,6 +2514,42 @@ async function handleOtherFlow(interaction) {
   }
 }
 
+// Prestige flow
+async function handlePrestigeFlow(interaction) {
+  try {
+    console.log(`[PRESTIGE_FLOW] Starting prestige flow for user ${interaction.user.id}`);
+
+    // CHECK TICKET RATE LIMITS
+    const { checkTicketRateLimit } = require('../utils/rateLimitSystem');
+    const rateLimitCheck = await checkTicketRateLimit(interaction.user.id, 'prestige');
+    if (!rateLimitCheck.allowed) {
+      return await interaction.reply({ content: rateLimitCheck.reason, ephemeral: true });
+    }
+
+    // Initialize user state
+    let userData = flowState.get(interaction.user.id) || {};
+    userData = { ...userData, type: 'prestige', timestamp: Date.now() };
+    flowState.set(interaction.user.id, userData);
+
+    // Show modal to ask for brawler name
+    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+    const modal = new ModalBuilder().setCustomId('modal_prestige_brawler').setTitle('Prestige Request');
+    const brawlerInput = new TextInputBuilder()
+      .setCustomId('prestige_brawler')
+      .setLabel('What Brawler?')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('What brawler do you want the prestige on?')
+      .setRequired(true);
+    modal.addComponents(new ActionRowBuilder().addComponents(brawlerInput));
+    return interaction.showModal(modal);
+  } catch (error) {
+    console.error('[PRESTIGE_FLOW] Error:', error);
+    if (!interaction.replied && !interaction.deferred) {
+      return interaction.reply({ content: 'An error occurred while starting the prestige flow.', ephemeral: true });
+    }
+  }
+}
+
 // Helper function for ticket creation
 async function createFinalTicket(interaction, userData, channel) {
   try {
@@ -2536,7 +2602,9 @@ async function createFinalTicket(interaction, userData, channel) {
     
     // Create initial welcome embed
     const { sendWelcomeEmbed } = require('../../ticketPayments');
-    await sendWelcomeEmbed(channel, baseInfo.creator);
+    // Determine if this is an automated payment (PayPal + Crypto) for boosts/carries from ticket panel
+    const isAutomatedPayment = baseInfo.paymentMethod && ['PayPal', 'Crypto'].includes(baseInfo.paymentMethod);
+    await sendWelcomeEmbed(channel, baseInfo.creator.id, isAutomatedPayment);
     
     // Create order details embed
     const orderDetails = new EmbedBuilder()
@@ -2556,6 +2624,13 @@ async function createFinalTicket(interaction, userData, channel) {
       if (baseInfo.p11Count !== undefined) {
         fields.push({ name: 'P11 Count', value: `${baseInfo.p11Count}`, inline: true });
       }
+    }
+    else if (baseInfo.type === 'prestige') {
+      fields.push(
+        { name: 'Boost Type', value: 'Prestige', inline: true },
+        { name: 'Prestige Brawler', value: userData?.prestigeBrawler || 'Unknown', inline: true },
+        { name: 'Type of Prestige', value: userData?.prestigeType || 'Unknown', inline: true }
+      );
     }
     
     fields.push(
@@ -2582,6 +2657,7 @@ module.exports = {
   handleRankedFlow,
   handleBulkFlow,
   handleTrophyFlow,
+  handlePrestigeFlow,
   handleOtherFlow,
   handleRankedRankSelection,
   handleTicketConfirm,

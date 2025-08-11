@@ -177,6 +177,7 @@ const messageCommands = {
       new ButtonBuilder().setCustomId('ticket_bulk').setLabel('Bulk Trophies').setEmoji('<:gold_trophy:1351658932434768025>').setStyle(ButtonStyle.Primary)
     );
     const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('ticket_prestige').setLabel('Prestige').setEmoji('<:prestige:1404458124017926274>').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('ticket_other').setLabel('Other').setEmoji('<:winmatcherino:1298703851934711848>').setStyle(ButtonStyle.Success)
     );
     await message.channel.send({ embeds: [embed], components: [row1, row2] });

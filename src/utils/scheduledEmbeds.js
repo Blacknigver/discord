@@ -32,12 +32,9 @@ const EMBED_CONFIGS = {
             },
             {
                 title: 'Ranked Prices (2/2)',
-                imageUrl: 'https://media.discordapp.net/attachments/987753155360079903/1393703836757000242/rankedprices2.png?ex=68742358&is=6872d1d8&hm=5fcb37a2d481a048824c027b80ad27bca7040d06277197c8590b7a831bd33d36&=&format=webp&quality=lossless&width=550&height=309'
+                imageUrl: 'https://media.discordapp.net/attachments/987753155360079903/1404479591745065171/rankedprices2.0.png?ex=689b570c&is=689a058c&hm=e5b1a5ea062fdd3a690b087acec9457081e97f7302d6b2a7e8ef3d3d99410a63&=&format=webp&quality=lossless&width=1447&height=814'
             },
-            {
-                title: 'Masters - Pro pricing is __Outdated!__ <:caution:1393698677104840745>',
-                description: '**Updated Prices:**\n> - Masters 1 > Masters 2 = **€50**\n> - Masters 2 > Masters 3 = **€80**\n> - Masters 3 > Pro = **€120**'
-            },
+            
             {
                 title: 'Carries Are 2x Posted Prices'
             }
@@ -95,6 +92,25 @@ const EMBED_CONFIGS = {
                 emoji: '❔'
             }
         ]
+    }
+    ,
+    '1404473410402385980': {
+        type: 'prestige_prices',
+        embeds: [
+            {
+                title: 'Prestige Prices',
+                image: 'prestige.png'
+            },
+            {
+                title: 'Carries Are 2x Posted Prices'
+            }
+        ],
+        button: {
+            customId: 'ticket_prestige',
+            label: 'Order Prestige Boost',
+            style: ButtonStyle.Danger,
+            emoji: '<:prestige:1404458124017926274>'
+        }
     }
 };
 
@@ -462,6 +478,7 @@ class ScheduledEmbedSystem {
                 new ButtonBuilder().setCustomId('ticket_trophies').setLabel('Trophies').setEmoji('<:trophy:1301901071471345664>').setStyle(ButtonStyle.Danger),
                 new ButtonBuilder().setCustomId('ticket_ranked').setLabel('Ranked').setEmoji('<:Masters:1293283897618075728>').setStyle(ButtonStyle.Primary),
                 new ButtonBuilder().setCustomId('ticket_bulk').setLabel('Bulk Trophies').setEmoji('<:gold_trophy:1351658932434768025>').setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId('ticket_prestige').setLabel('Prestige').setEmoji('<:prestige:1404458124017926274>').setStyle(ButtonStyle.Danger),
                 new ButtonBuilder().setCustomId('ticket_other').setLabel('Other').setEmoji('<:winmatcherino:1298703851934711848>').setStyle(ButtonStyle.Success)
             );
 
@@ -497,6 +514,7 @@ class ScheduledEmbedSystem {
                 new ButtonBuilder().setCustomId('ticket_trophies').setLabel('Trophies').setEmoji('<:trophy:1301901071471345664>').setStyle(ButtonStyle.Danger),
                 new ButtonBuilder().setCustomId('ticket_ranked').setLabel('Ranked').setEmoji('<:Masters:1293283897618075728>').setStyle(ButtonStyle.Primary),
                 new ButtonBuilder().setCustomId('ticket_bulk').setLabel('Bulk Trophies').setEmoji('<:gold_trophy:1351658932434768025>').setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId('ticket_prestige').setLabel('Prestige').setEmoji('<:prestige:1404458124017926274>').setStyle(ButtonStyle.Danger),
                 new ButtonBuilder().setCustomId('ticket_other').setLabel('Other').setEmoji('<:winmatcherino:1298703851934711848>').setStyle(ButtonStyle.Success)
             );
 

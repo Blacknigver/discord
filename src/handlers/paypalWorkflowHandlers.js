@@ -550,6 +550,10 @@ const paypalPaymentReceivedHandler = async (interaction) => {
     const { cleanupMessages } = require('../utils/messageCleanup.js');
     await cleanupMessages(interaction.channel, null, 'payment_confirmed');
     
+    // Log successful PayPal payment to logging channel
+    const { sendSuccessfulPayPalPaymentLog } = require('../../ticketPayments');
+    await sendSuccessfulPayPalPaymentLog(interaction.client, interaction.channel.id, creatorId, 'PayPal');
+    
     // Send boost available embed with extracted details (DO NOT pass deleted message)
     const { sendBoostAvailableEmbed } = require('../../ticketPayments');
     await sendBoostAvailableEmbed(interaction.channel, orderDetails, creatorId, roleId, null);

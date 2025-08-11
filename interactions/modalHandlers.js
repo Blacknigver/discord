@@ -335,6 +335,6 @@ const allModalHandlers = {
 };
 
 // We need to ensure the custom IDs used in showModal match these keys.
-// 'modal_trophies_start', 'modal_bulk_trophies', 'modal_mastery_brawler', 'modal_other_request'
+    // 'modal_trophies_start', 'modal_bulk_trophies', 'modal_mastery_brawler', 'modal_other_request'
 
 module.exports = allModalHandlers; 

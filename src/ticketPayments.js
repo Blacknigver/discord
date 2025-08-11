@@ -276,7 +276,7 @@ async function sendBoostAvailableEmbed(channel, orderDetails, creatorId, booster
       ViewChannel: true,
       SendMessages: false,
       AddReactions: false,
-      StartPublicThreads: false
+      CreatePublicThreads: false
     });
     console.log(`[BOOST_AVAILABLE] Booster role ${roleId} can now view (but not send) in channel ${channel.id}`);
   } catch (err) {
@@ -410,11 +410,6 @@ async function sendPayPalTermsEmbed(channel, userId) {
       .setLabel('Deny')
       .setStyle(ButtonStyle.Danger)
       .setEmoji('<:cross:1351689463453061130>'),
-    new ButtonBuilder()
-      .setCustomId('request_support')
-      .setLabel('Request Support')
-      .setStyle(ButtonStyle.Primary)
-      .setEmoji('<:Support:1382066889873686608>')
   );
 
   return channel.send({ 

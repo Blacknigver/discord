@@ -260,6 +260,62 @@ const buttonHandlers = {
         }
     },
     
+    // Crypto amount copy handlers
+    copy_ltc_amount: async (interaction) => {
+        try {
+            // Extract amount from customId: copy_ltc_amount_0.12345678
+            const customIdParts = interaction.customId.split('_');
+            const amount = customIdParts[3]; // The amount part
+            
+            if (amount && amount !== 'calculating') {
+                await interaction.reply({ content: amount, ephemeral: true });
+            } else {
+                await interaction.reply({ content: 'Amount still calculating...', ephemeral: true });
+            }
+        } catch (error) {
+            console.error('[COPY_LTC_AMOUNT] Error:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ content: 'Error copying amount.', ephemeral: true }).catch(console.error);
+            }
+        }
+    },
+    copy_sol_amount: async (interaction) => {
+        try {
+            // Extract amount from customId: copy_sol_amount_0.123456
+            const customIdParts = interaction.customId.split('_');
+            const amount = customIdParts[3]; // The amount part
+            
+            if (amount && amount !== 'calculating') {
+                await interaction.reply({ content: amount, ephemeral: true });
+            } else {
+                await interaction.reply({ content: 'Amount still calculating...', ephemeral: true });
+            }
+        } catch (error) {
+            console.error('[COPY_SOL_AMOUNT] Error:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ content: 'Error copying amount.', ephemeral: true }).catch(console.error);
+            }
+        }
+    },
+    copy_btc_amount: async (interaction) => {
+        try {
+            // Extract amount from customId: copy_btc_amount_0.12345678
+            const customIdParts = interaction.customId.split('_');
+            const amount = customIdParts[3]; // The amount part
+            
+            if (amount && amount !== 'calculating') {
+                await interaction.reply({ content: amount, ephemeral: true });
+            } else {
+                await interaction.reply({ content: 'Amount still calculating...', ephemeral: true });
+            }
+        } catch (error) {
+            console.error('[COPY_BTC_AMOUNT] Error:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ content: 'Error copying amount.', ephemeral: true }).catch(console.error);
+            }
+        }
+    },
+    
     // Tikkie link handler
     copy_tikkie_link: async (interaction) => {
         try {
@@ -1081,6 +1137,84 @@ const buttonHandlers = {
     'ranked_Silver': async (interaction) => handleRankedRankSelection(interaction, 'Silver'),
     'ranked_Bronze': async (interaction) => handleRankedRankSelection(interaction, 'Bronze'),
 
+    // Prestige flow buttons
+    'ticket_prestige': async (interaction) => {
+        try {
+            console.log(`[PRESTIGE_FLOW] Starting prestige flow for user ${interaction.user.id}`);
+
+            // CHECK TICKET RATE LIMITS
+            const { checkTicketRateLimit } = require('../src/utils/rateLimitSystem');
+            const rateLimitCheck = await checkTicketRateLimit(interaction.user.id, 'prestige');
+            if (!rateLimitCheck.allowed) {
+                return await interaction.reply({ content: rateLimitCheck.reason, ephemeral: true });
+            }
+
+            // Initialize user state
+            flowState.set(interaction.user.id, { 
+                type: 'prestige', 
+                timestamp: Date.now() 
+            });
+
+            // Show modal to ask for brawler name
+            const modal = new ModalBuilder().setCustomId('modal_prestige_brawler').setTitle('Prestige Request');
+            const brawlerInput = new TextInputBuilder()
+                .setCustomId('prestige_brawler')
+                .setLabel('What Brawler?')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('What brawler do you want the prestige on?')
+                .setRequired(true);
+            modal.addComponents(new ActionRowBuilder().addComponents(brawlerInput));
+            return interaction.showModal(modal);
+        } catch (error) {
+            console.error('[PRESTIGE_FLOW] Error:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                return interaction.reply({ content: 'An error occurred while starting the prestige flow.', ephemeral: true });
+            }
+        }
+    },
+
+    'prestige_our': async (interaction) => {
+        try {
+            await interaction.deferUpdate().catch(() => {});
+            const userData = flowState.get(interaction.user.id) || {};
+            userData.type = 'prestige';
+            userData.prestigeType = 'Prestige of our choice';
+            userData.price = '€40';
+            userData.step = 'payment_method';
+            flowState.set(interaction.user.id, userData);
+            
+            const { showPaymentMethodSelection } = require('../src/modules/ticketFlow.js');
+            return showPaymentMethodSelection(interaction);
+        } catch (e) {
+            console.error('[PRESTIGE_BUTTONS] Error:', e);
+            if (!interaction.replied && !interaction.deferred) {
+                return interaction.reply({ content: 'An error occurred. Please try again.', ephemeral: true });
+            }
+            return false;
+        }
+    },
+
+    'prestige_your': async (interaction) => {
+        try {
+            await interaction.deferUpdate().catch(() => {});
+            const userData = flowState.get(interaction.user.id) || {};
+            userData.type = 'prestige';
+            userData.prestigeType = 'Prestige of your choice';
+            userData.price = '€60';
+            userData.step = 'payment_method';
+            flowState.set(interaction.user.id, userData);
+            
+            const { showPaymentMethodSelection } = require('../src/modules/ticketFlow.js');
+            return showPaymentMethodSelection(interaction);
+        } catch (e) {
+            console.error('[PRESTIGE_BUTTONS] Error:', e);
+            if (!interaction.replied && !interaction.deferred) {
+                return interaction.reply({ content: 'An error occurred. Please try again.', ephemeral: true });
+            }
+            return false;
+        }
+    },
+
     // Payment selection buttons & related 
     'payment_paypal': async (interaction) => {
         const userData = flowState.get(interaction.user.id);
@@ -1394,7 +1528,7 @@ const buttonHandlers = {
             let imageUrl = null;
             if (message.attachments.size > 0) {
                 imageUrl = message.attachments.first().url;
-                } else {
+            } else {
                 // Check for URLs in message content
                 const urlRegex = /(https?:\/\/[^\s]+\.(?:png|jpe?g|webp|gif))/i;
                 const discordCdnRegex = /https?:\/\/media\.discordapp\.net\/[^\s]+/i;
@@ -1578,6 +1712,340 @@ const buttonHandlers = {
     },
     
     // Affiliate handlers
+    
+    // Crypto request support handler
+    crypto_request_support: async (interaction) => {
+        try {
+            console.log(`[CRYPTO_REQUEST_SUPPORT] User ${interaction.user.id} clicked crypto request support`);
+            
+            // Extract data from custom ID: crypto_request_support_channelId_txId_senderAddress
+            const customIdParts = interaction.customId.split('_');
+            if (customIdParts.length < 5) {
+                console.error('[CRYPTO_REQUEST_SUPPORT] Invalid custom ID format');
+                return await interaction.reply({
+                    content: 'Invalid request. Please try again or contact staff directly.',
+                    ephemeral: true
+                });
+            }
+            
+            const channelId = customIdParts[3];
+            const txId = customIdParts[4];
+            const senderAddress = customIdParts[5];
+            
+            console.log(`[CRYPTO_REQUEST_SUPPORT] Processing support request for TX: ${txId}, sender: ${senderAddress}`);
+            
+            // Send support embed to staff
+            const supportEmbed = new EmbedBuilder()
+                .setTitle('<:Support:1382066889873686608> Support Requested')
+                .setDescription(`<@${interaction.user.id}> has requested support, please assist them.`)
+                .setColor('#e68df2')
+                .addFields(
+                    { name: 'Transaction ID', value: `\`${txId}\``, inline: false },
+                    { name: "Sender's address", value: `\`${senderAddress}\``, inline: false }
+                );
+
+            const resolveButton = new ButtonBuilder()
+                .setCustomId(`crypto_support_resolve_${channelId}_${interaction.user.id}`)
+                .setLabel('Mark Payment as Completed')
+                .setStyle(ButtonStyle.Success)
+                .setEmoji('<:checkmark:1357478063616688304>');
+
+            await interaction.channel.send({
+                content: '<@&1292933200389083196> <@987751357773672538>', // Owner role and crypto verifier
+                embeds: [supportEmbed],
+                components: [new ActionRowBuilder().addComponents(resolveButton)]
+            });
+
+            await interaction.reply({
+                content: 'Support request sent to staff. They will assist you shortly.',
+                ephemeral: true
+            });
+
+            console.log(`[CRYPTO_REQUEST_SUPPORT] Support request sent for user ${interaction.user.id}`);
+
+        } catch (error) {
+            console.error('[CRYPTO_REQUEST_SUPPORT] Error handling support request:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: 'An error occurred while sending your support request. Please contact staff directly.',
+                    ephemeral: true
+                });
+            }
+        }
+    },
+
+    // General Request Support handler for Welcome embeds
+    request_support: async (interaction) => {
+        try {
+            console.log(`[REQUEST_SUPPORT] User ${interaction.user.id} clicked Request Support button`);
+            
+            // Send support embed to staff
+            const supportEmbed = new EmbedBuilder()
+                .setTitle('<:Support:1382066889873686608> Support Requested')
+                .setDescription(`<@${interaction.user.id}> has requested support, please assist them.`)
+                .setColor('#e68df2');
+
+            const resolveButton = new ButtonBuilder()
+                .setCustomId(`general_support_resolve_${interaction.channel.id}_${interaction.user.id}`)
+                .setLabel('Mark as Resolved')
+                .setStyle(ButtonStyle.Success)
+                .setEmoji('<:checkmark:1357478063616688304>');
+
+            await interaction.channel.send({
+                content: '<@&1292933200389083196> <@987751357773672538>', // Owner role and crypto verifier
+                embeds: [supportEmbed],
+                components: [new ActionRowBuilder().addComponents(resolveButton)]
+            });
+
+            await interaction.reply({
+                content: 'Support request sent to staff. They will assist you shortly.',
+                ephemeral: true
+            });
+
+            console.log(`[REQUEST_SUPPORT] Support request sent for user ${interaction.user.id}`);
+
+        } catch (error) {
+            console.error('[REQUEST_SUPPORT] Error handling support request:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: 'An error occurred while sending your support request. Please contact staff directly.',
+                    ephemeral: true
+                });
+            }
+        }
+    },
+
+    // General support resolve handler
+    general_support_resolve: async (interaction) => {
+        try {
+            console.log(`[GENERAL_SUPPORT_RESOLVE] Staff ${interaction.user.id} resolving general support request`);
+            
+            // Check if user is authorized (Owner role or crypto verifier)
+            const authorizedRoles = ['1292933200389083196']; // Owner role
+            const authorizedUsers = ['987751357773672538']; // Crypto verifier
+            const member = interaction.member;
+            const hasAuthorization = (member && member.roles.cache.some(role => authorizedRoles.includes(role.id))) || 
+                                   authorizedUsers.includes(interaction.user.id);
+            
+            if (!hasAuthorization) {
+                return await interaction.reply({
+                    content: 'Only authorized staff can resolve support requests.',
+                    ephemeral: true
+                });
+            }
+            
+            // Extract data from custom ID: general_support_resolve_channelId_userId
+            const customIdParts = interaction.customId.split('_');
+            if (customIdParts.length < 5) {
+                console.error('[GENERAL_SUPPORT_RESOLVE] Invalid custom ID format');
+                return await interaction.reply({
+                    content: 'Invalid request format.',
+                    ephemeral: true
+                });
+            }
+            
+            const channelId = customIdParts[3];
+            const userId = customIdParts[4];
+            
+            // Disable the button
+            const message = interaction.message;
+            const disabledRow = new ActionRowBuilder();
+            
+            message.components[0].components.forEach(component => {
+                disabledRow.addComponents(
+                    ButtonBuilder.from(component).setDisabled(true)
+                );
+            });
+            
+            // Update the message with disabled button and add resolved note
+            const originalEmbed = message.embeds[0];
+            const resolvedEmbed = new EmbedBuilder()
+                .setTitle(originalEmbed.title)
+                .setDescription(originalEmbed.description + `\n\n✅ **Resolved by:** <@${interaction.user.id}>`)
+                .setColor('#00ff00') // Green color for resolved
+                .setTimestamp();
+
+            await interaction.update({
+                embeds: [resolvedEmbed],
+                components: [disabledRow]
+            });
+
+            console.log(`[GENERAL_SUPPORT_RESOLVE] Support request resolved by ${interaction.user.id} for user ${userId}`);
+
+        } catch (error) {
+            console.error('[GENERAL_SUPPORT_RESOLVE] Error resolving support request:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: 'An error occurred while resolving the support request.',
+                    ephemeral: true
+                });
+            }
+        }
+    },
+
+    // Crypto support resolve handler  
+    crypto_support_resolve: async (interaction) => {
+        try {
+            console.log(`[CRYPTO_SUPPORT_RESOLVE] Staff ${interaction.user.id} resolving crypto support`);
+            
+            // Check if user is authorized (Owner role or crypto verifier)
+            const authorizedRoles = ['1292933200389083196']; // Owner role
+            const authorizedUsers = ['987751357773672538']; // Crypto verifier
+            const member = interaction.member;
+            const hasAuthorization = (member && member.roles.cache.some(role => authorizedRoles.includes(role.id))) || 
+                                   authorizedUsers.includes(interaction.user.id);
+            
+            if (!hasAuthorization) {
+                return await interaction.reply({
+                    content: 'Only authorized staff can resolve support requests.',
+                    ephemeral: true
+                });
+            }
+            
+            // Extract data from custom ID: crypto_support_resolve_channelId_userId
+            const customIdParts = interaction.customId.split('_');
+            if (customIdParts.length < 5) {
+                console.error('[CRYPTO_SUPPORT_RESOLVE] Invalid custom ID format');
+                return await interaction.reply({
+                    content: 'Invalid request format.',
+                    ephemeral: true
+                });
+            }
+            
+            const channelId = customIdParts[3];
+            const userId = customIdParts[4];
+            
+            // Disable the button
+            const message = interaction.message;
+            const disabledRow = new ActionRowBuilder();
+            
+            message.components[0].components.forEach(component => {
+                disabledRow.addComponents(
+                    ButtonBuilder.from(component).setDisabled(true)
+                );
+            });
+            
+            // Update the message with disabled button and add resolved note
+            const originalEmbed = message.embeds[0];
+            const resolvedEmbed = EmbedBuilder.from(originalEmbed)
+                .setTitle('<:checkmark:1357478063616688304> Support Request - Resolved')
+                .setColor('#00ff00')
+                .addFields(
+                    { name: 'Resolved by', value: `<@${interaction.user.id}>`, inline: true },
+                    { name: 'Resolved at', value: `<t:${Math.floor(Date.now() / 1000)}:f>`, inline: true }
+                );
+
+            await interaction.update({ 
+                embeds: [resolvedEmbed],
+                components: [disabledRow] 
+            });
+
+            // Send boost available embed to the user
+            const { sendBoostAvailableEmbed } = require('../ticketPayments.js');
+            await sendBoostAvailableEmbed(interaction.channel, {}, userId);
+
+            console.log(`[CRYPTO_SUPPORT_RESOLVE] Support resolved by ${interaction.user.id} for user ${userId}`);
+
+        } catch (error) {
+            console.error('[CRYPTO_SUPPORT_RESOLVE] Error resolving support request:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: 'An error occurred while resolving the support request.',
+                    ephemeral: true
+                });
+            }
+        }
+    },
+    
+    // Refresh payment information handler
+    refresh_payment: async (interaction) => {
+        try {
+            console.log(`[REFRESH_PAYMENT] User ${interaction.user.id} clicked refresh payment`);
+            
+            // Extract data from custom ID: refresh_payment_cryptoType_channelId_price
+            const customIdParts = interaction.customId.split('_');
+            if (customIdParts.length < 5) {
+                console.error('[REFRESH_PAYMENT] Invalid custom ID format');
+                return await interaction.reply({
+                    content: 'Invalid refresh request.',
+                    ephemeral: true
+                });
+            }
+            
+            const cryptoType = customIdParts[2];
+            const channelId = customIdParts[3];
+            const oldPrice = parseFloat(customIdParts[4]);
+            
+            console.log(`[REFRESH_PAYMENT] Refreshing ${cryptoType} payment information with updated prices`);
+            
+            // Get current price from channel messages
+            let currentPrice = oldPrice;
+            try {
+                const messages = await interaction.channel.messages.fetch({ limit: 20 });
+                const priceMessage = messages.find(msg => 
+                    msg.embeds.length > 0 && 
+                    (msg.embeds[0].title === 'Order Information' || 
+                     msg.embeds[0].description?.includes('Current Rank') ||
+                     msg.embeds[0].description?.includes('Current Trophies'))
+                );
+                
+                if (priceMessage) {
+                    const priceField = priceMessage.embeds[0].fields?.find(f => f.name === 'Price' || f.name === '**Price:**');
+                    if (priceField) {
+                        const priceMatch = priceField.value.match(/€(\d+(?:\.\d+)?)/);
+                        if (priceMatch && priceMatch[1]) {
+                            currentPrice = parseFloat(priceMatch[1]);
+                        }
+                    }
+                }
+        } catch (error) {
+                console.error('[REFRESH_PAYMENT] Error extracting current price:', error);
+            }
+            
+            // Send the appropriate crypto embed with updated prices
+            const { sendLitecoinEmbed, sendBitcoinEmbed, sendSolanaEmbed } = require('../ticketPayments.js');
+            
+            let refreshedMessage;
+            switch (cryptoType.toLowerCase()) {
+                case 'litecoin':
+                    refreshedMessage = await sendLitecoinEmbed(interaction.channel, interaction.user.id, currentPrice);
+                    break;
+                case 'bitcoin':
+                    refreshedMessage = await sendBitcoinEmbed(interaction.channel, interaction.user.id);
+                    break;
+                case 'solana':
+                    refreshedMessage = await sendSolanaEmbed(interaction.channel, interaction.user.id, currentPrice);
+                    break;
+                default:
+                    return await interaction.reply({
+                        content: 'Unknown crypto type. Please contact staff.',
+                        ephemeral: true
+                    });
+            }
+            
+            // Update the original message to show it was refreshed
+            const refreshedEmbed = new EmbedBuilder()
+                .setTitle('Payment Information Refreshed')
+                .setDescription(`New ${cryptoType} payment information has been sent with updated prices.`)
+                .setColor('#00ff00');
+            
+            await interaction.update({
+                embeds: [refreshedEmbed],
+                components: []
+            });
+            
+            console.log(`[REFRESH_PAYMENT] Successfully refreshed ${cryptoType} payment information`);
+
+        } catch (error) {
+            console.error('[REFRESH_PAYMENT] Error refreshing payment information:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: 'An error occurred while refreshing payment information. Please contact staff.',
+                    ephemeral: true
+                });
+            }
+        }
+    }
 }; // end buttonHandlers
 
 const paymentButtonHandlers = {
@@ -2091,6 +2559,37 @@ async function handleButtonInteraction(interaction) {
         return;
     }
 
+    // Handle crypto copy amount buttons with dynamic amounts
+    if (customId.startsWith('copy_') && customId.includes('_amount_')) {
+        try {
+            // Extract amount from customId: copy_ltc_amount_0.12345678 or copy_sol_amount_0.123456
+            const customIdParts = customId.split('_');
+            const amount = customIdParts[3]; // The amount part
+            
+            if (amount && amount !== 'calculating') {
+                await interaction.reply({ content: amount, ephemeral: true });
+            } else {
+                await interaction.reply({ content: 'Amount still calculating...', ephemeral: true });
+            }
+        } catch (error) {
+            console.error('[COPY_CRYPTO_AMOUNT] Error:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ content: 'Error copying amount.', ephemeral: true }).catch(console.error);
+            }
+        }
+        return;
+    }
+
+    // Check if a specific handler exists for this button
+    if (combinedButtonHandlers[customId]) {
+        try {
+            await combinedButtonHandlers[customId](interaction);
+            return;
+        } catch (error) {
+            console.error(`[BUTTON_HANDLER] Error executing handler for ${customId}:`, error);
+        }
+    }
+
     // Handle affiliate copy link button
     if (customId.startsWith('affiliate_copy_')) {
         const code = customId.replace('affiliate_copy_', '');
@@ -2261,7 +2760,14 @@ const combinedButtonHandlers = {
     ...allButtonHandlers
 };
 
+// Dynamic handler function for testing
+function handleInteraction(interaction) {
+    return handleButtonInteraction(interaction);
+}
+
 module.exports = {
     handleButtonInteraction,
-    profilePurchaseFlow
+    profilePurchaseFlow,
+    handleInteraction,  // Export dynamic handler for testing
+    ...combinedButtonHandlers  // Export all the button handlers
 }; 

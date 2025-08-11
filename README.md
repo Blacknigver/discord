@@ -76,7 +76,7 @@ A feature-rich Discord bot designed for managing ticket systems, orders, and pay
 2. System displays Terms of Service that must be accepted
 3. Upon acceptance, PayPal email is provided
 4. User makes payment and confirms in ticket
-5. Staff verifies payment and processes order
+5. We automatically check if the user sent the payment using PayPal's IPN
 
 ## File Structure
 - `index.js`: Main bot entry point

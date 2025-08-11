@@ -21,8 +21,20 @@ const {
   handlePayPalDenyConfirm,
   handlePayPalDenyCancel,
   handlePayPalCopyEmail,
-  handleClaimBoost
+  handleClaimBoost,
+  handlePayPalSupportRequest,
+  handlePayPalManualApprove,
+  handlePayPalManualReject,
+  handlePayPalRetryScreenshot,
+  handlePayPalSupportResolve
 } = require('./paypalButtonHandler.js');
+
+const {
+  handleMethodSupercellStore,
+  handleMethodKingFrank,
+  handleMethodInfiniteWinstreak,
+  handleMethodClaim
+} = require('./methodsHandlers.js');
 
 // Extract withdrawal modal handling into a separate function
 async function handleWithdrawalModal(interaction) {
@@ -213,6 +225,9 @@ async function handleButtonInteraction(interaction) {
             ephemeral: true
           });
         }
+      } else if (ticketType === 'prestige') {
+        const { handlePrestigeFlow } = require('../modules/ticketFlow.js');
+        return handlePrestigeFlow(interaction);
       }
       
       return true; // Mark as handled
@@ -222,6 +237,30 @@ async function handleButtonInteraction(interaction) {
     if (customId.startsWith('ranked_')) {
       const rankInput = customId.replace('ranked_', '');
       return handleRankedRankSelection(interaction, rankInput);
+    }
+    // Handle prestige buttons
+    if (customId === 'ticket_prestige') {
+      const { handlePrestigeFlow } = require('../modules/ticketFlow.js');
+      return handlePrestigeFlow(interaction);
+    }
+    if (customId === 'prestige_our' || customId === 'prestige_your') {
+      try {
+        await interaction.deferUpdate().catch(() => {});
+        const { flowState, showPaymentMethodSelection } = require('../modules/ticketFlow.js');
+        const userData = flowState.get(interaction.user.id) || {};
+        userData.type = 'prestige';
+        userData.prestigeType = customId === 'prestige_our' ? 'Prestige of our choice' : 'Prestige of your choice';
+        userData.price = customId === 'prestige_our' ? '€40' : '€60';
+        userData.step = 'payment_method';
+        flowState.set(interaction.user.id, userData);
+        return showPaymentMethodSelection(interaction);
+      } catch (e) {
+        console.error('[PRESTIGE_BUTTONS] Error:', e);
+        if (!interaction.replied && !interaction.deferred) {
+          return interaction.reply({ content: 'An error occurred. Please try again.', ephemeral: true });
+        }
+        return false;
+      }
     }
     
     // Handle ticket confirmation buttons
@@ -290,7 +329,49 @@ async function handleButtonInteraction(interaction) {
       }
     }
     
-    // Handle other button types here...
+    // Handle PayPal support request buttons
+    if (customId.startsWith('paypal_request_support_') || customId.startsWith('paypal_ai_support_')) {
+      return handlePayPalSupportRequest(interaction);
+    }
+    
+    // Handle PayPal manual approve buttons
+    if (customId.startsWith('paypal_manual_approve_')) {
+      return handlePayPalManualApprove(interaction);
+    }
+    
+    // Handle PayPal manual reject buttons
+    if (customId.startsWith('paypal_manual_reject_')) {
+      return handlePayPalManualReject(interaction);
+    }
+    
+    // Handle PayPal retry screenshot buttons
+    if (customId.startsWith('paypal_retry_screenshot_')) {
+      return handlePayPalRetryScreenshot(interaction);
+    }
+    
+    // Handle PayPal support resolve buttons
+    if (customId.startsWith('paypal_support_resolve_')) {
+      return handlePayPalSupportResolve(interaction);
+    }
+    
+    // === METHODS SYSTEM HANDLERS ===
+    // Handle method detail buttons
+    if (customId === 'method_supercell_store') {
+      return handleMethodSupercellStore(interaction);
+    }
+    
+    if (customId === 'method_king_frank') {
+      return handleMethodKingFrank(interaction);
+    }
+    
+    if (customId === 'method_infinite_winstreak') {
+      return handleMethodInfiniteWinstreak(interaction);
+    }
+    
+    // Handle method claim buttons
+    if (customId.startsWith('claim_method_')) {
+      return handleMethodClaim(interaction);
+    }
     
     console.warn(`[INTERACTION] Unhandled button interaction: ${customId}`);
     return false;
@@ -437,6 +518,13 @@ async function handleModalSubmit(interaction) {
     if (customId === 'solana_tx_modal') {
       const { handleSolanaTxModalSubmission } = require('../../ticketPayments.js');
       return handleSolanaTxModalSubmission(interaction);
+    }
+    
+    // Handle PayPal name modal
+    // Handle PayPal email modal
+    if (customId === 'paypal_email_modal') {
+      const { handlePayPalEmailModalSubmission } = require('../../ticketPayments.js');
+      return handlePayPalEmailModalSubmission(interaction);
     }
     
     // Handle crypto other modal (for custom crypto coins)

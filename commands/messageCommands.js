@@ -27,6 +27,7 @@ const messageCommands = {
       new ButtonBuilder().setCustomId('ticket_bulk').setLabel('Bulk Trophies').setEmoji('<:gold_trophy:1351658932434768025>').setStyle(ButtonStyle.Primary)
     );
     const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('ticket_prestige').setLabel('Prestige').setEmoji('<:prestige:1404458124017926274>').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('ticket_other').setLabel('Other').setEmoji('<:winmatcherino:1298703851934711848>').setStyle(ButtonStyle.Success)
     );
     await message.channel.send({ embeds: [embed], components: [row1, row2] });
@@ -176,6 +177,7 @@ const messageCommands = {
       new ButtonBuilder().setCustomId('ticket_trophies').setLabel('Trophies').setEmoji('<:trophy:1301901071471345664>').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('ticket_ranked').setLabel('Ranked').setEmoji('<:Masters:1293283897618075728>').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId('ticket_bulk').setLabel('Bulk Trophies').setEmoji('<:gold_trophy:1351658932434768025>').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('ticket_prestige').setLabel('Prestige').setEmoji('<:prestige:1404458124017926274>').setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId('ticket_other').setLabel('Other').setEmoji('<:winmatcherino:1298703851934711848>').setStyle(ButtonStyle.Success)
     );
 
@@ -221,6 +223,44 @@ const messageCommands = {
       console.error('DEBUG: Full outer error:', outerErr);
       await message.reply('Failed to create ticket panel: ' + outerErr.message);
     }
+  },
+
+  methods: async (message) => {
+    // Create main methods embed with buttons
+    const embed = new EmbedBuilder()
+      .setTitle('Brawl Stars Methods')
+      .setColor('#e68df2')
+      .setDescription(
+        'Get cheap methods for Brawl Stars __for Free__.\n\n' +
+        '**All Methods:**\n' +
+        '> - 50% Cheaper Supercell Store = **25 Invites**\n' +
+        '> -# Get items from the supercell store for 50% cheaper, BP+ for €6.\n' +
+        '> - Free King Frank Method = **10 Invites**\n' +
+        '> -# Get king frank for free, requires you to have €300 on your credit card or PayPal.\n' +
+        '> - Infinite Winstreak Method = **5 Invites**\n' +
+        '> -# Get an infinite winstreak, requires time but impossible to lose.\n\n' +
+        '**To get more information on a method, please use the buttons below.**'
+      );
+
+    const methodButtons = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('method_supercell_store')
+        .setLabel('Cheap Supercell Store')
+        .setEmoji('<:money:1395931432064389212>')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('method_king_frank')
+        .setLabel('Free King Frank')
+        .setEmoji('<:KingFrank:1395931309163020372>')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('method_infinite_winstreak')
+        .setLabel('Infinite Winstreak')
+        .setEmoji('<:winstreak:1373790935334256710>')
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    await message.channel.send({ embeds: [embed], components: [methodButtons] });
   },
 
   affiliate: async (message) => {

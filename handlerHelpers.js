@@ -321,6 +321,12 @@ async function sendOrderRecapEmbed(channel, userData) {
         { name: '**Request Type:**', value: '\`Other Request\`' },
         { name: '**Details:**', value: `\`${userData.otherRequest || 'No details provided'}\`` }
       );
+  } else if (userData.type === 'prestige') {
+      fields.push(
+        { name: '**Boost Type:**', value: '\`Prestige\`' },
+        { name: '**Prestige Brawler:**', value: `\`${userData.prestigeBrawler || 'Unknown'}\`` },
+        { name: '**Type of Prestige:**', value: `\`${userData.prestigeType || 'Unknown'}\`` }
+      );
     }
     if (userData.price) {
       fields.push({ name: '**Price:**', value: `\`€${parseFloat(userData.price).toFixed(2)}\`` });
