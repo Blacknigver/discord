@@ -22,7 +22,6 @@ const {
   PURCHASE_ACCOUNT_CATEGORY
 } = require('./src/constants');
 const { createTicketPanel } = require('./src/modules/ticketFlow');
-const { handleReviewCommand } = require('./review');
 const invitesCommand = require('./src/commands/invites');
 const inviteLeaderboardCommand = require('./src/commands/inviteLeaderboard');
 const inviteAdminCommand = require('./src/commands/inviteAdmin');
@@ -195,23 +194,17 @@ const ticketPanelCommand = new SlashCommandBuilder()
   .setName('ticket-panel')
   .setDescription('Create a ticket panel in the current channel');
 
-// /review command
-const reviewCommand = new SlashCommandBuilder()
-  .setName('review')
-  .setDescription('Add a review')
-  .addUserOption(option => option.setName('user').setDescription('User to review').setRequired(true))
-  .addStringOption(option => option.setName('rating').setDescription('Rating (1-5 stars)').setRequired(true))
-  .addStringOption(option => option.setName('comment').setDescription('Review comment').setRequired(true))
-  .addBooleanOption(option => option.setName('anonymous').setDescription('Submit anonymously').setRequired(false));
+// Import the CORRECT review command from review.js
+const reviewCommand = require('./review');
 
-const exportedCommands = [listCommand, ticketPanelCommand, reviewCommand, invitesCommand.data, inviteLeaderboardCommand.data, inviteAdminCommand.data];
+const exportedCommands = [listCommand, ticketPanelCommand, reviewCommand.data, invitesCommand.data, inviteLeaderboardCommand.data, inviteAdminCommand.data];
 
 // Handle slash commands
 async function handleSlashCommands(interaction) {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === 'review') {
-    return handleReviewCommand(interaction);
+    return reviewCommand.execute(interaction);
   }
 
   if (interaction.commandName === 'invites') {
@@ -717,7 +710,7 @@ async function handleListButtons(interaction) {
 const commands = [
   listCommand,
   ticketPanelCommand,
-  reviewCommand,
+  reviewCommand.data,
   invitesCommand.data,
   inviteLeaderboardCommand.data,
   inviteAdminCommand.data,
