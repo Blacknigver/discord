@@ -31,33 +31,18 @@ function setupInteractions(client) {
 
     if (commandName === 'review') {
       try {
-        // Get command arguments
-        const user = interaction.options.getUser('user');
-        const message = interaction.options.getString('message');
-        
-        if (!user || !message) {
-          return interaction.reply({
-            content: 'Missing required arguments: user and message',
+        // Use the correct review command from review.js
+        await reviewCommand.execute(interaction);
+        return true;
+      } catch (error) {
+        console.error('Error executing review command:', error);
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({
+            content: 'There was an error while executing this command!',
             ephemeral: true
           });
         }
-        
-        // Call the review command handler
-        await reviewCommand.execute({
-          author: interaction.user,
-          channel: interaction.channel,
-          reply: (content) => interaction.reply({ content, ephemeral: true }),
-          guild: interaction.guild
-        }, [user.id, message]);
-        
-          return true;
-      } catch (error) {
-        console.error('Error executing review command:', error);
-        await interaction.reply({
-          content: 'There was an error while executing this command!',
-          ephemeral: true
-        });
-          return true;
+        return true;
       }
     } else if (commandName === 'list') {
       try {
